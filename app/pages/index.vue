@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 
 type QrTool = 'colors' | 'step' | 'label' | 'icon' | 'border'
@@ -59,9 +59,11 @@ const qrStore = useQrStore()
 const activeTool = ref<QrTool>('colors')
 const selectedQrColor = ref<TailwindColor | null>(null)
 const colorScroller = ref<HTMLElement | null>(null)
+const labelMeasureElement = ref<SVGTextElement | null>(null)
 const hasColorsBefore = ref(false)
 const hasColorsAfter = ref(false)
 const selectedColorStep = ref(500)
+const labelFontScale = ref(1)
 const qrLabel = ref('')
 const selectedLabelPosition = ref<LabelPosition>('bottom')
 const selectedCenterIcon = ref<CenterIconValue>('none')
@@ -252,7 +254,8 @@ const borderContentInset = computed(() => {
   return innerBorderEdge + selectedBorderStyle.value.contentGap
 })
 const qrOutputSize = computed(() => qrSvgSize.value)
-const labelFontSize = computed(() => qrOutputSize.value * 0.2)
+const baseLabelFontSize = computed(() => qrOutputSize.value * 0.2)
+const labelFontSize = computed(() => baseLabelFontSize.value * labelFontScale.value)
 const labelGap = computed(() => labelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
 const labelBlockHeight = computed(() => labelText.value ? labelFontSize.value : 0)
 const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value : 0)
@@ -353,6 +356,21 @@ function getCenterIconSearchText(icon: CenterIconOption) {
   return `${icon.categoryLabel} ${icon.label} ${icon.value}`.toLowerCase()
 }
 
+async function updateLabelFontScale() {
+  await nextTick()
+
+  const element = labelMeasureElement.value
+
+  if (!element || !labelText.value) {
+    labelFontScale.value = 1
+    return
+  }
+
+  const labelWidth = element.getComputedTextLength()
+
+  labelFontScale.value = labelWidth > 0 ? Math.min(1, qrOutputSize.value / labelWidth) : 1
+}
+
 function getLabelFont(value: unknown) {
   return labelFonts.find(font => font.value === value) ?? fallbackLabelFont
 }
@@ -394,7 +412,12 @@ onMounted(async () => {
   await nextTick()
   updateColorScrollState()
   window.addEventListener('resize', updateColorScrollState)
+
+  await updateLabelFontScale()
+  void document.fonts?.ready.then(updateLabelFontScale)
 })
+
+watch([labelText, selectedLabelFont, qrOutputSize], updateLabelFontScale, { flush: 'post' })
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateColorScrollState)
@@ -851,6 +874,17 @@ onUnmounted(() => {
                 :y="centerIconY"
               />
             </template>
+            <text
+              v-if="labelText"
+              ref="labelMeasureElement"
+              aria-hidden="true"
+              fill="currentColor"
+              :font-size="baseLabelFontSize"
+              opacity="0"
+              :class="[qrTextClass, selectedLabelFontClass]"
+            >
+              {{ labelText }}
+            </text>
             <text
               v-if="labelText"
               fill="currentColor"
