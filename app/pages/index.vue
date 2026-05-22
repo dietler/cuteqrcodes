@@ -865,10 +865,28 @@ onUnmounted(() => {
                 :cy="qrOutputY + qrOutputSize / 2"
                 :r="centerIconCircleRadius"
               />
-              <image
-                :href="selectedCenterIconOption.src"
+              <mask
+                id="center-icon-mask"
                 :height="centerIconSize"
-                preserveAspectRatio="xMidYMid meet"
+                mask-type="alpha"
+                maskUnits="userSpaceOnUse"
+                :width="centerIconSize"
+                :x="centerIconX"
+                :y="centerIconY"
+              >
+                <image
+                  :href="selectedCenterIconOption.src"
+                  :height="centerIconSize"
+                  preserveAspectRatio="xMidYMid meet"
+                  :width="centerIconSize"
+                  :x="centerIconX"
+                  :y="centerIconY"
+                />
+              </mask>
+              <rect
+                :class="qrFillClass"
+                :height="centerIconSize"
+                mask="url(#center-icon-mask)"
                 :width="centerIconSize"
                 :x="centerIconX"
                 :y="centerIconY"
