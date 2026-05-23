@@ -56,21 +56,27 @@ type BorderStyle = {
 
 const qrStore = useQrStore()
 
-const activeTool = ref<QrTool>('colors')
+const activeTool = ref<QrTool | null>(null)
 const selectedQrColor = ref<TailwindColor | null>(null)
 const colorScroller = ref<HTMLElement | null>(null)
 const labelMeasureElement = ref<SVGTextElement | null>(null)
+const additionalTextMeasureElement = ref<SVGTextElement | null>(null)
 const hasColorsBefore = ref(false)
 const hasColorsAfter = ref(false)
 const selectedColorStep = ref(500)
 const labelFontScale = ref(1)
 const qrLabel = ref('')
+const qrAdditionalText = ref('')
 const selectedLabelPosition = ref<LabelPosition>('bottom')
 const selectedCenterIcon = ref<CenterIconValue>('none')
 const activeCenterIconCategory = ref<string | null>(null)
 const centerIconSearch = ref('')
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+const additionalTextLineLength = 40
+const maxAdditionalTextLength = additionalTextLineLength * 3
+const versionOneQrSize = 21
+const versionOneCenterIconCircleDiameter = 7
 
 const labelFonts: LabelFont[] = [
   { label: 'Google Sans', value: 'google-sans', class: 'font-google-sans' },
@@ -78,12 +84,13 @@ const labelFonts: LabelFont[] = [
 ]
 const fallbackLabelFont = labelFonts[0]!
 const selectedLabelFont = ref(fallbackLabelFont.value)
+const selectedAdditionalTextFont = ref(fallbackLabelFont.value)
 const labelFontItems = labelFonts.map(font => ({ label: font.label, value: font.value, class: font.class }))
 const labelPositionOptions: LabelPositionOption[] = [
+  { label: 'Bottom', value: 'bottom', disabled: false },
   { label: 'Top', value: 'top', disabled: false },
-  { label: 'Left', value: 'left', disabled: true },
   { label: 'Right', value: 'right', disabled: true },
-  { label: 'Bottom', value: 'bottom', disabled: false }
+  { label: 'Left', value: 'left', disabled: true }
 ]
 const noCenterIconOption: CenterIconOption = { label: 'None', value: 'none', src: '', categoryLabel: '' }
 const centerIconCategories: CenterIconCategory[] = [
@@ -114,6 +121,18 @@ const centerIconCategories: CenterIconCategory[] = [
     src: '/icons/center/event/index.svg',
     icons: [
       createCenterIconOption('event', 'Event', 'Tickets', 'tickets')
+    ]
+  },
+  {
+    label: 'Social Media',
+    value: 'social-media',
+    src: '/icons/center/social-media/index.svg',
+    icons: [
+      createCenterIconOption('social-media', 'Social Media', 'Instagram', 'instagram'),
+      createCenterIconOption('social-media', 'Social Media', 'Facebook', 'facebook'),
+      createCenterIconOption('social-media', 'Social Media', 'TikTok', 'tik-tok'),
+      createCenterIconOption('social-media', 'Social Media', 'YouTube', 'youtube'),
+      createCenterIconOption('social-media', 'Social Media', 'X', 'x')
     ]
   },
   {
@@ -194,8 +213,9 @@ const tailwindColors: TailwindColor[] = [
   { name: 'Neutral', bgClass: 'bg-neutral-400', fillClass: 'fill-neutral-400', strokeClass: 'stroke-neutral-400', textClass: 'text-neutral-400' },
   { name: 'Stone', bgClass: 'bg-stone-400', fillClass: 'fill-stone-400', strokeClass: 'stroke-stone-400', textClass: 'text-stone-400' }
 ]
+const hasQrContent = computed(() => qrStore.content.length > 0)
 const generatedQr = computed(() => {
-  if (!qrStore.content) {
+  if (!hasQrContent.value) {
     return {
       code: undefined,
       error: 'Enter a URL to generate a QR code.'
@@ -238,12 +258,17 @@ const filteredCenterIconOptions = computed(() => {
 const activeCenterIconCategoryDetails = computed(() => centerIconCategories.find(category => category.value === activeCenterIconCategory.value))
 const activeCenterIconCategoryIcons = computed(() => activeCenterIconCategoryDetails.value?.icons ?? [])
 const labelText = computed(() => qrLabel.value.trim())
+const additionalText = computed(() => qrAdditionalText.value.trim().slice(0, maxAdditionalTextLength))
+const additionalTextLines = computed(() => wrapAdditionalText(additionalText.value))
+const longestAdditionalTextLine = computed(() => additionalTextLines.value.reduce((longest, line) => line.length > longest.length ? line : longest, ''))
+const hasLabelText = computed(() => labelText.value.length > 0 || additionalText.value.length > 0)
 const selectedLabelFontClass = computed(() => labelFonts.find(font => font.value === selectedLabelFont.value)?.class ?? fallbackLabelFont.class)
+const selectedAdditionalTextFontClass = computed(() => labelFonts.find(font => font.value === selectedAdditionalTextFont.value)?.class ?? fallbackLabelFont.class)
 const selectedBorderStyle = computed(() => borderStyles.find(border => border.value === selectedBorder.value) ?? noBorderStyle)
 const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
-const labelHasDescender = computed(() => /[gjpqy]/.test(labelText.value))
-const labelIsTop = computed(() => labelText.value.length > 0 && selectedLabelPosition.value === 'top')
-const labelIsBottom = computed(() => labelText.value.length > 0 && selectedLabelPosition.value === 'bottom')
+const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
+const labelIsTop = computed(() => hasLabelText.value && selectedLabelPosition.value === 'top')
+const labelIsBottom = computed(() => hasLabelText.value && selectedLabelPosition.value === 'bottom')
 const borderContentInset = computed(() => {
   if (!hasBorder.value) {
     return 0
@@ -255,17 +280,34 @@ const borderContentInset = computed(() => {
 })
 const qrOutputSize = computed(() => qrSvgSize.value)
 const baseLabelFontSize = computed(() => qrOutputSize.value * 0.2)
+const baseAdditionalTextFontSize = computed(() => qrOutputSize.value * 0.095)
 const labelFontSize = computed(() => baseLabelFontSize.value * labelFontScale.value)
-const labelGap = computed(() => labelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
-const labelBlockHeight = computed(() => labelText.value ? labelFontSize.value : 0)
+const additionalTextFontSize = computed(() => baseAdditionalTextFontSize.value * labelFontScale.value)
+const additionalTextLineGap = computed(() => additionalTextLines.value.length > 1 ? additionalTextFontSize.value * 0.12 : 0)
+const additionalTextBlockHeight = computed(() => additionalTextLines.value.length ? additionalTextFontSize.value * additionalTextLines.value.length + additionalTextLineGap.value * (additionalTextLines.value.length - 1) : 0)
+const additionalTextGap = computed(() => labelText.value && additionalTextLines.value.length ? labelFontSize.value * 0.12 : 0)
+const labelGap = computed(() => hasLabelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
+const labelBlockHeight = computed(() => {
+  if (!hasLabelText.value) {
+    return 0
+  }
+
+  return (labelText.value ? labelFontSize.value : 0) + additionalTextGap.value + additionalTextBlockHeight.value
+})
 const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value : 0)
 const bottomLabelHeight = computed(() => labelIsBottom.value ? labelBlockHeight.value : 0)
 const topLabelGap = computed(() => labelIsTop.value ? labelGap.value : 0)
 const bottomLabelGap = computed(() => labelIsBottom.value ? labelGap.value : 0)
-const labelBottomTrim = computed(() => labelIsBottom.value && hasBorder.value && !labelHasDescender.value ? labelFontSize.value * 0.18 : 0)
+const labelBottomTrim = computed(() => {
+  if (!labelIsBottom.value || !hasBorder.value || labelHasDescender.value) {
+    return 0
+  }
+
+  return (labelText.value ? labelFontSize.value : additionalTextFontSize.value) * 0.18
+})
 const qrOutputX = computed(() => borderContentInset.value)
 const qrOutputY = computed(() => borderContentInset.value + topLabelHeight.value + topLabelGap.value)
-const centerIconCircleDiameter = computed(() => 7)
+const centerIconCircleDiameter = computed(() => qrOutputSize.value * versionOneCenterIconCircleDiameter / versionOneQrSize)
 const centerIconCircleRadius = computed(() => centerIconCircleDiameter.value / 2)
 const centerIconSize = computed(() => centerIconCircleDiameter.value * 0.68)
 const centerIconX = computed(() => qrOutputX.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
@@ -274,7 +316,8 @@ const outputSvgWidth = computed(() => qrSvgSize.value + borderContentInset.value
 const outputBottomInset = computed(() => hasBorder.value ? borderContentInset.value : bottomLabelGap.value)
 const outputSvgHeight = computed(() => borderContentInset.value + topLabelHeight.value + topLabelGap.value + qrOutputSize.value + bottomLabelGap.value + bottomLabelHeight.value + outputBottomInset.value - labelBottomTrim.value)
 const outputViewBox = computed(() => generatedQr.value.code ? `0 0 ${outputSvgWidth.value} ${outputSvgHeight.value}` : '0 0 1 1')
-const labelY = computed(() => labelIsTop.value ? borderContentInset.value + labelBlockHeight.value / 2 : qrOutputY.value + qrOutputSize.value + bottomLabelGap.value + labelBlockHeight.value / 2)
+const labelBlockY = computed(() => labelIsTop.value ? borderContentInset.value : qrOutputY.value + qrOutputSize.value + bottomLabelGap.value)
+const labelY = computed(() => labelBlockY.value + labelFontSize.value / 2)
 const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
   ...line,
   height: outputSvgHeight.value - line.inset * 2,
@@ -356,19 +399,34 @@ function getCenterIconSearchText(icon: CenterIconOption) {
   return `${icon.categoryLabel} ${icon.label} ${icon.value}`.toLowerCase()
 }
 
+function wrapAdditionalText(value: string) {
+  return value
+    .replace(/\s+/g, ' ')
+    .slice(0, maxAdditionalTextLength)
+    .match(new RegExp(`.{1,${additionalTextLineLength}}`, 'g'))
+    ?.map(line => line.trim()) ?? []
+}
+
+function getAdditionalTextLineY(index: number) {
+  return labelBlockY.value + (labelText.value ? labelFontSize.value + additionalTextGap.value : 0) + additionalTextFontSize.value / 2 + index * (additionalTextFontSize.value + additionalTextLineGap.value)
+}
+
 async function updateLabelFontScale() {
   await nextTick()
 
-  const element = labelMeasureElement.value
+  const labelElement = labelMeasureElement.value
+  const additionalElement = additionalTextMeasureElement.value
 
-  if (!element || !labelText.value) {
+  if (!hasLabelText.value) {
     labelFontScale.value = 1
     return
   }
 
-  const labelWidth = element.getComputedTextLength()
+  const labelWidth = labelText.value && labelElement ? labelElement.getComputedTextLength() : 0
+  const additionalTextWidth = longestAdditionalTextLine.value && additionalElement ? additionalElement.getComputedTextLength() : 0
+  const textWidth = Math.max(labelWidth, additionalTextWidth)
 
-  labelFontScale.value = labelWidth > 0 ? Math.min(1, qrOutputSize.value / labelWidth) : 1
+  labelFontScale.value = textWidth > 0 ? Math.min(1, qrOutputSize.value / textWidth) : 1
 }
 
 function getLabelFont(value: unknown) {
@@ -417,7 +475,12 @@ onMounted(async () => {
   void document.fonts?.ready.then(updateLabelFontScale)
 })
 
-watch([labelText, selectedLabelFont, qrOutputSize], updateLabelFontScale, { flush: 'post' })
+watch([labelText, additionalText, selectedLabelFont, selectedAdditionalTextFont, qrOutputSize], updateLabelFontScale, { flush: 'post' })
+watch(hasQrContent, (hasContent) => {
+  if (!hasContent) {
+    activeTool.value = null
+  }
+})
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateColorScrollState)
@@ -436,10 +499,19 @@ onUnmounted(() => {
           size="xl"
           type="url"
         />
+        <p
+          v-if="!hasQrContent"
+          class="mt-2 text-sm text-muted"
+        >
+          {{ generatedQr.error }}
+        </p>
       </UFormField>
     </UCard>
 
-    <div class="space-y-3">
+    <div
+      v-if="hasQrContent"
+      class="space-y-3"
+    >
       <div
         aria-label="QR code tools"
         class="flex flex-wrap items-center gap-2"
@@ -596,6 +668,40 @@ onUnmounted(() => {
           <UFormField label="Font">
             <USelect
               v-model="selectedLabelFont"
+              class="w-full"
+              :items="labelFontItems"
+              size="lg"
+            >
+              <template #default="{ modelValue }">
+                <span :class="getLabelFont(modelValue).class">
+                  {{ getLabelFont(modelValue).label }}
+                </span>
+              </template>
+
+              <template #item-label="{ item }">
+                <span :class="getLabelFontFromItem(item).class">
+                  {{ getLabelFontFromItem(item).label }}
+                </span>
+              </template>
+            </USelect>
+          </UFormField>
+        </div>
+
+        <div class="grid grid-cols-[minmax(0,1fr)_10rem] gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+          <UFormField label="Additional Text">
+            <UInput
+              v-model="qrAdditionalText"
+              class="w-full"
+              icon="i-lucide-text-cursor-input"
+              :maxlength="maxAdditionalTextLength"
+              placeholder="Add smaller text"
+              size="lg"
+            />
+          </UFormField>
+
+          <UFormField label="Font">
+            <USelect
+              v-model="selectedAdditionalTextFont"
               class="w-full"
               :items="labelFontItems"
               size="lg"
@@ -821,14 +927,17 @@ onUnmounted(() => {
     </div>
 
     <UAlert
-      v-if="generatedQr.error"
+      v-if="hasQrContent && generatedQr.error"
       color="warning"
       icon="i-lucide-triangle-alert"
       :title="generatedQr.error"
       variant="subtle"
     />
 
-    <section class="flex min-h-0 flex-1 items-center justify-center">
+    <section
+      v-if="hasQrContent"
+      class="flex justify-center"
+    >
       <UCard class="w-full max-w-[min(86svw,68svh)]">
         <div class="w-full rounded-lg bg-white">
           <svg
@@ -904,6 +1013,17 @@ onUnmounted(() => {
               {{ labelText }}
             </text>
             <text
+              v-if="longestAdditionalTextLine"
+              ref="additionalTextMeasureElement"
+              aria-hidden="true"
+              fill="currentColor"
+              :font-size="baseAdditionalTextFontSize"
+              opacity="0"
+              :class="[qrTextClass, selectedAdditionalTextFontClass]"
+            >
+              {{ longestAdditionalTextLine }}
+            </text>
+            <text
               v-if="labelText"
               fill="currentColor"
               :font-size="labelFontSize"
@@ -914,6 +1034,21 @@ onUnmounted(() => {
               :class="[qrTextClass, selectedLabelFontClass]"
             >
               {{ labelText }}
+            </text>
+            <text
+              v-for="(line, index) in additionalTextLines"
+              :key="`additional-text-${index}`"
+              fill="currentColor"
+              :font-size="additionalTextFontSize"
+              font-weight="300"
+              opacity="0.68"
+              :x="outputSvgWidth / 2"
+              :y="getAdditionalTextLineY(index)"
+              dominant-baseline="central"
+              text-anchor="middle"
+              :class="[qrTextClass, selectedAdditionalTextFontClass]"
+            >
+              {{ line }}
             </text>
             <rect
               v-for="line in selectedBorderLines"
