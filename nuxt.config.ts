@@ -18,6 +18,15 @@ export default defineNuxtConfig({
 
   compatibilityDate: '2025-01-15',
 
+  nitro: {
+    prerender: {
+      autoSubfolderIndex: false
+    },
+    cloudflare: {
+      nodeCompat: true
+    }
+  },
+
   eslint: {
     config: {
       stylistic: {
