@@ -27,6 +27,12 @@ export default defineNuxtConfig({
     }
   },
 
+  vite: {
+    optimizeDeps: {
+      include: ['pdf-lib']
+    }
+  },
+
   eslint: {
     config: {
       stylistic: {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 
 type QrTool = 'colors' | 'step' | 'label' | 'icon' | 'border'
@@ -62,6 +63,7 @@ const activeTool = ref<QrTool | null>(null)
 const selectedQrColor = ref<TailwindColor | null>(null)
 const colorScroller = ref<HTMLElement | null>(null)
 const iconScroller = ref<HTMLElement | null>(null)
+const outputSvgElement = ref<SVGSVGElement | null>(null)
 const labelMeasureElement = ref<SVGTextElement | null>(null)
 const additionalTextMeasureElement = ref<SVGTextElement | null>(null)
 const labelTextWidth = ref(0)
@@ -80,6 +82,8 @@ const selectedLabelPosition = ref<LabelPosition>('bottom')
 const selectedCenterIcon = ref<CenterIconValue>('none')
 const activeCenterIconCategory = ref<string | null>(null)
 const centerIconSearch = ref('')
+const isPreparingLabelPrint = ref(false)
+const printLabelError = ref('')
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const additionalTextLineLength = 40
@@ -698,6 +702,119 @@ function getPreviewStrokeWidth(line: BorderLine) {
   return line.strokeWidth * 2
 }
 
+async function goToPrintLabels() {
+  if (!generatedQr.value.code || isPreparingLabelPrint.value) {
+    return
+  }
+
+  isPreparingLabelPrint.value = true
+  printLabelError.value = ''
+
+  try {
+    const payload = await createLabelPrintPayload()
+
+    sessionStorage.setItem(labelPrintPayloadStorageKey, JSON.stringify(payload))
+    await navigateTo('/print-labels')
+  } catch (error) {
+    printLabelError.value = getErrorMessage(error, 'Unable to prepare the label print page.')
+  } finally {
+    isPreparingLabelPrint.value = false
+  }
+}
+
+async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
+  const sourceSvg = outputSvgElement.value
+
+  if (!sourceSvg) {
+    throw new Error('QR preview is not available.')
+  }
+
+  const clonedSvg = sourceSvg.cloneNode(true) as SVGSVGElement
+
+  clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+  clonedSvg.setAttribute('width', `${outputSvgWidth.value}`)
+  clonedSvg.setAttribute('height', `${outputSvgHeight.value}`)
+
+  inlineComputedSvgStyles(sourceSvg, clonedSvg)
+  await inlineSvgImages(clonedSvg)
+
+  return {
+    createdAt: Date.now(),
+    height: outputSvgHeight.value,
+    svg: new XMLSerializer().serializeToString(clonedSvg),
+    title: qrStore.content,
+    width: outputSvgWidth.value
+  }
+}
+
+function inlineComputedSvgStyles(sourceSvg: SVGSVGElement, clonedSvg: SVGSVGElement) {
+  const sourceElements = [sourceSvg, ...sourceSvg.querySelectorAll('*')]
+  const clonedElements = [clonedSvg, ...clonedSvg.querySelectorAll('*')]
+  const styleProperties = ['color', 'fill', 'stroke', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'opacity']
+
+  sourceElements.forEach((sourceElement, index) => {
+    const clonedElement = clonedElements[index]
+
+    if (!(clonedElement instanceof SVGElement)) {
+      return
+    }
+
+    const computedStyle = window.getComputedStyle(sourceElement)
+
+    styleProperties.forEach((property) => {
+      const value = computedStyle.getPropertyValue(property)
+
+      if (value) {
+        clonedElement.style.setProperty(property, value)
+      }
+    })
+  })
+}
+
+async function inlineSvgImages(svg: SVGSVGElement) {
+  const images = Array.from(svg.querySelectorAll('image'))
+
+  await Promise.all(images.map(async (image) => {
+    const href = image.getAttribute('href') || image.getAttributeNS('http://www.w3.org/1999/xlink', 'href')
+
+    if (!href || href.startsWith('data:')) {
+      return
+    }
+
+    const response = await fetch(href)
+
+    if (!response.ok) {
+      throw new Error(`Unable to load icon for PDF: ${href}`)
+    }
+
+    const dataUrl = await blobToDataUrl(await response.blob())
+
+    image.setAttribute('href', dataUrl)
+    image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl)
+  }))
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.addEventListener('load', () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+        return
+      }
+
+      reject(new Error('Unable to read icon asset.'))
+    })
+    reader.addEventListener('error', () => reject(reader.error ?? new Error('Unable to read icon asset.')))
+    reader.readAsDataURL(blob)
+  })
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error ? error.message : fallback
+}
+
 function updateColorScrollState() {
   const scroller = colorScroller.value
 
@@ -787,59 +904,61 @@ onUnmounted(() => {
       v-if="hasQrContent"
       class="space-y-3"
     >
-      <div
-        aria-label="QR code tools"
-        class="flex flex-wrap items-center gap-2"
-        role="toolbar"
-      >
-        <UFieldGroup>
+      <div class="flex flex-wrap items-center gap-2">
+        <div
+          aria-label="QR code tools"
+          class="flex flex-wrap items-center gap-2"
+          role="toolbar"
+        >
+          <UFieldGroup>
+            <UButton
+              :aria-pressed="activeTool === 'colors'"
+              :color="activeTool === 'colors' ? 'primary' : 'neutral'"
+              icon="i-lucide-palette"
+              :variant="activeTool === 'colors' ? 'solid' : 'subtle'"
+              @click="selectTool('colors')"
+            >
+              Colors
+            </UButton>
+            <UButton
+              v-if="selectedQrColor"
+              :aria-pressed="activeTool === 'step'"
+              :color="activeTool === 'step' ? 'primary' : 'neutral'"
+              icon="i-lucide-lab-stairs"
+              :variant="activeTool === 'step' ? 'solid' : 'subtle'"
+              @click="selectTool('step')"
+            >
+              Steps
+            </UButton>
+          </UFieldGroup>
           <UButton
-            :aria-pressed="activeTool === 'colors'"
-            :color="activeTool === 'colors' ? 'primary' : 'neutral'"
-            icon="i-lucide-palette"
-            :variant="activeTool === 'colors' ? 'solid' : 'subtle'"
-            @click="selectTool('colors')"
+            :aria-pressed="activeTool === 'label'"
+            :color="activeTool === 'label' ? 'primary' : 'neutral'"
+            icon="i-lucide-type"
+            :variant="activeTool === 'label' ? 'solid' : 'subtle'"
+            @click="selectTool('label')"
           >
-            Colors
+            Label
           </UButton>
           <UButton
-            v-if="selectedQrColor"
-            :aria-pressed="activeTool === 'step'"
-            :color="activeTool === 'step' ? 'primary' : 'neutral'"
-            icon="i-lucide-lab-stairs"
-            :variant="activeTool === 'step' ? 'solid' : 'subtle'"
-            @click="selectTool('step')"
+            :aria-pressed="activeTool === 'icon'"
+            :color="activeTool === 'icon' ? 'primary' : 'neutral'"
+            icon="i-lucide-image"
+            :variant="activeTool === 'icon' ? 'solid' : 'subtle'"
+            @click="selectTool('icon')"
           >
-            Steps
+            Icon
           </UButton>
-        </UFieldGroup>
-        <UButton
-          :aria-pressed="activeTool === 'label'"
-          :color="activeTool === 'label' ? 'primary' : 'neutral'"
-          icon="i-lucide-type"
-          :variant="activeTool === 'label' ? 'solid' : 'subtle'"
-          @click="selectTool('label')"
-        >
-          Label
-        </UButton>
-        <UButton
-          :aria-pressed="activeTool === 'icon'"
-          :color="activeTool === 'icon' ? 'primary' : 'neutral'"
-          icon="i-lucide-image"
-          :variant="activeTool === 'icon' ? 'solid' : 'subtle'"
-          @click="selectTool('icon')"
-        >
-          Icon
-        </UButton>
-        <UButton
-          :aria-pressed="activeTool === 'border'"
-          :color="activeTool === 'border' ? 'primary' : 'neutral'"
-          icon="i-lucide-square"
-          :variant="activeTool === 'border' ? 'solid' : 'subtle'"
-          @click="selectTool('border')"
-        >
-          Border
-        </UButton>
+          <UButton
+            :aria-pressed="activeTool === 'border'"
+            :color="activeTool === 'border' ? 'primary' : 'neutral'"
+            icon="i-lucide-square"
+            :variant="activeTool === 'border' ? 'solid' : 'subtle'"
+            @click="selectTool('border')"
+          >
+            Border
+          </UButton>
+        </div>
       </div>
 
       <div
@@ -1371,6 +1490,13 @@ onUnmounted(() => {
       :title="generatedQr.error"
       variant="subtle"
     />
+    <UAlert
+      v-if="printLabelError"
+      color="warning"
+      icon="i-lucide-triangle-alert"
+      :title="printLabelError"
+      variant="subtle"
+    />
 
     <section
       v-if="hasQrContent"
@@ -1380,6 +1506,7 @@ onUnmounted(() => {
         <div class="w-full rounded-lg bg-white">
           <svg
             v-if="generatedQr.code"
+            ref="outputSvgElement"
             aria-label="Generated QR code"
             class="h-auto w-full"
             role="img"
@@ -1513,10 +1640,26 @@ onUnmounted(() => {
 
     <div
       v-if="generatedQr.code"
-      class="flex items-center justify-center gap-2 text-sm text-muted"
+      class="flex flex-col items-center justify-center gap-3"
     >
-      <UIcon name="i-lucide-scan-line" />
-      <span>Version {{ generatedQr.code.version }} · {{ generatedQr.code.size }}×{{ generatedQr.code.size }} modules</span>
+      <UButton
+        color="neutral"
+        :disabled="isPreparingLabelPrint"
+        :loading="isPreparingLabelPrint"
+        variant="subtle"
+        @click="goToPrintLabels"
+      >
+        <span>Print to Labels</span>
+        <UIcon
+          name="i-lucide-arrow-right"
+          class="size-4"
+        />
+      </UButton>
+
+      <div class="flex items-center gap-2 text-sm text-muted">
+        <UIcon name="i-lucide-scan-line" />
+        <span>Version {{ generatedQr.code.version }} · {{ generatedQr.code.size }}×{{ generatedQr.code.size }} modules</span>
+      </div>
     </div>
   </UContainer>
 </template>
