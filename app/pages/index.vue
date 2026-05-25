@@ -61,12 +61,15 @@ const qrStore = useQrStore()
 const activeTool = ref<QrTool | null>(null)
 const selectedQrColor = ref<TailwindColor | null>(null)
 const colorScroller = ref<HTMLElement | null>(null)
+const iconScroller = ref<HTMLElement | null>(null)
 const labelMeasureElement = ref<SVGTextElement | null>(null)
 const additionalTextMeasureElement = ref<SVGTextElement | null>(null)
 const labelTextWidth = ref(0)
 const additionalTextLineWidth = ref(0)
 const hasColorsBefore = ref(false)
 const hasColorsAfter = ref(false)
+const hasIconsBefore = ref(false)
+const hasIconsAfter = ref(false)
 const selectedColorStep = ref(500)
 const labelSizeStep = ref(0)
 const additionalTextSizeStep = ref(0)
@@ -435,11 +438,22 @@ async function selectTool(tool: QrTool) {
   if (tool !== 'colors') {
     hasColorsBefore.value = false
     hasColorsAfter.value = false
-    return
+  }
+
+  if (tool !== 'icon') {
+    hasIconsBefore.value = false
+    hasIconsAfter.value = false
   }
 
   await nextTick()
-  updateColorScrollState()
+
+  if (tool === 'colors') {
+    updateColorScrollState()
+  }
+
+  if (tool === 'icon') {
+    updateIconScrollState()
+  }
 }
 
 function selectBlackColor() {
@@ -699,16 +713,44 @@ function updateColorScrollState() {
   hasColorsAfter.value = scroller.scrollLeft < maxScrollLeft - 1
 }
 
+function updateIconScrollState() {
+  const scroller = iconScroller.value
+
+  if (!scroller || activeTool.value !== 'icon') {
+    hasIconsBefore.value = false
+    hasIconsAfter.value = false
+    return
+  }
+
+  const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth
+
+  hasIconsBefore.value = scroller.scrollLeft > 1
+  hasIconsAfter.value = scroller.scrollLeft < maxScrollLeft - 1
+}
+
+async function refreshIconScrollState() {
+  await nextTick()
+  updateIconScrollState()
+}
+
+function updateScrollStates() {
+  updateColorScrollState()
+  updateIconScrollState()
+}
+
 onMounted(async () => {
   await nextTick()
-  updateColorScrollState()
-  window.addEventListener('resize', updateColorScrollState)
+  updateScrollStates()
+  window.addEventListener('resize', updateScrollStates)
 
   await updateTextMeasurements()
   void document.fonts?.ready.then(updateTextMeasurements)
 })
 
 watch([labelText, longestAdditionalTextLine, selectedLabelFont, selectedAdditionalTextFont, qrOutputSize], updateTextMeasurements, { flush: 'post' })
+watch([activeTool, centerIconSearchTerm, activeCenterIconCategory], () => {
+  void refreshIconScrollState()
+}, { flush: 'post' })
 watch(hasQrContent, (hasContent) => {
   if (!hasContent) {
     activeTool.value = null
@@ -716,7 +758,7 @@ watch(hasQrContent, (hasContent) => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('resize', updateColorScrollState)
+  window.removeEventListener('resize', updateScrollStates)
 })
 </script>
 
@@ -1087,131 +1129,17 @@ onUnmounted(() => {
 
         <div
           v-if="hasCenterIconSearch"
-          aria-label="Matching center icons"
-          class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-          role="radiogroup"
+          class="relative"
         >
-          <button
-            v-for="icon in filteredCenterIconOptions"
-            :key="icon.value"
-            :aria-label="`Use ${icon.label} as the center icon`"
-            :aria-checked="selectedCenterIcon === icon.value"
-            class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-            :class="selectedCenterIcon === icon.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-            role="radio"
-            type="button"
-            @click="selectCenterIcon(icon)"
-          >
-            <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
-              <img
-                :src="icon.src"
-                alt=""
-                aria-hidden="true"
-                class="size-full object-contain"
-              >
-            </span>
-            <span>{{ icon.label }}</span>
-          </button>
-
-          <p
-            v-if="filteredCenterIconOptions.length === 0"
-            class="py-2 text-sm text-muted"
-          >
-            No icons match your search.
-          </p>
-        </div>
-
-        <div
-          v-else-if="!activeCenterIconCategory"
-          aria-label="Center icon folders"
-          class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-        >
-          <button
-            :aria-checked="selectedCenterIcon === 'none'"
-            aria-label="Use no center icon"
-            class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-            :class="selectedCenterIcon === 'none' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-            role="radio"
-            type="button"
-            @click="selectCenterIcon(noCenterIconOption)"
-          >
-            <span
-              aria-hidden="true"
-              class="grid size-10 place-items-center rounded-full bg-white text-slate-400 ring-1 ring-black/10"
-            >
-              <UIcon
-                name="i-lucide-ban"
-                class="size-5"
-              />
-            </span>
-            <span>None</span>
-          </button>
-
-          <button
-            v-for="category in centerIconCategories"
-            :key="category.value"
-            :aria-label="`Open ${category.label} icons`"
-            class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-            :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-            type="button"
-            @click="selectCenterIconCategory(category)"
-          >
-            <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
-              <img
-                :src="category.src"
-                alt=""
-                aria-hidden="true"
-                class="size-full object-contain"
-              >
-            </span>
-            <span>{{ category.label }}</span>
-          </button>
-        </div>
-
-        <div
-          v-else
-          class="space-y-3"
-        >
-          <div class="flex items-center gap-3">
-            <UButton
-              color="neutral"
-              icon="i-lucide-arrow-left"
-              size="sm"
-              variant="subtle"
-              @click="showParentCenterIconCategory"
-            >
-              {{ activeCenterIconBackLabel }}
-            </UButton>
-            <span class="text-sm font-medium text-highlighted">{{ activeCenterIconCategoryDetails?.label }}</span>
-          </div>
-
           <div
-            aria-label="Center icons in folder"
+            ref="iconScroller"
+            aria-label="Matching center icons"
             class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
             role="radiogroup"
+            @scroll="updateIconScrollState"
           >
             <button
-              v-for="category in activeCenterIconSubcategories"
-              :key="category.value"
-              :aria-label="`Open ${category.label} icons`"
-              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-              :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectCenterIconCategory(category)"
-            >
-              <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
-                <img
-                  :src="category.src"
-                  alt=""
-                  aria-hidden="true"
-                  class="size-full object-contain"
-                >
-              </span>
-              <span>{{ category.label }}</span>
-            </button>
-
-            <button
-              v-for="icon in activeCenterIconCategoryIcons"
+              v-for="icon in filteredCenterIconOptions"
               :key="icon.value"
               :aria-label="`Use ${icon.label} as the center icon`"
               :aria-checked="selectedCenterIcon === icon.value"
@@ -1231,6 +1159,169 @@ onUnmounted(() => {
               </span>
               <span>{{ icon.label }}</span>
             </button>
+
+            <p
+              v-if="filteredCenterIconOptions.length === 0"
+              class="py-2 text-sm text-muted"
+            >
+              No icons match your search.
+            </p>
+          </div>
+
+          <div
+            v-if="hasIconsBefore"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
+          />
+          <div
+            v-if="hasIconsAfter"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
+          />
+        </div>
+
+        <div
+          v-else-if="!activeCenterIconCategory"
+          class="relative"
+        >
+          <div
+            ref="iconScroller"
+            aria-label="Center icon folders"
+            class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
+            @scroll="updateIconScrollState"
+          >
+            <button
+              :aria-checked="selectedCenterIcon === 'none'"
+              aria-label="Use no center icon"
+              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+              :class="selectedCenterIcon === 'none' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              role="radio"
+              type="button"
+              @click="selectCenterIcon(noCenterIconOption)"
+            >
+              <span
+                aria-hidden="true"
+                class="grid size-10 place-items-center rounded-full bg-white text-slate-400 ring-1 ring-black/10"
+              >
+                <UIcon
+                  name="i-lucide-ban"
+                  class="size-5"
+                />
+              </span>
+              <span>None</span>
+            </button>
+
+            <button
+              v-for="category in centerIconCategories"
+              :key="category.value"
+              :aria-label="`Open ${category.label} icons`"
+              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+              :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectCenterIconCategory(category)"
+            >
+              <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                <img
+                  :src="category.src"
+                  alt=""
+                  aria-hidden="true"
+                  class="size-full object-contain"
+                >
+              </span>
+              <span>{{ category.label }}</span>
+            </button>
+          </div>
+
+          <div
+            v-if="hasIconsBefore"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
+          />
+          <div
+            v-if="hasIconsAfter"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
+          />
+        </div>
+
+        <div
+          v-else
+          class="space-y-3"
+        >
+          <div class="flex items-center gap-3">
+            <UButton
+              color="neutral"
+              icon="i-lucide-arrow-left"
+              size="sm"
+              variant="subtle"
+              @click="showParentCenterIconCategory"
+            >
+              {{ activeCenterIconBackLabel }}
+            </UButton>
+            <span class="text-sm font-medium text-highlighted">{{ activeCenterIconCategoryDetails?.label }}</span>
+          </div>
+
+          <div class="relative">
+            <div
+              ref="iconScroller"
+              aria-label="Center icons in folder"
+              class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
+              role="radiogroup"
+              @scroll="updateIconScrollState"
+            >
+              <button
+                v-for="category in activeCenterIconSubcategories"
+                :key="category.value"
+                :aria-label="`Open ${category.label} icons`"
+                class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+                :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectCenterIconCategory(category)"
+              >
+                <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                  <img
+                    :src="category.src"
+                    alt=""
+                    aria-hidden="true"
+                    class="size-full object-contain"
+                  >
+                </span>
+                <span>{{ category.label }}</span>
+              </button>
+
+              <button
+                v-for="icon in activeCenterIconCategoryIcons"
+                :key="icon.value"
+                :aria-label="`Use ${icon.label} as the center icon`"
+                :aria-checked="selectedCenterIcon === icon.value"
+                class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+                :class="selectedCenterIcon === icon.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                role="radio"
+                type="button"
+                @click="selectCenterIcon(icon)"
+              >
+                <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                  <img
+                    :src="icon.src"
+                    alt=""
+                    aria-hidden="true"
+                    class="size-full object-contain"
+                  >
+                </span>
+                <span>{{ icon.label }}</span>
+              </button>
+            </div>
+
+            <div
+              v-if="hasIconsBefore"
+              aria-hidden="true"
+              class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
+            />
+            <div
+              v-if="hasIconsAfter"
+              aria-hidden="true"
+              class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
+            />
           </div>
         </div>
       </div>
