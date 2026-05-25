@@ -5,6 +5,7 @@ import { createQrCode, createQrSvgPath } from '~/utils/qr'
 type QrTool = 'colors' | 'step' | 'label' | 'icon' | 'border'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double'
 type CenterIconValue = string
+type AdditionalTextPlacement = 'above' | 'below'
 type LabelPosition = 'top' | 'left' | 'right' | 'bottom'
 type TailwindColorUtility = 'bg' | 'fill' | 'stroke' | 'text'
 
@@ -40,6 +41,7 @@ type CenterIconCategory = {
   value: string
   src: string
   icons: CenterIconOption[]
+  categories?: CenterIconCategory[]
 }
 
 type BorderLine = {
@@ -61,12 +63,16 @@ const selectedQrColor = ref<TailwindColor | null>(null)
 const colorScroller = ref<HTMLElement | null>(null)
 const labelMeasureElement = ref<SVGTextElement | null>(null)
 const additionalTextMeasureElement = ref<SVGTextElement | null>(null)
+const labelTextWidth = ref(0)
+const additionalTextLineWidth = ref(0)
 const hasColorsBefore = ref(false)
 const hasColorsAfter = ref(false)
 const selectedColorStep = ref(500)
-const labelFontScale = ref(1)
+const labelSizeStep = ref(0)
+const additionalTextSizeStep = ref(0)
 const qrLabel = ref('')
 const qrAdditionalText = ref('')
+const selectedAdditionalTextPlacement = ref<AdditionalTextPlacement>('below')
 const selectedLabelPosition = ref<LabelPosition>('bottom')
 const selectedCenterIcon = ref<CenterIconValue>('none')
 const activeCenterIconCategory = ref<string | null>(null)
@@ -75,6 +81,8 @@ const centerIconSearch = ref('')
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const additionalTextLineLength = 40
 const maxAdditionalTextLength = additionalTextLineLength * 3
+const minTextSizeStep = -2
+const maxAdditionalTextSizeStep = 4
 const versionOneQrSize = 21
 const versionOneCenterIconCircleDiameter = 7
 
@@ -99,7 +107,30 @@ const centerIconCategories: CenterIconCategory[] = [
     value: 'website',
     src: '/icons/center/website/index.svg',
     icons: [
-      createCenterIconOption('website', 'Website', 'Link', 'link')
+      createCenterIconOption('website', 'Website', 'Link', 'link'),
+      createCenterIconOption('website', 'Website', 'Website', 'website'),
+      createCenterIconOption('website', 'Website', 'Globe', 'globe'),
+      createCenterIconOption('website', 'Website', 'Store', 'store')
+    ]
+  },
+  {
+    label: 'Apps',
+    value: 'apps',
+    src: '/icons/center/apps/index.svg',
+    icons: [
+      createCenterIconOption('apps', 'Apps', 'App Store', 'app-store'),
+      createCenterIconOption('apps', 'Apps', 'Play Store', 'play-store')
+    ]
+  },
+  {
+    label: 'Chat',
+    value: 'chat',
+    src: '/icons/center/chat/index.svg',
+    icons: [
+      createCenterIconOption('chat', 'Chat', 'Line', 'line'),
+      createCenterIconOption('chat', 'Chat', 'Messenger', 'messenger'),
+      createCenterIconOption('chat', 'Chat', 'Telegram', 'telegram'),
+      createCenterIconOption('chat', 'Chat', 'WhatsApp', 'whatsapp')
     ]
   },
   {
@@ -113,6 +144,18 @@ const centerIconCategories: CenterIconCategory[] = [
       createCenterIconOption('restaurant', 'Restaurant', 'Wine', 'wine'),
       createCenterIconOption('restaurant', 'Restaurant', 'Cocktail', 'cocktail'),
       createCenterIconOption('restaurant', 'Restaurant', 'Beer', 'beer')
+    ],
+    categories: [
+      {
+        label: 'Delivery',
+        value: 'restaurant/delivery',
+        src: '/icons/center/restaurant/delivery/index.svg',
+        icons: [
+          createCenterIconOption('restaurant/delivery', 'Restaurant Delivery', 'DoorDash', 'doordash'),
+          createCenterIconOption('restaurant/delivery', 'Restaurant Delivery', 'Grubhub', 'grubhub'),
+          createCenterIconOption('restaurant/delivery', 'Restaurant Delivery', 'Uber Eats', 'ubereats')
+        ]
+      }
     ]
   },
   {
@@ -124,12 +167,47 @@ const centerIconCategories: CenterIconCategory[] = [
     ]
   },
   {
+    label: 'Legal',
+    value: 'legal',
+    src: '/icons/center/legal/index.svg',
+    icons: [
+      createCenterIconOption('legal', 'Legal', 'Document', 'document'),
+      createCenterIconOption('legal', 'Legal', 'Waiver', 'waiver'),
+      createCenterIconOption('legal', 'Legal', 'Signature', 'signature')
+    ]
+  },
+  {
+    label: 'Review',
+    value: 'review',
+    src: '/icons/center/review/index.svg',
+    icons: [
+      createCenterIconOption('review', 'Review', 'Feedback', 'feedback'),
+      createCenterIconOption('review', 'Review', 'Google Maps', 'google-maps'),
+      createCenterIconOption('review', 'Review', 'Review', 'review'),
+      createCenterIconOption('review', 'Review', 'Yelp', 'yelp')
+    ]
+  },
+  {
+    label: 'Music',
+    value: 'music',
+    src: '/icons/center/music/index.svg',
+    icons: [
+      createCenterIconOption('music', 'Music', 'Apple Music', 'apple-music'),
+      createCenterIconOption('music', 'Music', 'Spotify', 'spotify'),
+      createCenterIconOption('music', 'Music', 'YouTube', 'youtube')
+    ]
+  },
+  {
     label: 'Social Media',
     value: 'social-media',
     src: '/icons/center/social-media/index.svg',
     icons: [
+      createCenterIconOption('social-media', 'Social Media', 'Discord', 'discord'),
       createCenterIconOption('social-media', 'Social Media', 'Instagram', 'instagram'),
       createCenterIconOption('social-media', 'Social Media', 'Facebook', 'facebook'),
+      createCenterIconOption('social-media', 'Social Media', 'LinkedIn', 'linkedin'),
+      createCenterIconOption('social-media', 'Social Media', 'Slack', 'slack'),
+      createCenterIconOption('social-media', 'Social Media', 'Snapchat', 'snapchat'),
       createCenterIconOption('social-media', 'Social Media', 'TikTok', 'tik-tok'),
       createCenterIconOption('social-media', 'Social Media', 'YouTube', 'youtube'),
       createCenterIconOption('social-media', 'Social Media', 'X', 'x')
@@ -144,12 +222,20 @@ const centerIconCategories: CenterIconCategory[] = [
       createCenterIconOption('payment', 'Payment', 'Apple Pay', 'apple-pay'),
       createCenterIconOption('payment', 'Payment', 'Tap to Pay', 'tap-to-pay'),
       createCenterIconOption('payment', 'Payment', 'Credit Card', 'credit-card'),
+      createCenterIconOption('payment', 'Payment', 'Cash App', 'cash-app'),
       createCenterIconOption('payment', 'Payment', 'Euro', 'euro'),
-      createCenterIconOption('payment', 'Payment', 'Dollar', 'dollar')
+      createCenterIconOption('payment', 'Payment', 'Dollar', 'dollar'),
+      createCenterIconOption('payment', 'Payment', 'PayPal', 'paypal'),
+      createCenterIconOption('payment', 'Payment', 'Receipt', 'receipt'),
+      createCenterIconOption('payment', 'Payment', 'Tips', 'tips'),
+      createCenterIconOption('payment', 'Payment', 'Venmo', 'venmo')
     ]
   }
 ]
-const centerIconOptions = [noCenterIconOption, ...centerIconCategories.flatMap(category => category.icons)]
+const centerIconCategoryList = getCenterIconCategories(centerIconCategories)
+const centerIconOptions = [noCenterIconOption, ...getCenterIconOptions(centerIconCategories)]
+const selectedCenterIconOption = computed(() => centerIconOptions.find(icon => icon.value === selectedCenterIcon.value) ?? noCenterIconOption)
+const hasCenterIcon = computed(() => selectedCenterIconOption.value.src.length > 0)
 
 const noBorderStyle: BorderStyle = {
   label: 'No border',
@@ -223,7 +309,7 @@ const generatedQr = computed(() => {
   }
 
   try {
-    const code = createQrCode(qrStore.content)
+    const code = createQrCode(qrStore.content, { minVersion: hasCenterIcon.value ? 3 : 1 })
 
     return {
       code,
@@ -242,8 +328,6 @@ const qrSvgSize = computed(() => generatedQr.value.code ? generatedQr.value.code
 const qrFillClass = computed(() => selectedQrColor.value ? getTailwindColorClass(selectedQrColor.value, 'fill') : 'fill-black')
 const qrStrokeClass = computed(() => selectedQrColor.value ? getTailwindColorClass(selectedQrColor.value, 'stroke') : 'stroke-black')
 const qrTextClass = computed(() => selectedQrColor.value ? getTailwindColorClass(selectedQrColor.value, 'text') : 'text-black')
-const selectedCenterIconOption = computed(() => centerIconOptions.find(icon => icon.value === selectedCenterIcon.value) ?? noCenterIconOption)
-const hasCenterIcon = computed(() => selectedCenterIconOption.value.src.length > 0)
 const centerIconSearchTerm = computed(() => centerIconSearch.value.trim().toLowerCase())
 const hasCenterIconSearch = computed(() => centerIconSearchTerm.value.length > 0)
 const filteredCenterIconOptions = computed(() => {
@@ -255,8 +339,11 @@ const filteredCenterIconOptions = computed(() => {
     .filter(icon => icon.value !== 'none')
     .filter(icon => getCenterIconSearchText(icon).includes(centerIconSearchTerm.value))
 })
-const activeCenterIconCategoryDetails = computed(() => centerIconCategories.find(category => category.value === activeCenterIconCategory.value))
+const activeCenterIconCategoryDetails = computed(() => centerIconCategoryList.find(category => category.value === activeCenterIconCategory.value))
 const activeCenterIconCategoryIcons = computed(() => activeCenterIconCategoryDetails.value?.icons ?? [])
+const activeCenterIconSubcategories = computed(() => activeCenterIconCategoryDetails.value?.categories ?? [])
+const activeCenterIconParentCategory = computed(() => activeCenterIconCategory.value ? getCenterIconParentCategory(activeCenterIconCategory.value, centerIconCategories) : null)
+const activeCenterIconBackLabel = computed(() => activeCenterIconParentCategory.value?.label ?? 'Folders')
 const labelText = computed(() => qrLabel.value.trim())
 const additionalText = computed(() => qrAdditionalText.value.trim().slice(0, maxAdditionalTextLength))
 const additionalTextLines = computed(() => wrapAdditionalText(additionalText.value))
@@ -281,8 +368,16 @@ const borderContentInset = computed(() => {
 const qrOutputSize = computed(() => qrSvgSize.value)
 const baseLabelFontSize = computed(() => qrOutputSize.value * 0.2)
 const baseAdditionalTextFontSize = computed(() => qrOutputSize.value * 0.095)
+const labelSizeMultiplier = computed(() => getSizeMultiplier(labelSizeStep.value))
+const additionalTextSizeMultiplier = computed(() => getSizeMultiplier(additionalTextSizeStep.value))
+const labelFontScale = computed(() => getFittedTextScale(labelTextWidth.value, labelSizeMultiplier.value))
+const additionalTextFontScale = computed(() => getFittedTextScale(additionalTextLineWidth.value, additionalTextSizeMultiplier.value))
 const labelFontSize = computed(() => baseLabelFontSize.value * labelFontScale.value)
-const additionalTextFontSize = computed(() => baseAdditionalTextFontSize.value * labelFontScale.value)
+const additionalTextFontSize = computed(() => baseAdditionalTextFontSize.value * additionalTextFontScale.value)
+const canIncreaseLabelSize = computed(() => labelText.value.length > 0 && labelTextWidth.value * labelFontScale.value < qrOutputSize.value - 0.01)
+const canDecreaseLabelSize = computed(() => labelText.value.length > 0 && labelSizeStep.value > minTextSizeStep)
+const canIncreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value < maxAdditionalTextSizeStep)
+const canDecreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value > minTextSizeStep)
 const additionalTextLineGap = computed(() => additionalTextLines.value.length > 1 ? additionalTextFontSize.value * 0.12 : 0)
 const additionalTextBlockHeight = computed(() => additionalTextLines.value.length ? additionalTextFontSize.value * additionalTextLines.value.length + additionalTextLineGap.value * (additionalTextLines.value.length - 1) : 0)
 const additionalTextGap = computed(() => labelText.value && additionalTextLines.value.length ? labelFontSize.value * 0.12 : 0)
@@ -317,7 +412,13 @@ const outputBottomInset = computed(() => hasBorder.value ? borderContentInset.va
 const outputSvgHeight = computed(() => borderContentInset.value + topLabelHeight.value + topLabelGap.value + qrOutputSize.value + bottomLabelGap.value + bottomLabelHeight.value + outputBottomInset.value - labelBottomTrim.value)
 const outputViewBox = computed(() => generatedQr.value.code ? `0 0 ${outputSvgWidth.value} ${outputSvgHeight.value}` : '0 0 1 1')
 const labelBlockY = computed(() => labelIsTop.value ? borderContentInset.value : qrOutputY.value + qrOutputSize.value + bottomLabelGap.value)
-const labelY = computed(() => labelBlockY.value + labelFontSize.value / 2)
+const labelY = computed(() => {
+  if (selectedAdditionalTextPlacement.value === 'above' && additionalTextLines.value.length) {
+    return labelBlockY.value + additionalTextBlockHeight.value + additionalTextGap.value + labelFontSize.value / 2
+  }
+
+  return labelBlockY.value + labelFontSize.value / 2
+})
 const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
   ...line,
   height: outputSvgHeight.value - line.inset * 2,
@@ -374,6 +475,34 @@ function selectLabelPosition(option: LabelPositionOption) {
   selectedLabelPosition.value = option.value
 }
 
+function selectAdditionalTextPlacement(placement: AdditionalTextPlacement) {
+  selectedAdditionalTextPlacement.value = placement
+}
+
+function increaseLabelSize() {
+  if (canIncreaseLabelSize.value) {
+    labelSizeStep.value++
+  }
+}
+
+function decreaseLabelSize() {
+  if (canDecreaseLabelSize.value) {
+    labelSizeStep.value--
+  }
+}
+
+function increaseAdditionalTextSize() {
+  if (canIncreaseAdditionalTextSize.value) {
+    additionalTextSizeStep.value++
+  }
+}
+
+function decreaseAdditionalTextSize() {
+  if (canDecreaseAdditionalTextSize.value) {
+    additionalTextSizeStep.value--
+  }
+}
+
 function selectCenterIcon(icon: CenterIconOption) {
   selectedCenterIcon.value = icon.value
 }
@@ -382,51 +511,155 @@ function selectCenterIconCategory(category: CenterIconCategory) {
   activeCenterIconCategory.value = category.value
 }
 
-function showCenterIconCategories() {
-  activeCenterIconCategory.value = null
+function showParentCenterIconCategory() {
+  activeCenterIconCategory.value = activeCenterIconParentCategory.value?.value ?? null
 }
 
-function createCenterIconOption(categoryValue: string, categoryLabel: string, label: string, fileName: string): CenterIconOption {
+function createCenterIconOption(categoryValue: string, categoryLabel: string, label: string, filePath: string): CenterIconOption {
   return {
     label,
-    value: `${categoryValue}/${fileName}`,
-    src: `/icons/center/${categoryValue}/${fileName}.svg`,
+    value: `${categoryValue}/${filePath}`,
+    src: `/icons/center/${categoryValue}/${filePath}.svg`,
     categoryLabel
   }
+}
+
+function getCenterIconCategories(categories: CenterIconCategory[]): CenterIconCategory[] {
+  return categories.flatMap(category => [
+    category,
+    ...getCenterIconCategories(category.categories ?? [])
+  ])
+}
+
+function getCenterIconOptions(categories: CenterIconCategory[]): CenterIconOption[] {
+  return categories.flatMap(category => [
+    ...category.icons,
+    ...getCenterIconOptions(category.categories ?? [])
+  ])
+}
+
+function getCenterIconParentCategory(value: string, categories: CenterIconCategory[], parent: CenterIconCategory | null = null): CenterIconCategory | null {
+  for (const category of categories) {
+    if (category.value === value) {
+      return parent
+    }
+
+    const nestedParent = getCenterIconParentCategory(value, category.categories ?? [], category)
+
+    if (nestedParent) {
+      return nestedParent
+    }
+  }
+
+  return null
 }
 
 function getCenterIconSearchText(icon: CenterIconOption) {
   return `${icon.categoryLabel} ${icon.label} ${icon.value}`.toLowerCase()
 }
 
+function isCenterIconCategorySelected(category: CenterIconCategory) {
+  return selectedCenterIcon.value.startsWith(`${category.value}/`)
+}
+
 function wrapAdditionalText(value: string) {
-  return value
-    .replace(/\s+/g, ' ')
-    .slice(0, maxAdditionalTextLength)
-    .match(new RegExp(`.{1,${additionalTextLineLength}}`, 'g'))
-    ?.map(line => line.trim()) ?? []
+  const words = value.replace(/\s+/g, ' ').slice(0, maxAdditionalTextLength).trim().split(' ').filter(Boolean)
+  const lines: string[] = []
+  let currentLine = ''
+
+  function pushCurrentLine() {
+    if (currentLine && lines.length < 3) {
+      lines.push(currentLine)
+      currentLine = ''
+    }
+  }
+
+  function addPiece(piece: string, startsWord: boolean) {
+    if (lines.length >= 3) {
+      return
+    }
+
+    if (piece.length > additionalTextLineLength) {
+      pushCurrentLine()
+
+      for (let index = 0; index < piece.length && lines.length < 3; index += additionalTextLineLength) {
+        lines.push(piece.slice(index, index + additionalTextLineLength))
+      }
+
+      return
+    }
+
+    const separator = currentLine && startsWord ? ' ' : ''
+    const candidate = `${currentLine}${separator}${piece}`
+
+    if (candidate.length <= additionalTextLineLength) {
+      currentLine = candidate
+      return
+    }
+
+    pushCurrentLine()
+    currentLine = piece
+  }
+
+  for (const word of words) {
+    const pieces = getBreakableWordPieces(word)
+
+    pieces.forEach((piece, index) => addPiece(piece, index === 0))
+  }
+
+  pushCurrentLine()
+
+  return lines
+}
+
+function getBreakableWordPieces(word: string) {
+  const pieces: string[] = []
+  let piece = ''
+
+  for (const character of word) {
+    piece += character
+
+    if (character === '-') {
+      pieces.push(piece)
+      piece = ''
+    }
+  }
+
+  if (piece) {
+    pieces.push(piece)
+  }
+
+  return pieces
 }
 
 function getAdditionalTextLineY(index: number) {
-  return labelBlockY.value + (labelText.value ? labelFontSize.value + additionalTextGap.value : 0) + additionalTextFontSize.value / 2 + index * (additionalTextFontSize.value + additionalTextLineGap.value)
+  const y = selectedAdditionalTextPlacement.value === 'below' && labelText.value
+    ? labelBlockY.value + labelFontSize.value + additionalTextGap.value
+    : labelBlockY.value
+
+  return y + additionalTextFontSize.value / 2 + index * (additionalTextFontSize.value + additionalTextLineGap.value)
 }
 
-async function updateLabelFontScale() {
+function getSizeMultiplier(step: number) {
+  return step >= 0 ? 1.25 ** step : 0.75 ** Math.abs(step)
+}
+
+function getFittedTextScale(textWidth: number, requestedScale: number) {
+  if (textWidth <= 0) {
+    return requestedScale
+  }
+
+  return Math.min(requestedScale, qrOutputSize.value / textWidth)
+}
+
+async function updateTextMeasurements() {
   await nextTick()
 
   const labelElement = labelMeasureElement.value
   const additionalElement = additionalTextMeasureElement.value
 
-  if (!hasLabelText.value) {
-    labelFontScale.value = 1
-    return
-  }
-
-  const labelWidth = labelText.value && labelElement ? labelElement.getComputedTextLength() : 0
-  const additionalTextWidth = longestAdditionalTextLine.value && additionalElement ? additionalElement.getComputedTextLength() : 0
-  const textWidth = Math.max(labelWidth, additionalTextWidth)
-
-  labelFontScale.value = textWidth > 0 ? Math.min(1, qrOutputSize.value / textWidth) : 1
+  labelTextWidth.value = labelText.value && labelElement ? labelElement.getComputedTextLength() : 0
+  additionalTextLineWidth.value = longestAdditionalTextLine.value && additionalElement ? additionalElement.getComputedTextLength() : 0
 }
 
 function getLabelFont(value: unknown) {
@@ -471,11 +704,11 @@ onMounted(async () => {
   updateColorScrollState()
   window.addEventListener('resize', updateColorScrollState)
 
-  await updateLabelFontScale()
-  void document.fonts?.ready.then(updateLabelFontScale)
+  await updateTextMeasurements()
+  void document.fonts?.ready.then(updateTextMeasurements)
 })
 
-watch([labelText, additionalText, selectedLabelFont, selectedAdditionalTextFont, qrOutputSize], updateLabelFontScale, { flush: 'post' })
+watch([labelText, longestAdditionalTextLine, selectedLabelFont, selectedAdditionalTextFont, qrOutputSize], updateTextMeasurements, { flush: 'post' })
 watch(hasQrContent, (hasContent) => {
   if (!hasContent) {
     activeTool.value = null
@@ -654,7 +887,7 @@ onUnmounted(() => {
         v-else-if="activeTool === 'label'"
         class="space-y-3"
       >
-        <div class="grid grid-cols-[minmax(0,1fr)_10rem] gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]">
           <UFormField label="Label">
             <UInput
               v-model="qrLabel"
@@ -685,40 +918,134 @@ onUnmounted(() => {
               </template>
             </USelect>
           </UFormField>
-        </div>
 
-        <div class="grid grid-cols-[minmax(0,1fr)_10rem] gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-          <UFormField label="Additional Text">
-            <UInput
-              v-model="qrAdditionalText"
+          <UFormField label="Size">
+            <UFieldGroup
               class="w-full"
-              icon="i-lucide-text-cursor-input"
-              :maxlength="maxAdditionalTextLength"
-              placeholder="Add smaller text"
-              size="lg"
-            />
-          </UFormField>
-
-          <UFormField label="Font">
-            <USelect
-              v-model="selectedAdditionalTextFont"
-              class="w-full"
-              :items="labelFontItems"
               size="lg"
             >
-              <template #default="{ modelValue }">
-                <span :class="getLabelFont(modelValue).class">
-                  {{ getLabelFont(modelValue).label }}
-                </span>
-              </template>
-
-              <template #item-label="{ item }">
-                <span :class="getLabelFontFromItem(item).class">
-                  {{ getLabelFontFromItem(item).label }}
-                </span>
-              </template>
-            </USelect>
+              <UButton
+                aria-label="Decrease label size"
+                class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                color="neutral"
+                :disabled="!canDecreaseLabelSize"
+                icon="i-lucide-minus"
+                size="lg"
+                variant="subtle"
+                @click="decreaseLabelSize"
+              />
+              <UButton
+                aria-label="Increase label size"
+                class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                color="neutral"
+                :disabled="!canIncreaseLabelSize"
+                icon="i-lucide-plus"
+                size="lg"
+                variant="subtle"
+                @click="increaseLabelSize"
+              />
+            </UFieldGroup>
           </UFormField>
+        </div>
+
+        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-x-3 gap-y-1.5 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]">
+          <div class="flex h-6 items-center justify-between gap-3">
+            <label
+              class="text-sm font-medium text-highlighted"
+              for="qr-additional-text"
+            >
+              Additional Text
+            </label>
+            <UFieldGroup size="xs">
+              <UButton
+                :aria-pressed="selectedAdditionalTextPlacement === 'above'"
+                :color="selectedAdditionalTextPlacement === 'above' ? 'primary' : 'neutral'"
+                :variant="selectedAdditionalTextPlacement === 'above' ? 'solid' : 'subtle'"
+                @click="selectAdditionalTextPlacement('above')"
+              >
+                Above
+              </UButton>
+              <UButton
+                :aria-pressed="selectedAdditionalTextPlacement === 'below'"
+                :color="selectedAdditionalTextPlacement === 'below' ? 'primary' : 'neutral'"
+                :variant="selectedAdditionalTextPlacement === 'below' ? 'solid' : 'subtle'"
+                @click="selectAdditionalTextPlacement('below')"
+              >
+                Below
+              </UButton>
+            </UFieldGroup>
+          </div>
+
+          <span
+            id="qr-additional-font-label"
+            class="flex h-6 items-center text-sm font-medium text-highlighted"
+          >
+            Font
+          </span>
+
+          <span
+            id="qr-additional-size-label"
+            class="flex h-6 items-center text-sm font-medium text-highlighted"
+          >
+            Size
+          </span>
+
+          <UInput
+            id="qr-additional-text"
+            v-model="qrAdditionalText"
+            class="w-full"
+            icon="i-lucide-text-cursor-input"
+            :maxlength="maxAdditionalTextLength"
+            placeholder="Add smaller text"
+            size="lg"
+          />
+
+          <USelect
+            v-model="selectedAdditionalTextFont"
+            aria-labelledby="qr-additional-font-label"
+            class="w-full"
+            :items="labelFontItems"
+            size="lg"
+          >
+            <template #default="{ modelValue }">
+              <span :class="getLabelFont(modelValue).class">
+                {{ getLabelFont(modelValue).label }}
+              </span>
+            </template>
+
+            <template #item-label="{ item }">
+              <span :class="getLabelFontFromItem(item).class">
+                {{ getLabelFontFromItem(item).label }}
+              </span>
+            </template>
+          </USelect>
+
+          <UFieldGroup
+            aria-labelledby="qr-additional-size-label"
+            class="w-full"
+            size="lg"
+          >
+            <UButton
+              aria-label="Decrease additional text size"
+              class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+              color="neutral"
+              :disabled="!canDecreaseAdditionalTextSize"
+              icon="i-lucide-minus"
+              size="lg"
+              variant="subtle"
+              @click="decreaseAdditionalTextSize"
+            />
+            <UButton
+              aria-label="Increase additional text size"
+              class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+              color="neutral"
+              :disabled="!canIncreaseAdditionalTextSize"
+              icon="i-lucide-plus"
+              size="lg"
+              variant="subtle"
+              @click="increaseAdditionalTextSize"
+            />
+          </UFieldGroup>
         </div>
 
         <UFormField label="Position">
@@ -733,7 +1060,7 @@ onUnmounted(() => {
               :aria-checked="selectedLabelPosition === option.value"
               :aria-disabled="option.disabled"
               class="rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45"
-              :class="selectedLabelPosition === option.value ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              :class="selectedLabelPosition === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
               :disabled="option.disabled"
               role="radio"
               type="button"
@@ -770,7 +1097,7 @@ onUnmounted(() => {
             :aria-label="`Use ${icon.label} as the center icon`"
             :aria-checked="selectedCenterIcon === icon.value"
             class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-            :class="selectedCenterIcon === icon.value ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+            :class="selectedCenterIcon === icon.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
             role="radio"
             type="button"
             @click="selectCenterIcon(icon)"
@@ -803,7 +1130,7 @@ onUnmounted(() => {
             :aria-checked="selectedCenterIcon === 'none'"
             aria-label="Use no center icon"
             class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-            :class="selectedCenterIcon === 'none' ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+            :class="selectedCenterIcon === 'none' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
             role="radio"
             type="button"
             @click="selectCenterIcon(noCenterIconOption)"
@@ -825,7 +1152,7 @@ onUnmounted(() => {
             :key="category.value"
             :aria-label="`Open ${category.label} icons`"
             class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-            :class="selectedCenterIconOption.categoryLabel === category.label ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+            :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
             type="button"
             @click="selectCenterIconCategory(category)"
           >
@@ -851,9 +1178,9 @@ onUnmounted(() => {
               icon="i-lucide-arrow-left"
               size="sm"
               variant="subtle"
-              @click="showCenterIconCategories"
+              @click="showParentCenterIconCategory"
             >
-              Folders
+              {{ activeCenterIconBackLabel }}
             </UButton>
             <span class="text-sm font-medium text-highlighted">{{ activeCenterIconCategoryDetails?.label }}</span>
           </div>
@@ -864,12 +1191,32 @@ onUnmounted(() => {
             role="radiogroup"
           >
             <button
+              v-for="category in activeCenterIconSubcategories"
+              :key="category.value"
+              :aria-label="`Open ${category.label} icons`"
+              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+              :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectCenterIconCategory(category)"
+            >
+              <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                <img
+                  :src="category.src"
+                  alt=""
+                  aria-hidden="true"
+                  class="size-full object-contain"
+                >
+              </span>
+              <span>{{ category.label }}</span>
+            </button>
+
+            <button
               v-for="icon in activeCenterIconCategoryIcons"
               :key="icon.value"
               :aria-label="`Use ${icon.label} as the center icon`"
               :aria-checked="selectedCenterIcon === icon.value"
               class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-              :class="selectedCenterIcon === icon.value ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              :class="selectedCenterIcon === icon.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
               role="radio"
               type="button"
               @click="selectCenterIcon(icon)"
@@ -900,7 +1247,7 @@ onUnmounted(() => {
           :aria-label="border.label"
           :aria-checked="selectedBorder === border.value"
           class="grid size-14 shrink-0 place-items-center rounded-xl border transition"
-          :class="selectedBorder === border.value ? 'border-slate-950 bg-slate-950 text-white dark:border-white dark:bg-white dark:text-slate-950' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+          :class="selectedBorder === border.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
           role="radio"
           type="button"
           @click="selectBorder(border)"

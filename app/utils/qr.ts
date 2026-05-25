@@ -4,6 +4,10 @@ export type QrCode = {
   modules: boolean[][]
 }
 
+export type QrCodeOptions = {
+  minVersion?: number
+}
+
 type BlockGroup = {
   count: number
   dataCodewords: number
@@ -111,14 +115,14 @@ for (let index = 0; index < 255; index++) {
   }
 }
 
-export function createQrCode(value: string): QrCode {
+export function createQrCode(value: string, options: QrCodeOptions = {}): QrCode {
   const bytes = new TextEncoder().encode(value)
 
   if (bytes.length === 0) {
     throw new Error('Enter a URL to generate a QR code.')
   }
 
-  const config = getSmallestVersionConfig(bytes)
+  const config = getSmallestVersionConfig(bytes, options.minVersion ?? 1)
   const dataCodewords = createDataCodewords(bytes, config)
   const codewords = addErrorCorrectionAndInterleave(dataCodewords, config)
 
@@ -169,8 +173,12 @@ export function getMaxQrByteLength(): number {
   return Math.floor(payloadBits / 8)
 }
 
-function getSmallestVersionConfig(bytes: Uint8Array): VersionConfig {
+function getSmallestVersionConfig(bytes: Uint8Array, minVersion: number): VersionConfig {
   for (const config of VERSION_CONFIGS) {
+    if (config.version < minVersion) {
+      continue
+    }
+
     const requiredBits = 4 + getCharacterCountBits(config.version) + bytes.length * 8
     const capacityBits = config.dataCodewords * 8
 
