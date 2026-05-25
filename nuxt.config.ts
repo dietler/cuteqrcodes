@@ -29,7 +29,7 @@ export default defineNuxtConfig({
 
   vite: {
     optimizeDeps: {
-      include: ['pdf-lib']
+      include: ['better-auth/vue', 'pdf-lib']
     }
   },
 

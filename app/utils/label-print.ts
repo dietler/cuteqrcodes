@@ -1,8 +1,10 @@
 export type LabelPrintPayload = {
   createdAt: number
   height: number
+  name?: string
   svg: string
   title: string
+  url?: string
   width: number
 }
 

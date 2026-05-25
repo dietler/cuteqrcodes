@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { PDFDocument } from 'pdf-lib'
+import { PDFDocument, rgb, StandardFonts, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import { computed, onMounted, ref } from 'vue'
 import {
   labelPdfRenderLongEdgePixels,
@@ -37,6 +37,10 @@ function getAveryTemplateUrl(template: LabelTemplate) {
   return `https://www.avery.com/blank/labels/${template.templateNumber}`
 }
 
+function getAmazonTemplateUrl(template: LabelTemplate) {
+  return `https://www.amazon.com/s?k=avery+${template.templateNumber}`
+}
+
 function readPrintPayload() {
   const rawPayload = sessionStorage.getItem(labelPrintPayloadStorageKey)
 
@@ -55,6 +59,14 @@ function readPrintPayload() {
       || typeof payload.createdAt !== 'number'
     ) {
       return null
+    }
+
+    if (typeof payload.name !== 'string') {
+      delete payload.name
+    }
+
+    if (typeof payload.url !== 'string') {
+      delete payload.url
     }
 
     return payload as LabelPrintPayload
@@ -83,12 +95,26 @@ async function createLabelPdf(template: LabelTemplate) {
     const { layout } = template
     const page = pdfDocument.addPage([layout.pageWidth, layout.pageHeight])
     const qrImage = await pdfDocument.embedPng(qrPngDataUrl)
+    const headerLogoImage = await pdfDocument.embedPng(await renderSvgAssetToPng('/icons/rabbit.svg', 96, 96))
+    const headerFont = await pdfDocument.embedFont(StandardFonts.Helvetica)
+    const headerBoldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold)
     const labelsPerSheet = layout.columns * layout.rows
     const availableWidth = layout.labelWidth - layout.labelPadding * 2
     const availableHeight = layout.labelHeight - layout.labelPadding * 2
     const imageScale = Math.min(availableWidth / qrImage.width, availableHeight / qrImage.height)
     const imageWidth = qrImage.width * imageScale
     const imageHeight = qrImage.height * imageScale
+
+    drawPdfHeader(page, {
+      font: headerFont,
+      logoImage: headerLogoImage,
+      name: payload.name || payload.title,
+      pageHeight: layout.pageHeight,
+      pageWidth: layout.pageWidth,
+      topMargin: layout.marginTop,
+      url: payload.url || payload.title,
+      boldFont: headerBoldFont
+    })
 
     for (let index = 0; index < labelsPerSheet; index++) {
       const column = index % layout.columns
@@ -129,6 +155,124 @@ async function createLabelPdf(template: LabelTemplate) {
   } finally {
     isCreatingPdf.value = false
   }
+}
+
+function drawPdfHeader(page: PDFPage, {
+  boldFont,
+  font,
+  logoImage,
+  name,
+  pageHeight,
+  pageWidth,
+  topMargin,
+  url
+}: {
+  boldFont: PDFFont
+  font: PDFFont
+  logoImage: PDFImage
+  name: string
+  pageHeight: number
+  pageWidth: number
+  topMargin: number
+  url: string
+}) {
+  if (topMargin < 24) {
+    return
+  }
+
+  const headerBottom = pageHeight - topMargin
+  const horizontalPadding = 24
+  const logoSize = Math.min(24, Math.max(16, topMargin - 8))
+  const logoY = headerBottom + (topMargin - logoSize) / 2
+  const titleFontSize = Math.min(10, Math.max(8, topMargin * 0.28))
+  const detailFontSize = Math.min(7, Math.max(5.5, topMargin * 0.18))
+  const lineGap = 1.5
+  const textBlockHeight = titleFontSize + detailFontSize * 2 + lineGap * 2
+  const textX = horizontalPadding + logoSize + 8
+  const maxTextWidth = pageWidth - textX - horizontalPadding
+  const titleY = headerBottom + (topMargin + textBlockHeight) / 2 - titleFontSize
+  const nameY = titleY - detailFontSize - lineGap
+  const urlY = nameY - detailFontSize - lineGap
+
+  page.drawImage(logoImage, {
+    height: logoSize,
+    width: logoSize,
+    x: horizontalPadding,
+    y: logoY
+  })
+  page.drawText('Cute QR Codes', {
+    color: rgb(0.07, 0.08, 0.1),
+    font: boldFont,
+    size: titleFontSize,
+    x: textX,
+    y: titleY
+  })
+  page.drawText(truncatePdfText(font, name, detailFontSize, maxTextWidth), {
+    color: rgb(0.25, 0.28, 0.33),
+    font,
+    size: detailFontSize,
+    x: textX,
+    y: nameY
+  })
+  page.drawText(truncatePdfText(font, url, detailFontSize, maxTextWidth), {
+    color: rgb(0.36, 0.39, 0.45),
+    font,
+    size: detailFontSize,
+    x: textX,
+    y: urlY
+  })
+}
+
+function truncatePdfText(font: PDFFont, value: string, fontSize: number, maxWidth: number) {
+  const text = value.trim()
+
+  if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) {
+    return text
+  }
+
+  const ellipsis = '...'
+  let low = 0
+  let high = text.length
+
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2)
+    const candidate = `${text.slice(0, middle)}${ellipsis}`
+
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
+      low = middle
+    } else {
+      high = middle - 1
+    }
+  }
+
+  return `${text.slice(0, low)}${ellipsis}`
+}
+
+async function renderSvgAssetToPng(src: string, width: number, height: number) {
+  const response = await fetch(src)
+
+  if (!response.ok) {
+    throw new Error('Unable to load the PDF header logo.')
+  }
+
+  const svg = await response.text()
+  const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
+  const canvas = document.createElement('canvas')
+  const scale = 3
+
+  canvas.width = width * scale
+  canvas.height = height * scale
+
+  const context = canvas.getContext('2d')
+
+  if (!context) {
+    throw new Error('Canvas rendering is not available.')
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+  return canvas.toDataURL('image/png')
 }
 
 async function renderPayloadToPng(payload: LabelPrintPayload, rotateArtwork: boolean) {
@@ -266,7 +410,7 @@ function loadImage(src: string) {
                 <span class="text-sm font-medium text-muted">Buy From:</span>
                 <a
                   :aria-label="`Buy ${template.description} from Avery`"
-                  class="inline-flex h-6 items-center rounded border border-slate-200 bg-white px-2 py-1 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                  class="inline-flex h-7 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
                   :href="getAveryTemplateUrl(template)"
                   rel="noopener noreferrer"
                   target="_blank"
@@ -308,6 +452,19 @@ function loadImage(src: string) {
                       class="fill-[#de1d37]"
                     />
                   </svg>
+                </a>
+                <a
+                  :aria-label="`Buy ${template.description} from Amazon`"
+                  class="inline-flex h-7 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                  :href="getAmazonTemplateUrl(template)"
+                  rel="noopener noreferrer"
+                  target="_blank"
+                >
+                  <img
+                    src="/logos/amazon.svg"
+                    alt="Amazon"
+                    class="h-[17px] w-[56px] object-contain"
+                  >
                 </a>
               </div>
             </div>

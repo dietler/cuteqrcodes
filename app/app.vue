@@ -1,4 +1,11 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
+import { signOut, useSession } from '~~/lib/auth-client'
+
+const session = useSession()
+const isNavigationOpen = ref(false)
+const isLoggedIn = computed(() => Boolean(session.value.data?.user))
+
 useHead({
   meta: [
     { name: 'viewport', content: 'width=device-width, initial-scale=1' }
@@ -21,11 +28,18 @@ useSeoMeta({
   ogDescription: description,
   twitterCard: 'summary_large_image'
 })
+
+async function handleLogout() {
+  await signOut()
+  await session.value.refetch()
+  isNavigationOpen.value = false
+  await navigateTo('/')
+}
 </script>
 
 <template>
   <UApp>
-    <UHeader>
+    <UHeader v-model:open="isNavigationOpen">
       <template #left>
         <NuxtLink
           to="/"
@@ -43,6 +57,61 @@ useSeoMeta({
 
       <template #right>
         <UColorModeButton />
+      </template>
+
+      <template #body>
+        <nav
+          aria-label="Primary navigation"
+          class="mx-auto flex w-full max-w-sm flex-col gap-2 pt-6"
+        >
+          <UButton
+            v-if="isLoggedIn"
+            class="justify-start"
+            color="neutral"
+            icon="i-lucide-folder-open"
+            size="xl"
+            to="/saved-qr-codes"
+            variant="ghost"
+          >
+            Saved QR Codes
+          </UButton>
+
+          <UButton
+            v-if="!isLoggedIn"
+            class="justify-start"
+            color="neutral"
+            icon="i-lucide-log-in"
+            size="xl"
+            to="/login"
+            variant="ghost"
+          >
+            Login
+          </UButton>
+
+          <UButton
+            v-if="!isLoggedIn"
+            class="justify-start"
+            color="neutral"
+            icon="i-lucide-user-plus"
+            size="xl"
+            to="/register"
+            variant="ghost"
+          >
+            Register
+          </UButton>
+
+          <UButton
+            v-if="isLoggedIn"
+            class="justify-start"
+            color="neutral"
+            icon="i-lucide-log-out"
+            size="xl"
+            variant="ghost"
+            @click="handleLogout"
+          >
+            Logout
+          </UButton>
+        </nav>
       </template>
     </UHeader>
 

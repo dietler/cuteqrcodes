@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useSession } from '~~/lib/auth-client'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
+import { editQrPayloadStorageKey, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
 
 type QrTool = 'colors' | 'step' | 'label' | 'icon' | 'border'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double'
@@ -58,6 +60,7 @@ type BorderStyle = {
 }
 
 const qrStore = useQrStore()
+const session = useSession()
 
 const activeTool = ref<QrTool | null>(null)
 const selectedQrColor = ref<TailwindColor | null>(null)
@@ -84,6 +87,15 @@ const activeCenterIconCategory = ref<string | null>(null)
 const centerIconSearch = ref('')
 const isPreparingLabelPrint = ref(false)
 const printLabelError = ref('')
+const isSaveDialogOpen = ref(false)
+const isLoadingSaveFolders = ref(false)
+const isCreatingSaveFolder = ref(false)
+const isSavingQr = ref(false)
+const saveQrName = ref('')
+const newSaveFolderName = ref('')
+const selectedSaveFolderId = ref('')
+const saveQrError = ref('')
+const savedQrFolders = ref<SavedQrFolder[]>([])
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const additionalTextLineLength = 40
@@ -307,6 +319,12 @@ const tailwindColors: TailwindColor[] = [
   { name: 'Stone', bgClass: 'bg-stone-400', fillClass: 'fill-stone-400', strokeClass: 'stroke-stone-400', textClass: 'text-stone-400' }
 ]
 const hasQrContent = computed(() => qrStore.content.length > 0)
+const isLoggedIn = computed(() => Boolean(session.value.data?.user))
+const saveButtonLabel = computed(() => isLoggedIn.value ? 'Save' : 'Login to Save')
+const savedFolderItems = computed(() => savedQrFolders.value.map(folder => ({
+  label: folder.name,
+  value: folder.id
+})))
 const generatedQr = computed(() => {
   if (!hasQrContent.value) {
     return {
@@ -722,6 +740,185 @@ async function goToPrintLabels() {
   }
 }
 
+async function handleSaveButtonClick() {
+  if (!isLoggedIn.value) {
+    await navigateTo('/login?redirect=/')
+    return
+  }
+
+  await openSaveDialog()
+}
+
+async function openSaveDialog() {
+  if (!generatedQr.value.code) {
+    return
+  }
+
+  saveQrError.value = ''
+  saveQrName.value ||= getDefaultQrName()
+  isSaveDialogOpen.value = true
+  await loadSaveFolders()
+}
+
+async function loadSaveFolders() {
+  isLoadingSaveFolders.value = true
+  saveQrError.value = ''
+
+  try {
+    const response = await $fetch<{ folders: SavedQrFolder[] }>('/api/qr/folders')
+
+    savedQrFolders.value = response.folders
+
+    if (!selectedSaveFolderId.value || !savedQrFolders.value.some(folder => folder.id === selectedSaveFolderId.value)) {
+      selectedSaveFolderId.value = savedQrFolders.value[0]?.id ?? ''
+    }
+  } catch (error) {
+    saveQrError.value = getErrorMessage(error, 'Unable to load folders.')
+  } finally {
+    isLoadingSaveFolders.value = false
+  }
+}
+
+async function createSaveFolder() {
+  const folderName = newSaveFolderName.value.trim()
+
+  if (!folderName || isCreatingSaveFolder.value) {
+    return
+  }
+
+  isCreatingSaveFolder.value = true
+  saveQrError.value = ''
+
+  try {
+    const response = await $fetch<{ folder: SavedQrFolder }>('/api/qr/folders', {
+      body: { name: folderName },
+      method: 'POST'
+    })
+
+    savedQrFolders.value = [...savedQrFolders.value, response.folder].sort((first, second) => first.name.localeCompare(second.name))
+    selectedSaveFolderId.value = response.folder.id
+    newSaveFolderName.value = ''
+  } catch (error) {
+    saveQrError.value = getErrorMessage(error, 'Unable to create that folder.')
+  } finally {
+    isCreatingSaveFolder.value = false
+  }
+}
+
+async function saveCurrentQr() {
+  const name = saveQrName.value.trim()
+
+  if (!name) {
+    saveQrError.value = 'QR code name is required.'
+    return
+  }
+
+  if (!selectedSaveFolderId.value) {
+    saveQrError.value = 'Choose or create a folder.'
+    return
+  }
+
+  isSavingQr.value = true
+  saveQrError.value = ''
+
+  try {
+    const printPayload = await createLabelPrintPayload()
+
+    await $fetch('/api/qr/saved', {
+      body: {
+        folderId: selectedSaveFolderId.value,
+        name,
+        payload: createSavedQrPayload(),
+        previewHeight: printPayload.height,
+        previewSvg: printPayload.svg,
+        previewWidth: printPayload.width
+      },
+      method: 'POST'
+    })
+
+    isSaveDialogOpen.value = false
+    saveQrName.value = ''
+  } catch (error) {
+    saveQrError.value = getErrorMessage(error, 'Unable to save this QR code.')
+  } finally {
+    isSavingQr.value = false
+  }
+}
+
+function createSavedQrPayload(): SavedQrPayload {
+  return {
+    additionalText: qrAdditionalText.value,
+    additionalTextFont: selectedAdditionalTextFont.value,
+    additionalTextPlacement: selectedAdditionalTextPlacement.value,
+    additionalTextSizeStep: additionalTextSizeStep.value,
+    border: selectedBorder.value,
+    centerIcon: selectedCenterIcon.value,
+    colorName: selectedQrColor.value?.name ?? null,
+    colorStep: selectedColorStep.value,
+    label: qrLabel.value,
+    labelFont: selectedLabelFont.value,
+    labelPosition: selectedLabelPosition.value,
+    labelSizeStep: labelSizeStep.value,
+    url: qrStore.url,
+    version: 1
+  }
+}
+
+function restoreSavedQrPayloadFromStorage() {
+  const rawPayload = sessionStorage.getItem(editQrPayloadStorageKey)
+
+  if (!rawPayload) {
+    return
+  }
+
+  sessionStorage.removeItem(editQrPayloadStorageKey)
+
+  try {
+    applySavedQrPayload(JSON.parse(rawPayload) as SavedQrPayload)
+  } catch {
+    printLabelError.value = 'Unable to load the saved QR code.'
+  }
+}
+
+function applySavedQrPayload(payload: SavedQrPayload) {
+  if (payload.version !== 1) {
+    throw new Error('Unsupported saved QR code version.')
+  }
+
+  qrStore.url = typeof payload.url === 'string' ? payload.url : ''
+  selectedQrColor.value = payload.colorName ? tailwindColors.find(color => color.name === payload.colorName) ?? null : null
+  selectedColorStep.value = tailwindColorSteps.includes(payload.colorStep) ? payload.colorStep : 500
+  qrLabel.value = typeof payload.label === 'string' ? payload.label : ''
+  qrAdditionalText.value = typeof payload.additionalText === 'string' ? payload.additionalText.slice(0, maxAdditionalTextLength) : ''
+  selectedAdditionalTextPlacement.value = payload.additionalTextPlacement === 'above' ? 'above' : 'below'
+  selectedLabelPosition.value = payload.labelPosition === 'top' ? 'top' : 'bottom'
+  selectedLabelFont.value = labelFonts.some(font => font.value === payload.labelFont) ? payload.labelFont : fallbackLabelFont.value
+  selectedAdditionalTextFont.value = labelFonts.some(font => font.value === payload.additionalTextFont) ? payload.additionalTextFont : fallbackLabelFont.value
+  labelSizeStep.value = clampTextSizeStep(payload.labelSizeStep)
+  additionalTextSizeStep.value = clampAdditionalTextSizeStep(payload.additionalTextSizeStep)
+  selectedCenterIcon.value = centerIconOptions.some(icon => icon.value === payload.centerIcon) ? payload.centerIcon : 'none'
+  selectedBorder.value = borderStyles.some(border => border.value === payload.border) ? payload.border as BorderValue : 'none'
+  activeCenterIconCategory.value = null
+}
+
+function clampTextSizeStep(value: unknown) {
+  return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minTextSizeStep), 8) : 0
+}
+
+function clampAdditionalTextSizeStep(value: unknown) {
+  return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minTextSizeStep), maxAdditionalTextSizeStep) : 0
+}
+
+function getDefaultQrName() {
+  try {
+    const url = new URL(qrStore.content)
+
+    return url.hostname.replace(/^www\./, '') || 'QR Code'
+  } catch {
+    return qrLabel.value.trim() || qrStore.content.slice(0, 60) || 'QR Code'
+  }
+}
+
 async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
   const sourceSvg = outputSvgElement.value
 
@@ -741,8 +938,10 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
   return {
     createdAt: Date.now(),
     height: outputSvgHeight.value,
+    name: getDefaultQrName(),
     svg: new XMLSerializer().serializeToString(clonedSvg),
     title: qrStore.content,
+    url: qrStore.content,
     width: outputSvgWidth.value
   }
 }
@@ -812,6 +1011,15 @@ function blobToDataUrl(blob: Blob) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
+  if (typeof error === 'object' && error !== null && 'data' in error) {
+    const data = (error as { data?: { message?: string, statusMessage?: string } }).data
+    const message = data?.statusMessage || data?.message
+
+    if (message) {
+      return message
+    }
+  }
+
   return error instanceof Error ? error.message : fallback
 }
 
@@ -856,6 +1064,7 @@ function updateScrollStates() {
 }
 
 onMounted(async () => {
+  restoreSavedQrPayloadFromStorage()
   await nextTick()
   updateScrollStates()
   window.addEventListener('resize', updateScrollStates)
@@ -1642,24 +1851,121 @@ onUnmounted(() => {
       v-if="generatedQr.code"
       class="flex flex-col items-center justify-center gap-3"
     >
-      <UButton
-        color="neutral"
-        :disabled="isPreparingLabelPrint"
-        :loading="isPreparingLabelPrint"
-        variant="subtle"
-        @click="goToPrintLabels"
-      >
-        <span>Print to Labels</span>
-        <UIcon
-          name="i-lucide-arrow-right"
-          class="size-4"
-        />
-      </UButton>
+      <div class="flex w-full max-w-[min(86svw,68svh)] items-center justify-between gap-3">
+        <UButton
+          color="neutral"
+          icon="i-lucide-save"
+          variant="subtle"
+          @click="handleSaveButtonClick"
+        >
+          {{ saveButtonLabel }}
+        </UButton>
+
+        <UButton
+          color="neutral"
+          :disabled="isPreparingLabelPrint"
+          :loading="isPreparingLabelPrint"
+          variant="subtle"
+          @click="goToPrintLabels"
+        >
+          <span>Print to Labels</span>
+          <UIcon
+            name="i-lucide-arrow-right"
+            class="size-4"
+          />
+        </UButton>
+      </div>
 
       <div class="flex items-center gap-2 text-sm text-muted">
         <UIcon name="i-lucide-scan-line" />
         <span>Version {{ generatedQr.code.version }} · {{ generatedQr.code.size }}×{{ generatedQr.code.size }} modules</span>
       </div>
     </div>
+
+    <UModal
+      v-model:open="isSaveDialogOpen"
+      title="Save QR Code"
+      description="Name this QR code and choose a folder."
+      :dismissible="!isSavingQr"
+    >
+      <template #body>
+        <div class="space-y-4">
+          <UAlert
+            v-if="saveQrError"
+            color="warning"
+            icon="i-lucide-triangle-alert"
+            :title="saveQrError"
+            variant="subtle"
+          />
+
+          <UFormField label="QR Code Name">
+            <UInput
+              v-model="saveQrName"
+              autocomplete="off"
+              class="w-full"
+              icon="i-lucide-qr-code"
+              size="lg"
+            />
+          </UFormField>
+
+          <UFormField label="Folder">
+            <USelect
+              v-model="selectedSaveFolderId"
+              class="w-full"
+              :disabled="isLoadingSaveFolders || savedFolderItems.length === 0"
+              :items="savedFolderItems"
+              placeholder="Create a folder first"
+              size="lg"
+            />
+          </UFormField>
+
+          <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+            <UFormField label="New Folder">
+              <UInput
+                v-model="newSaveFolderName"
+                autocomplete="off"
+                class="w-full"
+                icon="i-lucide-folder-plus"
+                size="lg"
+                @keydown.enter.prevent="createSaveFolder"
+              />
+            </UFormField>
+            <div class="flex items-end">
+              <UButton
+                class="w-full justify-center sm:w-auto"
+                color="neutral"
+                :disabled="!newSaveFolderName.trim()"
+                :loading="isCreatingSaveFolder"
+                size="lg"
+                variant="subtle"
+                @click="createSaveFolder"
+              >
+                Create Folder
+              </UButton>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            color="neutral"
+            :disabled="isSavingQr"
+            variant="subtle"
+            @click="isSaveDialogOpen = false"
+          >
+            Cancel
+          </UButton>
+          <UButton
+            :disabled="!saveQrName.trim() || !selectedSaveFolderId"
+            :loading="isSavingQr"
+            @click="saveCurrentQr"
+          >
+            Save
+          </UButton>
+        </div>
+      </template>
+    </UModal>
   </UContainer>
 </template>
