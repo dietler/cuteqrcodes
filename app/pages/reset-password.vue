@@ -8,8 +8,14 @@ const passwordConfirmation = ref('')
 const isSubmitting = ref(false)
 const resetError = ref('')
 const resetSuccess = ref('')
-const token = computed(() => typeof route.query.token === 'string' ? route.query.token : '')
-const linkError = computed(() => route.query.error === 'INVALID_TOKEN' || !token.value ? 'Reset link is invalid or expired.' : '')
+const token = computed(() =>
+  typeof route.query.token === 'string' ? route.query.token : ''
+)
+const linkError = computed(() =>
+  route.query.error === 'INVALID_TOKEN' || !token.value
+    ? 'Reset link is invalid or expired.'
+    : ''
+)
 const canSubmit = computed(() => Boolean(token.value) && !resetSuccess.value)
 
 async function submitPasswordReset() {
@@ -52,7 +58,8 @@ async function submitPasswordReset() {
     password.value = ''
     passwordConfirmation.value = ''
   } catch (error) {
-    resetError.value = error instanceof Error ? error.message : 'Unable to reset password.'
+    resetError.value
+      = error instanceof Error ? error.message : 'Unable to reset password.'
   } finally {
     isSubmitting.value = false
   }
@@ -60,7 +67,9 @@ async function submitPasswordReset() {
 </script>
 
 <template>
-  <UContainer class="flex min-h-[calc(100svh-4rem)] max-w-md flex-col justify-center gap-4 py-6">
+  <UContainer
+    class="flex min-h-[calc(100svh-4rem)] max-w-md flex-col justify-center gap-4 py-6"
+  >
     <UCard>
       <form
         class="space-y-5"

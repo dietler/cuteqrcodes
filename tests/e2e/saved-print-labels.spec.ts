@@ -124,6 +124,28 @@ test('saved QR print link loads labels from the saved id', async ({ page }) => {
   await expect(page.getByTestId('label-template-preview-width-avery-presta-94207')).toHaveText('4"')
   await expect(page.getByTestId('label-template-preview-height-avery-presta-94207')).toHaveText('2"')
 
+  await expect(page.getByRole('combobox', { name: 'Sort By' })).toHaveText('Largest to Smallest')
+  await page.getByRole('combobox', { name: 'Sort By' }).click()
+  await page.getByRole('option', { name: 'Smallest to Largest' }).click()
+  await expect(page.getByTestId('label-template-preview-avery-presta-94237')).toBeVisible()
+
+  const smallRectanglePreviewTop = await page.getByTestId('label-template-preview-avery-presta-94237').evaluate(element => element.getBoundingClientRect().top)
+  const largeRectanglePreviewTop = await page.getByTestId('label-template-preview-avery-presta-94256').evaluate(element => element.getBoundingClientRect().top)
+
+  expect(smallRectanglePreviewTop).toBeLessThan(largeRectanglePreviewTop)
+
+  await page.getByRole('radio', { name: 'Circle' }).click()
+  await expect(page.getByTestId('label-template-preview-avery-presta-94514')).toBeVisible()
+  await expect(page.getByTestId('label-template-preview-width-avery-presta-94514')).toHaveText('3.5"')
+  await expect(page.getByTestId('label-template-preview-height-avery-presta-94514')).toHaveText('3.5"')
+
+  const largeCirclePreview = await page.getByTestId('label-template-preview-avery-presta-94514').boundingBox()
+
+  expect(largeCirclePreview?.width).toBeCloseTo(336, 0)
+  expect(largeCirclePreview?.height).toBeCloseTo(336, 0)
+
+  await page.getByRole('radio', { name: 'Rectangle' }).click()
+
   const rotatedArtwork = await page.getByTestId('label-template-artwork-avery-presta-94207').boundingBox()
 
   expect(rotatedArtwork?.width).toBeCloseTo(168, 0)

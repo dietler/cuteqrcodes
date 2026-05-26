@@ -17,7 +17,9 @@ const resetSuccess = ref('')
 const redirectPath = computed(() => {
   const redirect = route.query.redirect
 
-  return typeof redirect === 'string' && redirect.startsWith('/') ? redirect : '/'
+  return typeof redirect === 'string' && redirect.startsWith('/')
+    ? redirect
+    : '/'
 })
 
 function showResetForm() {
@@ -59,7 +61,8 @@ async function submitLogin() {
     await session.value.refetch()
     await navigateTo(redirectPath.value)
   } catch (error) {
-    authError.value = error instanceof Error ? error.message : 'Unable to log in.'
+    authError.value
+      = error instanceof Error ? error.message : 'Unable to log in.'
   } finally {
     isSubmitting.value = false
   }
@@ -89,9 +92,12 @@ async function submitPasswordResetRequest() {
       return
     }
 
-    resetSuccess.value = result.data?.message || 'If this email exists, check your email for the reset link.'
+    resetSuccess.value
+      = result.data?.message
+        || 'If this email exists, check your email for the reset link.'
   } catch (error) {
-    resetError.value = error instanceof Error ? error.message : 'Unable to send a reset link.'
+    resetError.value
+      = error instanceof Error ? error.message : 'Unable to send a reset link.'
   } finally {
     isResetSubmitting.value = false
   }
@@ -99,7 +105,9 @@ async function submitPasswordResetRequest() {
 </script>
 
 <template>
-  <UContainer class="flex min-h-[calc(100svh-4rem)] max-w-md flex-col justify-center gap-4 py-6">
+  <UContainer
+    class="flex min-h-[calc(100svh-4rem)] max-w-md flex-col justify-center gap-4 py-6"
+  >
     <UCard>
       <form
         v-if="isResetMode"

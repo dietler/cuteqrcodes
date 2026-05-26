@@ -8,39 +8,42 @@ const isLoggedIn = computed(() => Boolean(session.value.data?.user))
 const userEmail = computed(() => session.value.data?.user.email || '')
 const navigationItems = computed(() => {
   if (isLoggedIn.value) {
-    return [{
-      label: 'Saved QR Codes',
-      icon: 'i-lucide-folder-open',
-      to: '/saved-qr-codes'
-    }, {
-      label: 'Credits',
-      icon: 'i-lucide-circle-dollar-sign',
-      to: '/credits'
-    }, {
-      label: 'Logout',
-      icon: 'i-lucide-log-out',
-      onSelect: handleLogout
-    }]
+    return [
+      {
+        label: 'Saved QR Codes',
+        icon: 'i-lucide-folder-open',
+        to: '/saved-qr-codes'
+      },
+      {
+        label: 'Credits',
+        icon: 'i-lucide-circle-dollar-sign',
+        to: '/credits'
+      },
+      {
+        label: 'Logout',
+        icon: 'i-lucide-log-out',
+        onSelect: handleLogout
+      }
+    ]
   }
 
-  return [{
-    label: 'Login',
-    icon: 'i-lucide-log-in',
-    to: '/login'
-  }, {
-    label: 'Register',
-    icon: 'i-lucide-user-plus',
-    to: '/register'
-  }]
+  return [
+    {
+      label: 'Login',
+      icon: 'i-lucide-log-in',
+      to: '/login'
+    },
+    {
+      label: 'Register',
+      icon: 'i-lucide-user-plus',
+      to: '/register'
+    }
+  ]
 })
 
 useHead({
-  meta: [
-    { name: 'viewport', content: 'width=device-width, initial-scale=1' }
-  ],
-  link: [
-    { rel: 'icon', type: 'image/svg+xml', href: '/icons/qr-code.svg' }
-  ],
+  meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
+  link: [{ rel: 'icon', type: 'image/svg+xml', href: '/icons/qr-code.svg' }],
   htmlAttrs: {
     lang: 'en'
   }
@@ -90,7 +93,9 @@ async function handleLogout() {
             :items="navigationItems"
           >
             <UButton
-              :aria-label="isLoggedIn ? `Account menu for ${userEmail}` : 'Account menu'"
+              :aria-label="
+                isLoggedIn ? `Account menu for ${userEmail}` : 'Account menu'
+              "
               color="neutral"
               icon="i-lucide-user"
               :label="isLoggedIn ? userEmail : undefined"

@@ -1,5 +1,13 @@
 <script setup lang="ts">
-import { degrees, PDFDocument, rgb, StandardFonts, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
+import {
+  degrees,
+  PDFDocument,
+  rgb,
+  StandardFonts,
+  type PDFFont,
+  type PDFImage,
+  type PDFPage
+} from 'pdf-lib'
 import { computed, onMounted, ref } from 'vue'
 import type { CreditsSummary, PurchasedPdf } from '~/utils/credits'
 import {
@@ -10,14 +18,17 @@ import {
   labelPrintPayloadStorageKey,
   labelTemplates,
   type LabelTemplate,
+  type LabelTemplateType,
   type LabelPrintPayload
 } from '~/utils/label-print'
 import type { SavedQrCode } from '~/utils/saved-qr'
 import { useSession } from '~~/lib/auth-client'
 
-type LabelType = 'rectangle' | 'square'
+type LabelType = LabelTemplateType
+type LabelSortOrder = 'largest-to-smallest' | 'smallest-to-largest'
 
 const selectedLabelType = ref<LabelType>('rectangle')
+const selectedLabelSortOrder = ref<LabelSortOrder>('largest-to-smallest')
 const printPayload = ref<LabelPrintPayload | null>(null)
 const session = useSession()
 const creditBalance = ref<number | null>(null)
@@ -29,17 +40,40 @@ const route = useRoute()
 
 const labelTypeOptions: { label: string, value: LabelType }[] = [
   { label: 'Rectangle', value: 'rectangle' },
-  { label: 'Square', value: 'square' }
+  { label: 'Square', value: 'square' },
+  { label: 'Circle', value: 'circle' }
+]
+const labelSortOrderOptions: { label: string, value: LabelSortOrder }[] = [
+  { label: 'Largest to Smallest', value: 'largest-to-smallest' },
+  { label: 'Smallest to Largest', value: 'smallest-to-largest' }
 ]
 
 const hasPrintPayload = computed(() => Boolean(printPayload.value))
 const isCreatingPdf = computed(() => Boolean(activePdfAction.value))
-const activeLabelTemplates = computed(() => labelTemplates.filter(template => template.type === selectedLabelType.value))
-const printPayloadSvgDataUrl = computed(() => printPayload.value ? createSvgDataUrl(printPayload.value.svg) : '')
-const suggestedLabelTemplateIds = computed(() => new Set(printPayload.value ? getSuggestedLabelTemplateIds(printPayload.value) : []))
-const suggestedLabelTypes = computed(() => new Set(labelTemplates
-  .filter(template => suggestedLabelTemplateIds.value.has(template.id))
-  .map(template => template.type)))
+const activeLabelTemplates = computed(() =>
+  labelTemplates
+    .filter(template => template.type === selectedLabelType.value)
+    .toSorted(compareLabelTemplatesBySelectedSortOrder)
+)
+const printPayloadSvgDataUrl = computed(() =>
+  printPayload.value ? createSvgDataUrl(printPayload.value.svg) : ''
+)
+const suggestedLabelTemplateIds = computed(
+  () =>
+    new Set(
+      printPayload.value
+        ? getSuggestedLabelTemplateIds(printPayload.value)
+        : []
+    )
+)
+const suggestedLabelTypes = computed(
+  () =>
+    new Set(
+      labelTemplates
+        .filter(template => suggestedLabelTemplateIds.value.has(template.id))
+        .map(template => template.type)
+    )
+)
 
 onMounted(() => {
   void loadPrintPayload()
@@ -52,12 +86,27 @@ function selectLabelType(value: LabelType) {
   pdfError.value = ''
 }
 
+function compareLabelTemplatesBySelectedSortOrder(first: LabelTemplate, second: LabelTemplate) {
+  const firstArea = getLabelTemplateArea(first)
+  const secondArea = getLabelTemplateArea(second)
+
+  return selectedLabelSortOrder.value === 'largest-to-smallest'
+    ? secondArea - firstArea
+    : firstArea - secondArea
+}
+
+function getLabelTemplateArea(template: LabelTemplate) {
+  return template.layout.labelWidth * template.layout.labelHeight
+}
+
 function applySuggestedLabelType() {
   if (didAutoSelectLabelType.value || !suggestedLabelTemplateIds.value.size) {
     return
   }
 
-  const firstSuggestedTemplate = labelTemplates.find(template => suggestedLabelTemplateIds.value.has(template.id))
+  const firstSuggestedTemplate = labelTemplates.find(template =>
+    suggestedLabelTemplateIds.value.has(template.id)
+  )
 
   if (firstSuggestedTemplate) {
     selectedLabelType.value = firstSuggestedTemplate.type
@@ -69,7 +118,10 @@ function getActionId(action: 'preview' | 'purchase', template: LabelTemplate) {
   return `${action}:${template.id}`
 }
 
-function isTemplateActionLoading(action: 'preview' | 'purchase', template: LabelTemplate) {
+function isTemplateActionLoading(
+  action: 'preview' | 'purchase',
+  template: LabelTemplate
+) {
   return activePdfAction.value === getActionId(action, template)
 }
 
@@ -104,12 +156,20 @@ function getLabelPreviewStyle(template: LabelTemplate) {
   }
 }
 
+function getLabelPreviewClass(template: LabelTemplate) {
+  return template.type === 'circle' ? 'rounded-full' : ''
+}
+
 function getLabelPreviewDimensions(template: LabelTemplate) {
   const artworkPlacement = getLabelPreviewArtworkPlacement(template)
 
   return {
-    height: artworkPlacement.rotate ? template.layout.labelWidth : template.layout.labelHeight,
-    width: artworkPlacement.rotate ? template.layout.labelHeight : template.layout.labelWidth
+    height: artworkPlacement.rotate
+      ? template.layout.labelWidth
+      : template.layout.labelHeight,
+    width: artworkPlacement.rotate
+      ? template.layout.labelHeight
+      : template.layout.labelWidth
   }
 }
 
@@ -124,15 +184,16 @@ function getLabelPreviewDimensionLabels(template: LabelTemplate) {
 }
 
 function getLabelTemplateDimensionLabels(template: LabelTemplate) {
-  const [first, second] = template.label
-    .match(/\d+(?:\.\d+)?/g)
-    ?.map(Number) ?? []
+  const [first, second]
+    = template.label.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? []
 
   if (Number.isFinite(first) && Number.isFinite(second)) {
     const layoutWidth = pointsToInches(template.layout.labelWidth)
     const layoutHeight = pointsToInches(template.layout.labelHeight)
-    const listedOrderScore = Math.abs(first! - layoutWidth) + Math.abs(second! - layoutHeight)
-    const swappedOrderScore = Math.abs(second! - layoutWidth) + Math.abs(first! - layoutHeight)
+    const listedOrderScore
+      = Math.abs(first! - layoutWidth) + Math.abs(second! - layoutHeight)
+    const swappedOrderScore
+      = Math.abs(second! - layoutWidth) + Math.abs(first! - layoutHeight)
 
     if (listedOrderScore <= swappedOrderScore) {
       return {
@@ -155,8 +216,12 @@ function getLabelTemplateDimensionLabels(template: LabelTemplate) {
 
 function getLabelPreviewArtworkFrameStyle(template: LabelTemplate) {
   const artworkPlacement = getLabelPreviewArtworkPlacement(template)
-  const width = artworkPlacement.rotate ? artworkPlacement.height : artworkPlacement.width
-  const height = artworkPlacement.rotate ? artworkPlacement.width : artworkPlacement.height
+  const width = artworkPlacement.rotate
+    ? artworkPlacement.height
+    : artworkPlacement.width
+  const height = artworkPlacement.rotate
+    ? artworkPlacement.width
+    : artworkPlacement.height
 
   return {
     height: `${pointsToInches(height)}in`,
@@ -235,7 +300,8 @@ function readPrintPayload() {
 
 async function loadPrintPayload() {
   const storedPayload = readPrintPayload()
-  const savedQrCodeId = typeof route.query.saved === 'string' ? route.query.saved : ''
+  const savedQrCodeId
+    = typeof route.query.saved === 'string' ? route.query.saved : ''
 
   printPayload.value = storedPayload
 
@@ -247,23 +313,33 @@ async function loadPrintPayload() {
   isLoadingPrintPayload.value = true
 
   try {
-    const response = await $fetch<{ qrCode: SavedQrCode }>(`/api/qr/saved/${encodeURIComponent(savedQrCodeId)}`)
+    const response = await $fetch<{ qrCode: SavedQrCode }>(
+      `/api/qr/saved/${encodeURIComponent(savedQrCodeId)}`
+    )
 
     printPayload.value = createLabelPrintPayloadFromSavedQr(response.qrCode)
-    sessionStorage.setItem(labelPrintPayloadStorageKey, JSON.stringify(printPayload.value))
+    sessionStorage.setItem(
+      labelPrintPayloadStorageKey,
+      JSON.stringify(printPayload.value)
+    )
     applySuggestedLabelType()
   } catch (error) {
     applySuggestedLabelType()
 
     if (!storedPayload) {
-      pdfError.value = getErrorMessage(error, 'Unable to load the saved QR code for labels.')
+      pdfError.value = getErrorMessage(
+        error,
+        'Unable to load the saved QR code for labels.'
+      )
     }
   } finally {
     isLoadingPrintPayload.value = false
   }
 }
 
-async function loadCreditBalance({ silent = false }: { silent?: boolean } = {}) {
+async function loadCreditBalance({
+  silent = false
+}: { silent?: boolean } = {}) {
   try {
     const response = await $fetch<CreditsSummary>('/api/credits/summary')
 
@@ -291,10 +367,16 @@ async function previewLabelPdf(template: LabelTemplate) {
   pdfError.value = ''
 
   try {
-    openPdfBytes(await createLabelPdfBytes(template, { watermark: true }), pdfWindow)
+    openPdfBytes(
+      await createLabelPdfBytes(template, { watermark: true }),
+      pdfWindow
+    )
   } catch (error) {
     pdfWindow?.close()
-    pdfError.value = getErrorMessage(error, 'Unable to create the label PDF preview.')
+    pdfError.value = getErrorMessage(
+      error,
+      'Unable to create the label PDF preview.'
+    )
   } finally {
     if (activePdfAction.value === actionId) {
       activePdfAction.value = ''
@@ -346,14 +428,17 @@ async function purchaseLabelPdf(template: LabelTemplate) {
 
   try {
     const pdfBytes = await createLabelPdfBytes(template, { watermark: false })
-    const response = await $fetch<{ balance: number, pdf: PurchasedPdf }>('/api/credits/pdf-purchases', {
-      body: {
-        pdfBase64: uint8ArrayToBase64(pdfBytes),
-        qrTitle: payload.name || payload.title,
-        templateId: template.id
-      },
-      method: 'POST'
-    })
+    const response = await $fetch<{ balance: number, pdf: PurchasedPdf }>(
+      '/api/credits/pdf-purchases',
+      {
+        body: {
+          pdfBase64: uint8ArrayToBase64(pdfBytes),
+          qrTitle: payload.name || payload.title,
+          templateId: template.id
+        },
+        method: 'POST'
+      }
+    )
 
     creditBalance.value = response.balance
     openPurchasedPdf(response.pdf.downloadUrl, pdfWindow)
@@ -371,7 +456,10 @@ async function purchaseLabelPdf(template: LabelTemplate) {
       return
     }
 
-    pdfError.value = getErrorMessage(error, 'Unable to purchase the label PDF.')
+    pdfError.value = getErrorMessage(
+      error,
+      'Unable to purchase the label PDF.'
+    )
   } finally {
     if (activePdfAction.value === actionId) {
       activePdfAction.value = ''
@@ -379,7 +467,10 @@ async function purchaseLabelPdf(template: LabelTemplate) {
   }
 }
 
-async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { watermark: boolean }) {
+async function createLabelPdfBytes(
+  template: LabelTemplate,
+  { watermark }: { watermark: boolean }
+) {
   const payload = printPayload.value
 
   if (!payload) {
@@ -390,12 +481,19 @@ async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { wat
 
   const { layout } = template
   const artworkPlacement = getLabelArtworkPlacement(payload, template)
-  const qrPngDataUrl = await renderPayloadToPng(payload, artworkPlacement.rotate)
+  const qrPngDataUrl = await renderPayloadToPng(
+    payload,
+    artworkPlacement.rotate
+  )
   const pdfDocument = await PDFDocument.create()
   const page = pdfDocument.addPage([layout.pageWidth, layout.pageHeight])
   const qrImage = await pdfDocument.embedPng(qrPngDataUrl)
-  const headerLogoImage = await pdfDocument.embedPng(await renderSvgAssetToPng('/icons/qr-code.svg', 96, 96))
-  const headerBoldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold)
+  const headerLogoImage = await pdfDocument.embedPng(
+    await renderSvgAssetToPng('/icons/qr-code.svg', 96, 96)
+  )
+  const headerBoldFont = await pdfDocument.embedFont(
+    StandardFonts.HelveticaBold
+  )
   const footerFont = await pdfDocument.embedFont(StandardFonts.Helvetica)
   const labelsPerSheet = layout.columns * layout.rows
   const imageWidth = artworkPlacement.width
@@ -414,8 +512,10 @@ async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { wat
   for (let index = 0; index < labelsPerSheet; index++) {
     const column = index % layout.columns
     const row = Math.floor(index / layout.columns)
-    const labelX = layout.marginLeft + column * (layout.labelWidth + layout.columnGap)
-    const labelTopY = layout.marginTop + row * (layout.labelHeight + layout.rowGap)
+    const labelX
+      = layout.marginLeft + column * (layout.labelWidth + layout.columnGap)
+    const labelTopY
+      = layout.marginTop + row * (layout.labelHeight + layout.rowGap)
     const labelY = layout.pageHeight - labelTopY - layout.labelHeight
 
     page.drawImage(qrImage, {
@@ -446,29 +546,34 @@ async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { wat
 }
 
 function getLayoutBottomMargin(layout: LabelTemplate['layout']) {
-  return layout.pageHeight
+  return (
+    layout.pageHeight
     - layout.marginTop
     - layout.rows * layout.labelHeight
     - (layout.rows - 1) * layout.rowGap
+  )
 }
 
-function drawPdfHeader(page: PDFPage, {
-  boldFont,
-  logoImage,
-  name,
-  pageHeight,
-  pageWidth,
-  topMargin,
-  url
-}: {
-  boldFont: PDFFont
-  logoImage: PDFImage
-  name: string
-  pageHeight: number
-  pageWidth: number
-  topMargin: number
-  url: string
-}) {
+function drawPdfHeader(
+  page: PDFPage,
+  {
+    boldFont,
+    logoImage,
+    name,
+    pageHeight,
+    pageWidth,
+    topMargin,
+    url
+  }: {
+    boldFont: PDFFont
+    logoImage: PDFImage
+    name: string
+    pageHeight: number
+    pageWidth: number
+    topMargin: number
+    url: string
+  }
+) {
   if (topMargin < 24) {
     return
   }
@@ -492,26 +597,32 @@ function drawPdfHeader(page: PDFPage, {
     x: horizontalPadding,
     y: logoY
   })
-  page.drawText(truncatePdfText(boldFont, headerText, textFontSize, maxTextWidth), {
-    color: rgb(0.07, 0.08, 0.1),
-    font: boldFont,
-    size: textFontSize,
-    x: textX,
-    y: textY
-  })
+  page.drawText(
+    truncatePdfText(boldFont, headerText, textFontSize, maxTextWidth),
+    {
+      color: rgb(0.07, 0.08, 0.1),
+      font: boldFont,
+      size: textFontSize,
+      x: textX,
+      y: textY
+    }
+  )
 }
 
-function drawPdfFooter(page: PDFPage, {
-  bottomMargin,
-  font,
-  pageWidth,
-  template
-}: {
-  bottomMargin: number
-  font: PDFFont
-  pageWidth: number
-  template: LabelTemplate
-}) {
+function drawPdfFooter(
+  page: PDFPage,
+  {
+    bottomMargin,
+    font,
+    pageWidth,
+    template
+  }: {
+    bottomMargin: number
+    font: PDFFont
+    pageWidth: number
+    template: LabelTemplate
+  }
+) {
   if (bottomMargin < 16) {
     return
   }
@@ -532,17 +643,20 @@ function drawPdfFooter(page: PDFPage, {
   })
 }
 
-function drawPdfWatermark(page: PDFPage, {
-  boldFont,
-  logoImage,
-  pageHeight,
-  pageWidth
-}: {
-  boldFont: PDFFont
-  logoImage: PDFImage
-  pageHeight: number
-  pageWidth: number
-}) {
+function drawPdfWatermark(
+  page: PDFPage,
+  {
+    boldFont,
+    logoImage,
+    pageHeight,
+    pageWidth
+  }: {
+    boldFont: PDFFont
+    logoImage: PDFImage
+    pageHeight: number
+    pageWidth: number
+  }
+) {
   const text = 'QR Codes On Labels'
   const textSize = 18
   const logoSize = 28
@@ -578,7 +692,9 @@ function openPdfBytes(pdfBytes: Uint8Array, pdfWindow: Window | null) {
 
   new Uint8Array(pdfBuffer).set(pdfBytes)
 
-  const pdfUrl = URL.createObjectURL(new Blob([pdfBuffer], { type: 'application/pdf' }))
+  const pdfUrl = URL.createObjectURL(
+    new Blob([pdfBuffer], { type: 'application/pdf' })
+  )
 
   if (pdfWindow) {
     pdfWindow.location.href = pdfUrl
@@ -618,7 +734,12 @@ function uint8ArrayToBase64(bytes: Uint8Array) {
   return btoa(binary)
 }
 
-function truncatePdfText(font: PDFFont, value: string, fontSize: number, maxWidth: number) {
+function truncatePdfText(
+  font: PDFFont,
+  value: string,
+  fontSize: number,
+  maxWidth: number
+) {
   const text = value.trim()
 
   if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) {
@@ -651,7 +772,9 @@ async function renderSvgAssetToPng(src: string, width: number, height: number) {
   }
 
   const svg = await response.text()
-  const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`)
+  const image = await loadImage(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  )
   const canvas = document.createElement('canvas')
   const scale = 3
 
@@ -670,9 +793,15 @@ async function renderSvgAssetToPng(src: string, width: number, height: number) {
   return canvas.toDataURL('image/png')
 }
 
-async function renderPayloadToPng(payload: LabelPrintPayload, rotateArtwork: boolean) {
-  const svgImage = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(payload.svg)}`)
-  const renderScale = labelPdfRenderLongEdgePixels / Math.max(payload.width, payload.height)
+async function renderPayloadToPng(
+  payload: LabelPrintPayload,
+  rotateArtwork: boolean
+) {
+  const svgImage = await loadImage(
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(payload.svg)}`
+  )
+  const renderScale
+    = labelPdfRenderLongEdgePixels / Math.max(payload.width, payload.height)
   const renderedWidth = Math.ceil(payload.width * renderScale)
   const renderedHeight = Math.ceil(payload.height * renderScale)
   const canvas = document.createElement('canvas')
@@ -704,14 +833,18 @@ function loadImage(src: string) {
     const image = new Image()
 
     image.addEventListener('load', () => resolve(image))
-    image.addEventListener('error', () => reject(new Error('Unable to render QR artwork for PDF.')))
+    image.addEventListener('error', () =>
+      reject(new Error('Unable to render QR artwork for PDF.'))
+    )
     image.src = src
   })
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
   if (typeof error === 'object' && error !== null && 'data' in error) {
-    const data = (error as { data?: { message?: string, statusMessage?: string } }).data
+    const data = (
+      error as { data?: { message?: string, statusMessage?: string } }
+    ).data
     const message = data?.statusMessage || data?.message
 
     if (message) {
@@ -728,7 +861,9 @@ function getErrorStatusCode(error: unknown) {
   }
 
   if (typeof error === 'object' && error !== null && 'data' in error) {
-    return Number((error as { data?: { statusCode?: unknown } }).data?.statusCode)
+    return Number(
+      (error as { data?: { statusCode?: unknown } }).data?.statusCode
+    )
   }
 
   return 0
@@ -736,7 +871,9 @@ function getErrorStatusCode(error: unknown) {
 </script>
 
 <template>
-  <UContainer class="flex min-h-[calc(100svh-4rem)] max-w-3xl flex-col gap-4 py-4 sm:gap-6 sm:py-6">
+  <UContainer
+    class="flex min-h-[calc(100svh-4rem)] max-w-3xl flex-col gap-4 py-4 sm:gap-6 sm:py-6"
+  >
     <div class="flex items-center justify-between gap-3">
       <UButton
         color="neutral"
@@ -785,37 +922,56 @@ function getErrorStatusCode(error: unknown) {
         />
 
         <template v-if="hasPrintPayload">
-          <UFormField label="Label Type">
-            <div
-              aria-label="Label Type"
-              class="flex flex-wrap gap-2"
-              role="radiogroup"
-            >
-              <button
-                v-for="option in labelTypeOptions"
-                :key="option.value"
-                :aria-checked="selectedLabelType === option.value"
-                class="rounded-lg border px-3 py-2 text-sm font-medium transition"
-                :class="selectedLabelType === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                role="radio"
-                type="button"
-                @click="selectLabelType(option.value)"
+          <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-end">
+            <UFormField label="Label Type">
+              <div
+                aria-label="Label Type"
+                class="flex flex-wrap gap-2"
+                role="radiogroup"
               >
-                <span class="inline-flex items-center gap-2">
-                  <span>{{ option.label }}</span>
-                  <UBadge
-                    v-if="isSuggestedLabelType(option.value)"
-                    :class="selectedLabelType === option.value ? '!bg-white !text-primary !ring-white/80 dark:!bg-white dark:!text-primary' : ''"
-                    color="primary"
-                    size="sm"
-                    variant="subtle"
-                  >
-                    Suggested
-                  </UBadge>
-                </span>
-              </button>
-            </div>
-          </UFormField>
+                <button
+                  v-for="option in labelTypeOptions"
+                  :key="option.value"
+                  :aria-checked="selectedLabelType === option.value"
+                  class="rounded-lg border px-3 py-2 text-sm font-medium transition"
+                  :class="
+                    selectedLabelType === option.value
+                      ? 'border-primary bg-primary text-inverted'
+                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'
+                  "
+                  role="radio"
+                  type="button"
+                  @click="selectLabelType(option.value)"
+                >
+                  <span class="inline-flex items-center gap-2">
+                    <span>{{ option.label }}</span>
+                    <UBadge
+                      v-if="isSuggestedLabelType(option.value)"
+                      :class="
+                        selectedLabelType === option.value
+                          ? '!bg-white !text-primary !ring-white/80 dark:!bg-white dark:!text-primary'
+                          : ''
+                      "
+                      color="primary"
+                      size="sm"
+                      variant="subtle"
+                    >
+                      Suggested
+                    </UBadge>
+                  </span>
+                </button>
+              </div>
+            </UFormField>
+
+            <UFormField label="Sort By">
+              <USelect
+                v-model="selectedLabelSortOrder"
+                class="w-full"
+                :items="labelSortOrderOptions"
+                size="lg"
+              />
+            </UFormField>
+          </div>
 
           <div class="space-y-2">
             <div
@@ -825,7 +981,9 @@ function getErrorStatusCode(error: unknown) {
             >
               <div class="min-w-0 space-y-4">
                 <div class="text-center">
-                  <div class="flex flex-wrap items-center justify-center gap-2 text-lg font-semibold text-highlighted">
+                  <div
+                    class="flex flex-wrap items-center justify-center gap-2 text-lg font-semibold text-highlighted"
+                  >
                     <span>{{ template.label }}</span>
                     <UBadge
                       v-if="isSuggestedLabelTemplate(template)"
@@ -851,6 +1009,7 @@ function getErrorStatusCode(error: unknown) {
                   <div class="relative mx-auto w-max">
                     <div
                       class="box-border flex shrink-0 items-center justify-center border border-slate-300 bg-white shadow-sm dark:border-slate-700"
+                      :class="getLabelPreviewClass(template)"
                       :data-testid="`label-template-preview-${template.id}`"
                       :style="getLabelPreviewStyle(template)"
                     >
@@ -894,7 +1053,9 @@ function getErrorStatusCode(error: unknown) {
                     variant="subtle"
                     @click="previewLabelPdf(template)"
                   >
-                    <span class="flex min-w-0 flex-col items-center leading-tight">
+                    <span
+                      class="flex min-w-0 flex-col items-center leading-tight"
+                    >
                       <span>Preview</span>
                       <span class="text-xs font-normal opacity-75">Watermarked</span>
                     </span>
@@ -907,14 +1068,18 @@ function getErrorStatusCode(error: unknown) {
                     :loading="isTemplateActionLoading('purchase', template)"
                     @click="purchaseLabelPdf(template)"
                   >
-                    <span class="flex min-w-0 flex-col items-center leading-tight">
+                    <span
+                      class="flex min-w-0 flex-col items-center leading-tight"
+                    >
                       <span>Purchase Printable PDF</span>
                       <span class="text-xs font-normal opacity-75">1 Credit</span>
                     </span>
                   </UButton>
                 </div>
 
-                <div class="flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                <div
+                  class="flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800"
+                >
                   <span class="text-sm font-medium text-muted">Buy From:</span>
                   <a
                     :aria-label="`Buy ${template.description} from Avery`"

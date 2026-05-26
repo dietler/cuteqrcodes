@@ -10,7 +10,7 @@ export type LabelPrintPayload = {
   width: number
 }
 
-export type LabelTemplateType = 'rectangle' | 'square'
+export type LabelTemplateType = 'rectangle' | 'square' | 'circle'
 
 export type LabelTemplateLayout = {
   columns: number
@@ -70,7 +70,7 @@ export function getSuggestedLabelTemplateIds(payload: Pick<LabelPrintPayload, 'h
 
   if (isSquareAspectRatio(payloadAspectRatio)) {
     return templates
-      .filter(template => template.type === 'square')
+      .filter(template => template.type === 'square' || template.type === 'circle')
       .map(template => template.id)
   }
 
@@ -86,8 +86,8 @@ export function getSuggestedLabelTemplateIds(payload: Pick<LabelPrintPayload, 'h
 }
 
 export function getLabelArtworkPlacement(payload: Pick<LabelPrintPayload, 'height' | 'width'>, template: LabelTemplate): LabelArtworkPlacement {
-  const availableWidth = template.layout.labelWidth - template.layout.labelPadding * 2
-  const availableHeight = template.layout.labelHeight - template.layout.labelPadding * 2
+  const availableArea = getLabelArtworkAvailableArea(template)
+  const { availableHeight, availableWidth } = availableArea
   const uprightFit = getArtworkFit(payload.width, payload.height, availableWidth, availableHeight)
   const rotatedFit = getArtworkFit(payload.height, payload.width, availableWidth, availableHeight)
 
@@ -167,12 +167,28 @@ function getArtworkFit(width: number, height: number, availableWidth: number, av
 }
 
 function getLabelArtworkOccupancyScore(payload: Pick<LabelPrintPayload, 'height' | 'width'>, template: LabelTemplate) {
-  const availableWidth = template.layout.labelWidth - template.layout.labelPadding * 2
-  const availableHeight = template.layout.labelHeight - template.layout.labelPadding * 2
+  const { availableHeight, availableWidth } = getLabelArtworkAvailableArea(template)
   const placement = getLabelArtworkPlacement(payload, template)
   const availableArea = availableWidth * availableHeight
 
   return availableArea > 0 ? placement.width * placement.height / availableArea : 0
+}
+
+function getLabelArtworkAvailableArea(template: LabelTemplate) {
+  if (template.type === 'circle') {
+    const diameter = Math.min(template.layout.labelWidth, template.layout.labelHeight)
+    const availableSide = Math.max(0, diameter - template.layout.labelPadding * 2) / Math.SQRT2
+
+    return {
+      availableHeight: availableSide,
+      availableWidth: availableSide
+    }
+  }
+
+  return {
+    availableHeight: template.layout.labelHeight - template.layout.labelPadding * 2,
+    availableWidth: template.layout.labelWidth - template.layout.labelPadding * 2
+  }
 }
 
 function getAspectRatio(width: number, height: number) {
@@ -252,5 +268,75 @@ export const labelTemplates: LabelTemplate[] = [createLabelTemplate({
     labelHeight: 3,
     marginLeft: 0.625,
     marginTop: 0.625
+  })
+}), createLabelTemplate({
+  id: 'avery-presta-94514',
+  label: '3.5"',
+  description: 'Avery Presta® Template 94514',
+  templateNumber: '94514',
+  type: 'circle',
+  layout: createLayout({
+    columns: 2,
+    rows: 2,
+    labelWidth: 3.5,
+    labelHeight: 3.5,
+    marginLeft: 0.5,
+    marginTop: 1.5
+  })
+}), createLabelTemplate({
+  id: 'avery-presta-94513',
+  label: '3"',
+  description: 'Avery Presta® Template 94513',
+  templateNumber: '94513',
+  type: 'circle',
+  layout: createLayout({
+    columns: 2,
+    rows: 3,
+    labelWidth: 3,
+    labelHeight: 3,
+    marginLeft: 0.625,
+    marginTop: 0.625
+  })
+}), createLabelTemplate({
+  id: 'avery-presta-94502',
+  label: '2.5"',
+  description: 'Avery Presta® Template 94502',
+  templateNumber: '94502',
+  type: 'circle',
+  layout: createLayout({
+    columns: 3,
+    rows: 3,
+    labelWidth: 2.5,
+    labelHeight: 2.5,
+    marginLeft: 0.375,
+    marginTop: 1
+  })
+}), createLabelTemplate({
+  id: 'avery-presta-94501',
+  label: '2"',
+  description: 'Avery Presta® Template 94501',
+  templateNumber: '94501',
+  type: 'circle',
+  layout: createLayout({
+    columns: 3,
+    rows: 4,
+    labelWidth: 2,
+    labelHeight: 2,
+    marginLeft: 0.625,
+    marginTop: 0.625
+  })
+}), createLabelTemplate({
+  id: 'avery-presta-94506',
+  label: '1.5"',
+  description: 'Avery Presta® Template 94506',
+  templateNumber: '94506',
+  type: 'circle',
+  layout: createLayout({
+    columns: 4,
+    rows: 5,
+    labelWidth: 1.5,
+    labelHeight: 1.5,
+    marginLeft: 0.5,
+    marginTop: 0.75
   })
 })]

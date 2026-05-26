@@ -16,7 +16,9 @@ export default defineEventHandler((event) => {
     resendApiKey: process.env.RESEND_API_KEY,
     resendFromEmail: process.env.RESEND_FROM_EMAIL,
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: parseTrustedOrigins(process.env.BETTER_AUTH_TRUSTED_ORIGINS)
+    trustedOrigins: parseTrustedOrigins(
+      process.env.BETTER_AUTH_TRUSTED_ORIGINS
+    )
   })
 
   return auth.handler(toWebRequest(event))

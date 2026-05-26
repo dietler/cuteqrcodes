@@ -1,7 +1,9 @@
 import { getHeaders, type H3Event } from 'h3'
 import { createAuth, parseTrustedOrigins } from '~~/lib/auth'
 
-type AuthSession = NonNullable<Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>>
+type AuthSession = NonNullable<
+  Awaited<ReturnType<ReturnType<typeof createAuth>['api']['getSession']>>
+>
 
 export function useServerAuth() {
   const databaseUrl = process.env.DATABASE_URL
@@ -19,13 +21,17 @@ export function useServerAuth() {
     resendApiKey: process.env.RESEND_API_KEY,
     resendFromEmail: process.env.RESEND_FROM_EMAIL,
     secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: parseTrustedOrigins(process.env.BETTER_AUTH_TRUSTED_ORIGINS)
+    trustedOrigins: parseTrustedOrigins(
+      process.env.BETTER_AUTH_TRUSTED_ORIGINS
+    )
   })
 }
 
 export async function requireUserSession(event: H3Event): Promise<AuthSession> {
   const auth = useServerAuth()
-  const headers = Object.entries(getHeaders(event)).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
+  const headers = Object.entries(getHeaders(event)).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string'
+  )
   const session = await auth.api.getSession({
     headers: new Headers(headers)
   })

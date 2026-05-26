@@ -22,7 +22,8 @@ type PasswordResetEmailOptions = {
 }
 
 const appName = 'QR Codes On Labels'
-const placeholderDatabaseUrl = 'postgresql://user:password@example.neon.tech/neondb?sslmode=require'
+const placeholderDatabaseUrl
+  = 'postgresql://user:password@example.neon.tech/neondb?sslmode=require'
 const htmlEntities: Record<string, string> = {
   '&': '&amp;',
   '<': '&lt;',
@@ -39,7 +40,10 @@ export function parseTrustedOrigins(value?: string) {
 }
 
 function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, character => htmlEntities[character] || character)
+  return value.replace(
+    /[&<>"']/g,
+    character => htmlEntities[character] || character
+  )
 }
 
 function buildPasswordResetEmailHtml(url: string) {
@@ -81,16 +85,25 @@ async function getResendErrorMessage(response: Response) {
   }
 }
 
-async function sendPasswordResetEmail({ apiKey, from, to, url }: PasswordResetEmailOptions) {
+async function sendPasswordResetEmail({
+  apiKey,
+  from,
+  to,
+  url
+}: PasswordResetEmailOptions) {
   const resendApiKey = apiKey?.trim()
   const resendFromEmail = from?.trim()
 
   if (!resendApiKey) {
-    throw new Error('RESEND_API_KEY is required to send password reset emails.')
+    throw new Error(
+      'RESEND_API_KEY is required to send password reset emails.'
+    )
   }
 
   if (!resendFromEmail) {
-    throw new Error('RESEND_FROM_EMAIL is required to send password reset emails.')
+    throw new Error(
+      'RESEND_FROM_EMAIL is required to send password reset emails.'
+    )
   }
 
   const response = await fetch('https://api.resend.com/emails', {
@@ -109,7 +122,9 @@ async function sendPasswordResetEmail({ apiKey, from, to, url }: PasswordResetEm
   })
 
   if (!response.ok) {
-    throw new Error(`Unable to send password reset email with Resend: ${await getResendErrorMessage(response)}`)
+    throw new Error(
+      `Unable to send password reset email with Resend: ${await getResendErrorMessage(response)}`
+    )
   }
 }
 
