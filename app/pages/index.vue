@@ -2128,14 +2128,14 @@ onUnmounted(() => {
 <style scoped>
 @property --homepage-description-angle {
   syntax: '<angle>';
-  inherits: false;
+  inherits: true;
   initial-value: 0deg;
 }
 
 .homepage-description {
   --logo-blue: #0bb1d3;
   --logo-purple: #9d31fe;
-  animation: homepage-description-glow-spin 7s linear infinite;
+  animation: homepage-description-glow-spin 14s linear infinite;
   background: conic-gradient(
     from var(--homepage-description-angle),
     rgb(11 177 211 / 92%),
@@ -2143,14 +2143,14 @@ onUnmounted(() => {
     rgb(11 177 211 / 92%)
   );
   box-shadow:
-    0 0 20px rgb(11 177 211 / 22%),
-    0 0 30px rgb(157 49 254 / 20%);
+    0 0 6px rgb(11 177 211 / 18%),
+    0 0 9px rgb(157 49 254 / 16%);
   isolation: isolate;
 }
 
 .homepage-description::before {
   position: absolute;
-  inset: -14px;
+  inset: -4px;
   z-index: 0;
   background: conic-gradient(
     from var(--homepage-description-angle),
@@ -2162,22 +2162,32 @@ onUnmounted(() => {
   );
   border-radius: inherit;
   content: '';
-  filter: blur(14px);
-  opacity: 0.72;
+  filter: blur(4px);
+  opacity: 0.62;
   pointer-events: none;
 }
 
 .homepage-description-content {
   z-index: 1;
   background:
-    linear-gradient(135deg, rgb(11 177 211 / 10%), rgb(157 49 254 / 12%)),
+    conic-gradient(
+      from var(--homepage-description-angle),
+      rgb(11 177 211 / 9%),
+      rgb(157 49 254 / 12%),
+      rgb(11 177 211 / 9%)
+    ),
     rgb(255 255 255 / 94%);
   backdrop-filter: blur(10px);
 }
 
 :global(.dark) .homepage-description-content {
   background:
-    linear-gradient(135deg, rgb(11 177 211 / 14%), rgb(157 49 254 / 18%)),
+    conic-gradient(
+      from var(--homepage-description-angle),
+      rgb(11 177 211 / 13%),
+      rgb(157 49 254 / 17%),
+      rgb(11 177 211 / 13%)
+    ),
     rgb(2 6 23 / 92%);
 }
 
