@@ -13,6 +13,10 @@ const navigationItems = computed(() => {
       icon: 'i-lucide-folder-open',
       to: '/saved-qr-codes'
     }, {
+      label: 'Credits',
+      icon: 'i-lucide-circle-dollar-sign',
+      to: '/credits'
+    }, {
       label: 'Logout',
       icon: 'i-lucide-log-out',
       onSelect: handleLogout
@@ -42,8 +46,8 @@ useHead({
   }
 })
 
-const title = 'Cute QR Codes'
-const description = 'Create scalable SVG QR codes with Nuxt 4, Nuxt UI, and Pinia.'
+const title = 'QR Codes On Labels'
+const description = 'Create QR codes and print them on labels.'
 
 useSeoMeta({
   title,
@@ -75,7 +79,7 @@ async function handleLogout() {
             aria-hidden="true"
             class="size-10 shrink-0"
           >
-          <span>Cute QR Codes</span>
+          <span>QR Codes On Labels</span>
         </NuxtLink>
       </template>
 

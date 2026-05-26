@@ -1,3 +1,5 @@
+import type { SavedQrCode } from './saved-qr'
+
 export type LabelPrintPayload = {
   createdAt: number
   height: number
@@ -25,13 +27,20 @@ export type LabelTemplateLayout = {
 }
 
 export type LabelTemplate = {
+  aspectRatio: number
   id: string
   label: string
   description: string
   templateNumber: string
   type: LabelTemplateType
-  rotateArtwork: boolean
   layout: LabelTemplateLayout
+}
+
+export type LabelArtworkPlacement = {
+  height: number
+  rotate: boolean
+  scale: number
+  width: number
 }
 
 export const labelPrintPayloadStorageKey = 'cuteqrcodes.labelPrintPayload'
@@ -39,6 +48,61 @@ export const labelPrintPayloadStorageKey = 'cuteqrcodes.labelPrintPayload'
 export const pdfPointsPerInch = 72
 
 export const labelPdfRenderLongEdgePixels = 1200
+
+export function createLabelPrintPayloadFromSavedQr(qrCode: SavedQrCode): LabelPrintPayload {
+  return {
+    createdAt: Date.now(),
+    height: qrCode.previewHeight,
+    name: qrCode.name,
+    svg: qrCode.previewSvg,
+    title: qrCode.name,
+    url: typeof qrCode.payload?.url === 'string' ? qrCode.payload.url : undefined,
+    width: qrCode.previewWidth
+  }
+}
+
+export function getSuggestedLabelTemplateIds(payload: Pick<LabelPrintPayload, 'height' | 'width'>, templates = labelTemplates) {
+  const payloadAspectRatio = getAspectRatio(payload.width, payload.height)
+
+  if (!Number.isFinite(payloadAspectRatio)) {
+    return []
+  }
+
+  if (isSquareAspectRatio(payloadAspectRatio)) {
+    return templates
+      .filter(template => template.type === 'square')
+      .map(template => template.id)
+  }
+
+  return templates
+    .filter(template => template.type === 'rectangle')
+    .map(template => ({
+      id: template.id,
+      score: getLabelArtworkOccupancyScore(payload, template)
+    }))
+    .sort((first, second) => second.score - first.score)
+    .slice(0, 2)
+    .map(template => template.id)
+}
+
+export function getLabelArtworkPlacement(payload: Pick<LabelPrintPayload, 'height' | 'width'>, template: LabelTemplate): LabelArtworkPlacement {
+  const availableWidth = template.layout.labelWidth - template.layout.labelPadding * 2
+  const availableHeight = template.layout.labelHeight - template.layout.labelPadding * 2
+  const uprightFit = getArtworkFit(payload.width, payload.height, availableWidth, availableHeight)
+  const rotatedFit = getArtworkFit(payload.height, payload.width, availableWidth, availableHeight)
+
+  if (rotatedFit.scale > uprightFit.scale) {
+    return {
+      ...rotatedFit,
+      rotate: true
+    }
+  }
+
+  return {
+    ...uprightFit,
+    rotate: false
+  }
+}
 
 const letterPageWidth = 8.5
 const letterPageHeight = 11
@@ -75,13 +139,56 @@ function createLayout({
   }
 }
 
-export const labelTemplates: LabelTemplate[] = [{
+function createLabelTemplate(template: Omit<LabelTemplate, 'aspectRatio'>): LabelTemplate {
+  const aspectRatio = getAspectRatio(template.layout.labelWidth, template.layout.labelHeight)
+
+  return {
+    ...template,
+    aspectRatio
+  }
+}
+
+function getArtworkFit(width: number, height: number, availableWidth: number, availableHeight: number) {
+  if (width <= 0 || height <= 0 || availableWidth <= 0 || availableHeight <= 0) {
+    return {
+      height: 0,
+      scale: 0,
+      width: 0
+    }
+  }
+
+  const scale = Math.min(availableWidth / width, availableHeight / height)
+
+  return {
+    height: height * scale,
+    scale,
+    width: width * scale
+  }
+}
+
+function getLabelArtworkOccupancyScore(payload: Pick<LabelPrintPayload, 'height' | 'width'>, template: LabelTemplate) {
+  const availableWidth = template.layout.labelWidth - template.layout.labelPadding * 2
+  const availableHeight = template.layout.labelHeight - template.layout.labelPadding * 2
+  const placement = getLabelArtworkPlacement(payload, template)
+  const availableArea = availableWidth * availableHeight
+
+  return availableArea > 0 ? placement.width * placement.height / availableArea : 0
+}
+
+function getAspectRatio(width: number, height: number) {
+  return height > 0 ? width / height : Number.NaN
+}
+
+function isSquareAspectRatio(aspectRatio: number) {
+  return Math.abs(Math.log(aspectRatio)) <= Math.log(1.08)
+}
+
+export const labelTemplates: LabelTemplate[] = [createLabelTemplate({
   id: 'avery-presta-94256',
   label: '3.5" x 5"',
   description: 'Avery Presta® Template 94256',
   templateNumber: '94256',
   type: 'rectangle',
-  rotateArtwork: false,
   layout: createLayout({
     columns: 2,
     rows: 2,
@@ -90,13 +197,12 @@ export const labelTemplates: LabelTemplate[] = [{
     marginLeft: 0.5,
     marginTop: 0.425
   })
-}, {
+}), createLabelTemplate({
   id: 'avery-presta-94207',
   label: '2" x 4"',
   description: 'Avery Presta® Template 94207',
   templateNumber: '94207',
   type: 'rectangle',
-  rotateArtwork: true,
   layout: createLayout({
     columns: 2,
     rows: 5,
@@ -105,13 +211,12 @@ export const labelTemplates: LabelTemplate[] = [{
     marginLeft: 0.156,
     marginTop: 0.5
   })
-}, {
+}), createLabelTemplate({
   id: 'avery-presta-94237',
   label: '2" x 3"',
   description: 'Avery Presta® Template 94237',
   templateNumber: '94237',
   type: 'rectangle',
-  rotateArtwork: true,
   layout: createLayout({
     columns: 2,
     rows: 4,
@@ -120,13 +225,12 @@ export const labelTemplates: LabelTemplate[] = [{
     marginLeft: 0.85,
     marginTop: 1
   })
-}, {
+}), createLabelTemplate({
   id: 'avery-presta-94100',
   label: '4" x 4"',
   description: 'Avery Presta® Template 94100',
   templateNumber: '94100',
   type: 'square',
-  rotateArtwork: false,
   layout: createLayout({
     columns: 2,
     rows: 2,
@@ -135,13 +239,12 @@ export const labelTemplates: LabelTemplate[] = [{
     marginLeft: 0.2505,
     marginTop: 1
   })
-}, {
+}), createLabelTemplate({
   id: 'avery-presta-94101',
   label: '3" x 3"',
   description: 'Avery Presta® Template 94101',
   templateNumber: '94101',
   type: 'square',
-  rotateArtwork: false,
   layout: createLayout({
     columns: 2,
     rows: 3,
@@ -150,4 +253,4 @@ export const labelTemplates: LabelTemplate[] = [{
     marginLeft: 0.625,
     marginTop: 0.625
   })
-}]
+})]

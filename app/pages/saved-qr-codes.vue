@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useSession } from '~~/lib/auth-client'
-import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
+import { createLabelPrintPayloadFromSavedQr, labelPrintPayloadStorageKey } from '~/utils/label-print'
 import { editQrPayloadStorageKey, type SavedQrCode, type SavedQrFolderWithCodes } from '~/utils/saved-qr'
 
 const session = useSession()
@@ -57,18 +57,14 @@ function editQrCode(qrCode: SavedQrCode) {
 }
 
 function printQrCode(qrCode: SavedQrCode) {
-  const payload: LabelPrintPayload = {
-    createdAt: Date.now(),
-    height: qrCode.previewHeight,
-    name: qrCode.name,
-    svg: qrCode.previewSvg,
-    title: qrCode.name,
-    url: qrCode.payload.url,
-    width: qrCode.previewWidth
-  }
+  sessionStorage.setItem(labelPrintPayloadStorageKey, JSON.stringify(createLabelPrintPayloadFromSavedQr(qrCode)))
 
-  sessionStorage.setItem(labelPrintPayloadStorageKey, JSON.stringify(payload))
-  return navigateTo('/print-labels')
+  return navigateTo({
+    path: '/print-labels',
+    query: {
+      saved: qrCode.id
+    }
+  })
 }
 
 function openDeleteDialog(qrCode: SavedQrCode) {

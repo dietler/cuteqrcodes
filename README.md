@@ -1,6 +1,6 @@
-# Cute QR Codes
+# QR Codes On Labels
 
-A Nuxt 4 project using Nuxt UI, Pinia, and Bun.
+A Nuxt 4 project for creating QR codes and printing them on labels.
 
 ## Environment
 

@@ -99,6 +99,7 @@ const savedQrFolders = ref<SavedQrFolder[]>([])
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const additionalTextLineLength = 40
+const preferredAdditionalTextLineLength = 24
 const maxAdditionalTextLength = additionalTextLineLength * 3
 const minTextSizeStep = -2
 const maxAdditionalTextSizeStep = 4
@@ -128,8 +129,8 @@ const labelFontItems = labelFonts.map(font => ({ label: font.label, value: font.
 const labelPositionOptions: LabelPositionOption[] = [
   { label: 'Bottom', value: 'bottom', disabled: false },
   { label: 'Top', value: 'top', disabled: false },
-  { label: 'Right', value: 'right', disabled: true },
-  { label: 'Left', value: 'left', disabled: true }
+  { label: 'Right', value: 'right', disabled: false },
+  { label: 'Left', value: 'left', disabled: false }
 ]
 const noCenterIconOption: CenterIconOption = { label: 'None', value: 'none', src: '', categoryLabel: '' }
 const centerIconCategories: CenterIconCategory[] = [
@@ -393,6 +394,9 @@ const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
 const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
 const labelIsTop = computed(() => hasLabelText.value && selectedLabelPosition.value === 'top')
 const labelIsBottom = computed(() => hasLabelText.value && selectedLabelPosition.value === 'bottom')
+const labelIsLeft = computed(() => hasLabelText.value && selectedLabelPosition.value === 'left')
+const labelIsRight = computed(() => hasLabelText.value && selectedLabelPosition.value === 'right')
+const labelIsSide = computed(() => labelIsLeft.value || labelIsRight.value)
 const borderContentInset = computed(() => {
   if (!hasBorder.value) {
     return 0
@@ -406,14 +410,22 @@ const qrOutputSize = computed(() => qrSvgSize.value)
 const baseLabelFontSize = computed(() => qrOutputSize.value * 0.2)
 const baseAdditionalTextFontSize = computed(() => qrOutputSize.value * 0.095)
 const labelSizeMultiplier = computed(() => getSizeMultiplier(labelSizeStep.value))
-const additionalTextSizeMultiplier = computed(() => getSizeMultiplier(additionalTextSizeStep.value))
+const additionalTextSizeMultiplier = computed(() => getAdditionalTextSizeMultiplier(additionalTextSizeStep.value))
 const labelFontScale = computed(() => getFittedTextScale(labelTextWidth.value, labelSizeMultiplier.value))
 const additionalTextFontScale = computed(() => getFittedTextScale(additionalTextLineWidth.value, additionalTextSizeMultiplier.value))
 const labelFontSize = computed(() => baseLabelFontSize.value * labelFontScale.value)
 const additionalTextFontSize = computed(() => baseAdditionalTextFontSize.value * additionalTextFontScale.value)
 const canIncreaseLabelSize = computed(() => labelText.value.length > 0 && labelTextWidth.value * labelFontScale.value < qrOutputSize.value - 0.01)
 const canDecreaseLabelSize = computed(() => labelText.value.length > 0 && labelSizeStep.value > minTextSizeStep)
-const canIncreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value < maxAdditionalTextSizeStep)
+const canIncreaseAdditionalTextSize = computed(() => {
+  if (additionalTextLines.value.length === 0 || additionalTextSizeStep.value >= maxAdditionalTextSizeStep) {
+    return false
+  }
+
+  const nextScale = getFittedTextScale(additionalTextLineWidth.value, getAdditionalTextSizeMultiplier(additionalTextSizeStep.value + 1))
+
+  return nextScale > additionalTextFontScale.value + 0.01
+})
 const canDecreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value > minTextSizeStep)
 const additionalTextLineGap = computed(() => additionalTextLines.value.length > 1 ? additionalTextFontSize.value * 0.12 : 0)
 const additionalTextBlockHeight = computed(() => additionalTextLines.value.length ? additionalTextFontSize.value * additionalTextLines.value.length + additionalTextLineGap.value * (additionalTextLines.value.length - 1) : 0)
@@ -430,6 +442,9 @@ const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value 
 const bottomLabelHeight = computed(() => labelIsBottom.value ? labelBlockHeight.value : 0)
 const topLabelGap = computed(() => labelIsTop.value ? labelGap.value : 0)
 const bottomLabelGap = computed(() => labelIsBottom.value ? labelGap.value : 0)
+const sideLabelWidth = computed(() => labelIsSide.value ? qrOutputSize.value : 0)
+const sideLabelGap = computed(() => labelIsSide.value ? labelGap.value : 0)
+const sideContentHeight = computed(() => labelIsSide.value ? Math.max(qrOutputSize.value, labelBlockHeight.value) : qrOutputSize.value)
 const labelBottomTrim = computed(() => {
   if (!labelIsBottom.value || !hasBorder.value || labelHasDescender.value) {
     return 0
@@ -437,18 +452,51 @@ const labelBottomTrim = computed(() => {
 
   return (labelText.value ? labelFontSize.value : additionalTextFontSize.value) * 0.18
 })
-const qrOutputX = computed(() => borderContentInset.value)
-const qrOutputY = computed(() => borderContentInset.value + topLabelHeight.value + topLabelGap.value)
+const qrOutputX = computed(() => borderContentInset.value + (labelIsLeft.value ? sideLabelWidth.value + sideLabelGap.value : 0))
+const qrOutputY = computed(() => {
+  if (labelIsSide.value) {
+    return borderContentInset.value + (sideContentHeight.value - qrOutputSize.value) / 2
+  }
+
+  return borderContentInset.value + topLabelHeight.value + topLabelGap.value
+})
 const centerIconCircleDiameter = computed(() => qrOutputSize.value * versionOneCenterIconCircleDiameter / versionOneQrSize)
 const centerIconCircleRadius = computed(() => centerIconCircleDiameter.value / 2)
 const centerIconSize = computed(() => centerIconCircleDiameter.value * 0.68)
 const centerIconX = computed(() => qrOutputX.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
 const centerIconY = computed(() => qrOutputY.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
-const outputSvgWidth = computed(() => qrSvgSize.value + borderContentInset.value * 2)
+const outputSvgWidth = computed(() => borderContentInset.value * 2 + sideLabelWidth.value + sideLabelGap.value + qrOutputSize.value)
 const outputBottomInset = computed(() => hasBorder.value ? borderContentInset.value : bottomLabelGap.value)
-const outputSvgHeight = computed(() => borderContentInset.value + topLabelHeight.value + topLabelGap.value + qrOutputSize.value + bottomLabelGap.value + bottomLabelHeight.value + outputBottomInset.value - labelBottomTrim.value)
+const outputSvgHeight = computed(() => {
+  if (labelIsSide.value) {
+    return borderContentInset.value * 2 + sideContentHeight.value
+  }
+
+  return borderContentInset.value + topLabelHeight.value + topLabelGap.value + qrOutputSize.value + bottomLabelGap.value + bottomLabelHeight.value + outputBottomInset.value - labelBottomTrim.value
+})
 const outputViewBox = computed(() => generatedQr.value.code ? `0 0 ${outputSvgWidth.value} ${outputSvgHeight.value}` : '0 0 1 1')
-const labelBlockY = computed(() => labelIsTop.value ? borderContentInset.value : qrOutputY.value + qrOutputSize.value + bottomLabelGap.value)
+const labelX = computed(() => {
+  if (labelIsLeft.value) {
+    return borderContentInset.value + sideLabelWidth.value / 2
+  }
+
+  if (labelIsRight.value) {
+    return qrOutputX.value + qrOutputSize.value + sideLabelGap.value + sideLabelWidth.value / 2
+  }
+
+  return outputSvgWidth.value / 2
+})
+const labelBlockY = computed(() => {
+  if (labelIsTop.value) {
+    return borderContentInset.value
+  }
+
+  if (labelIsSide.value) {
+    return borderContentInset.value + (sideContentHeight.value - labelBlockHeight.value) / 2
+  }
+
+  return qrOutputY.value + qrOutputSize.value + bottomLabelGap.value
+})
 const labelY = computed(() => {
   if (selectedAdditionalTextPlacement.value === 'above' && additionalTextLines.value.length) {
     return labelBlockY.value + additionalTextBlockHeight.value + additionalTextGap.value + labelFontSize.value / 2
@@ -611,53 +659,87 @@ function isCenterIconCategorySelected(category: CenterIconCategory) {
 }
 
 function wrapAdditionalText(value: string) {
-  const words = value.replace(/\s+/g, ' ').slice(0, maxAdditionalTextLength).trim().split(' ').filter(Boolean)
-  const lines: string[] = []
-  let currentLine = ''
+  const normalizedText = value.replace(/\s+/g, ' ').slice(0, maxAdditionalTextLength).trim()
 
-  function pushCurrentLine() {
-    if (currentLine && lines.length < 3) {
-      lines.push(currentLine)
-      currentLine = ''
-    }
+  if (!normalizedText) {
+    return []
   }
 
-  function addPiece(piece: string, startsWord: boolean) {
-    if (lines.length >= 3) {
-      return
+  const words = normalizedText.split(' ').filter(Boolean)
+  const tokens = words.flatMap(getBreakableWordPieces)
+  const targetLineCount = Math.min(tokens.length, Math.max(1, Math.min(3, Math.ceil(normalizedText.length / preferredAdditionalTextLineLength))))
+
+  return getBalancedAdditionalTextLines(tokens, targetLineCount)
+}
+
+function getBalancedAdditionalTextLines(tokens: string[], lineCount: number) {
+  if (lineCount <= 1) {
+    return tokens.join(' ') ? [tokens.join(' ')] : []
+  }
+
+  const targetLineLength = tokens.join(' ').length / lineCount
+  const cache = new Map<string, { lines: string[], score: number } | null>()
+
+  function lineLength(startIndex: number, endIndex: number) {
+    return tokens.slice(startIndex, endIndex).join(' ').length
+  }
+
+  function bestFrom(startIndex: number, linesRemaining: number): { lines: string[], score: number } | null {
+    const cacheKey = `${startIndex}:${linesRemaining}`
+    const cached = cache.get(cacheKey)
+
+    if (cached !== undefined) {
+      return cached
     }
 
-    if (piece.length > additionalTextLineLength) {
-      pushCurrentLine()
+    const tokensRemaining = tokens.length - startIndex
 
-      for (let index = 0; index < piece.length && lines.length < 3; index += additionalTextLineLength) {
-        lines.push(piece.slice(index, index + additionalTextLineLength))
+    if (tokensRemaining < linesRemaining) {
+      cache.set(cacheKey, null)
+      return null
+    }
+
+    if (linesRemaining === 1) {
+      const line = tokens.slice(startIndex).join(' ')
+      const length = line.length
+      const score = length * 1000 + (length - targetLineLength) ** 2
+      const result = { lines: [line], score }
+
+      cache.set(cacheKey, result)
+
+      return result
+    }
+
+    let best: { lines: string[], score: number } | null = null
+    const lastEndIndex = tokens.length - linesRemaining + 1
+
+    for (let endIndex = startIndex + 1; endIndex <= lastEndIndex; endIndex++) {
+      const line = tokens.slice(startIndex, endIndex).join(' ')
+      const length = lineLength(startIndex, endIndex)
+      const rest = bestFrom(endIndex, linesRemaining - 1)
+
+      if (!rest) {
+        continue
       }
 
-      return
+      const maxLineLength = Math.max(length, ...rest.lines.map(restLine => restLine.length))
+      const raggedness = (length - targetLineLength) ** 2 + rest.lines.reduce((total, restLine) => total + (restLine.length - targetLineLength) ** 2, 0)
+      const score = maxLineLength * 1000 + raggedness
+
+      if (!best || score < best.score) {
+        best = {
+          lines: [line, ...rest.lines],
+          score
+        }
+      }
     }
 
-    const separator = currentLine && startsWord ? ' ' : ''
-    const candidate = `${currentLine}${separator}${piece}`
+    cache.set(cacheKey, best)
 
-    if (candidate.length <= additionalTextLineLength) {
-      currentLine = candidate
-      return
-    }
-
-    pushCurrentLine()
-    currentLine = piece
+    return best
   }
 
-  for (const word of words) {
-    const pieces = getBreakableWordPieces(word)
-
-    pieces.forEach((piece, index) => addPiece(piece, index === 0))
-  }
-
-  pushCurrentLine()
-
-  return lines
+  return bestFrom(0, lineCount)?.lines ?? []
 }
 
 function getBreakableWordPieces(word: string) {
@@ -677,7 +759,19 @@ function getBreakableWordPieces(word: string) {
     pieces.push(piece)
   }
 
-  return pieces
+  return pieces.flatMap((piece) => {
+    if (piece.length <= additionalTextLineLength) {
+      return piece
+    }
+
+    const chunks: string[] = []
+
+    for (let index = 0; index < piece.length; index += additionalTextLineLength) {
+      chunks.push(piece.slice(index, index + additionalTextLineLength))
+    }
+
+    return chunks
+  })
 }
 
 function getAdditionalTextLineY(index: number) {
@@ -690,6 +784,10 @@ function getAdditionalTextLineY(index: number) {
 
 function getSizeMultiplier(step: number) {
   return step >= 0 ? 1.25 ** step : 0.75 ** Math.abs(step)
+}
+
+function getAdditionalTextSizeMultiplier(step: number) {
+  return getSizeMultiplier(step - 1)
 }
 
 function getFittedTextScale(textWidth: number, requestedScale: number) {
@@ -903,7 +1001,7 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   qrLabel.value = typeof payload.label === 'string' ? payload.label : ''
   qrAdditionalText.value = typeof payload.additionalText === 'string' ? payload.additionalText.slice(0, maxAdditionalTextLength) : ''
   selectedAdditionalTextPlacement.value = payload.additionalTextPlacement === 'above' ? 'above' : 'below'
-  selectedLabelPosition.value = payload.labelPosition === 'top' ? 'top' : 'bottom'
+  selectedLabelPosition.value = labelPositionOptions.some(option => option.value === payload.labelPosition) ? payload.labelPosition : 'bottom'
   selectedLabelFont.value = labelFonts.some(font => font.value === payload.labelFont) ? payload.labelFont : fallbackLabelFont.value
   selectedAdditionalTextFont.value = labelFonts.some(font => font.value === payload.additionalTextFont) ? payload.additionalTextFont : fallbackLabelFont.value
   labelSizeStep.value = clampTextSizeStep(payload.labelSizeStep)
@@ -1813,7 +1911,7 @@ onUnmounted(() => {
               v-if="labelText"
               fill="currentColor"
               :font-size="labelFontSize"
-              :x="outputSvgWidth / 2"
+              :x="labelX"
               :y="labelY"
               dominant-baseline="central"
               text-anchor="middle"
@@ -1828,7 +1926,7 @@ onUnmounted(() => {
               :font-size="additionalTextFontSize"
               font-weight="300"
               opacity="0.68"
-              :x="outputSvgWidth / 2"
+              :x="labelX"
               :y="getAdditionalTextLineY(index)"
               dominant-baseline="central"
               text-anchor="middle"

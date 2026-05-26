@@ -1,4 +1,8 @@
 name = "cuteqrcodes"
-compatibility_date = "2025-01-15"
+compatibility_date = "2026-05-26"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
+
+[[r2_buckets]]
+binding = "PDF_BUCKET"
+bucket_name = "cuteqrcodes-purchased-pdfs"
