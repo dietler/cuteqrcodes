@@ -121,5 +121,16 @@ async function handleLogout() {
     <UMain>
       <NuxtPage />
     </UMain>
+
+    <footer class="border-t border-slate-200 bg-white py-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+      <UContainer class="text-center">
+        Questions? Issues? Suggestions? E-mail me at
+        <a
+          class="font-medium text-primary hover:underline"
+          href="mailto:andy@qrcodesonlabels.com"
+        >andy@qrcodesonlabels.com</a>
+        and I'll get back to you ASAP.
+      </UContainer>
+    </footer>
   </UApp>
 </template>

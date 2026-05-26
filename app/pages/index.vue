@@ -96,6 +96,15 @@ const newSaveFolderName = ref('')
 const selectedSaveFolderId = ref('')
 const saveQrError = ref('')
 const savedQrFolders = ref<SavedQrFolder[]>([])
+const homepageDescriptionDismissedCookieName = 'cuteqrcodes_home_description_dismissed'
+const homepageDescriptionDismissedCookieMaxAge = 60 * 60 * 24 * 365
+const homepageDescriptionDismissedCookie = useCookie(homepageDescriptionDismissedCookieName, {
+  decode: value => value,
+  encode: value => String(value),
+  maxAge: homepageDescriptionDismissedCookieMaxAge,
+  path: '/',
+  sameSite: 'lax'
+})
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const additionalTextLineLength = 40
@@ -332,6 +341,7 @@ const tailwindColors: TailwindColor[] = [
   { name: 'Stone', bgClass: 'bg-stone-400', fillClass: 'fill-stone-400', strokeClass: 'stroke-stone-400', textClass: 'text-stone-400' }
 ]
 const hasQrContent = computed(() => qrStore.content.length > 0)
+const shouldShowHomepageDescription = computed(() => homepageDescriptionDismissedCookie.value !== '1')
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
 const saveButtonLabel = computed(() => isLoggedIn.value ? 'Save' : 'Login to Save')
 const savedFolderItems = computed(() => savedQrFolders.value.map(folder => ({
@@ -1173,6 +1183,14 @@ function updateScrollStates() {
   updateIconScrollState()
 }
 
+function dismissHomepageDescription() {
+  homepageDescriptionDismissedCookie.value = '1'
+
+  if (import.meta.client) {
+    document.cookie = `${homepageDescriptionDismissedCookieName}=1; Max-Age=${homepageDescriptionDismissedCookieMaxAge}; Path=/; SameSite=Lax`
+  }
+}
+
 onMounted(async () => {
   restoreSavedQrPayloadFromStorage()
   await nextTick()
@@ -1200,6 +1218,28 @@ onUnmounted(() => {
 
 <template>
   <UContainer class="flex min-h-[calc(100svh-4rem)] max-w-3xl flex-col gap-4 py-4 sm:gap-6 sm:py-6">
+    <section
+      v-if="shouldShowHomepageDescription"
+      aria-label="QR code creator description"
+      class="relative rounded-lg border border-slate-200 bg-white px-4 py-3 pr-12 text-sm leading-6 text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+    >
+      <p>
+        Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on. Register for an account to Save QR Code designs.
+      </p>
+      <button
+        aria-label="Dismiss homepage description"
+        class="absolute right-2 top-2 inline-grid size-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-100"
+        type="button"
+        @click="dismissHomepageDescription"
+      >
+        <UIcon
+          aria-hidden="true"
+          name="i-lucide-x"
+          class="size-4"
+        />
+      </button>
+    </section>
+
     <UCard>
       <UFormField label="URL">
         <UInput
