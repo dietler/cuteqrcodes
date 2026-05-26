@@ -394,7 +394,7 @@ async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { wat
   const pdfDocument = await PDFDocument.create()
   const page = pdfDocument.addPage([layout.pageWidth, layout.pageHeight])
   const qrImage = await pdfDocument.embedPng(qrPngDataUrl)
-  const headerLogoImage = await pdfDocument.embedPng(await renderSvgAssetToPng('/icons/rabbit.svg', 96, 96))
+  const headerLogoImage = await pdfDocument.embedPng(await renderSvgAssetToPng('/icons/qr-code.svg', 96, 96))
   const headerBoldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold)
   const footerFont = await pdfDocument.embedFont(StandardFonts.Helvetica)
   const labelsPerSheet = layout.columns * layout.rows
@@ -476,7 +476,7 @@ function drawPdfHeader(page: PDFPage, {
   const headerBottom = pageHeight - topMargin
   const horizontalPadding = 24
   const textFontSize = Math.min(9, Math.max(7, topMargin * 0.24))
-  const logoSize = textFontSize
+  const logoSize = textFontSize * 2
   const logoY = headerBottom + (topMargin - logoSize) / 2
   const textX = horizontalPadding + logoSize + 8
   const maxTextWidth = pageWidth - textX - horizontalPadding
@@ -545,8 +545,8 @@ function drawPdfWatermark(page: PDFPage, {
 }) {
   const text = 'QR Codes On Labels'
   const textSize = 18
-  const logoSize = 14
-  const watermarkOpacity = 0.22
+  const logoSize = 28
+  const watermarkOpacity = 0.34
   const stepX = 144
   const stepY = 96
 

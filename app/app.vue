@@ -39,7 +39,7 @@ useHead({
     { name: 'viewport', content: 'width=device-width, initial-scale=1' }
   ],
   link: [
-    { rel: 'icon', type: 'image/svg+xml', href: '/icons/rabbit.svg' }
+    { rel: 'icon', type: 'image/svg+xml', href: '/icons/qr-code.svg' }
   ],
   htmlAttrs: {
     lang: 'en'
@@ -74,7 +74,7 @@ async function handleLogout() {
           class="flex items-center gap-2 font-semibold"
         >
           <img
-            src="/icons/rabbit.svg"
+            src="/icons/qr-code.svg"
             alt=""
             aria-hidden="true"
             class="size-10 shrink-0"

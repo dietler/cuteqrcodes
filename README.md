@@ -13,6 +13,8 @@ Required auth/database values:
 - `BETTER_AUTH_SECRET`: at least 32 characters, generated with high entropy.
 - `BETTER_AUTH_URL`: app origin, such as `http://localhost:3000` locally or your Cloudflare Pages URL in production.
 - `BETTER_AUTH_TRUSTED_ORIGINS`: optional comma-separated additional origins for previews or custom domains.
+- `RESEND_API_KEY`: Resend API key used for password reset emails.
+- `RESEND_FROM_EMAIL`: verified Resend sender, such as `QR Codes On Labels <hello@example.com>`.
 
 ## Setup
 
