@@ -11,7 +11,7 @@
     "cloudflare:login": "wrangler login",
     "cloudflare:preview": "bun run cloudflare:build && wrangler pages dev dist",
     "cloudflare:types": "wrangler types",
-    "dev": "portless proxy start --no-tls && portless",
+    "dev": "portless proxy start --https && portless",
     "dev:app": "bun ./node_modules/nuxt/bin/nuxt.mjs dev",
     "neon": "neonctl",
     "neon:init": "neonctl init",
