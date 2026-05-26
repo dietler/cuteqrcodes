@@ -1,15 +1,18 @@
 import { expect, test } from '@playwright/test'
 
-const descriptionText = 'Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on. Register for an account to Save QR Code designs.'
+const descriptionText = 'Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on.'
+const saveDescriptionText = 'Register for an account to Save QR Code designs.'
 const descriptionCookieName = 'cuteqrcodes_home_description_dismissed'
 
 test('dismisses the homepage description and remembers it with a cookie', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
 
-  const description = page.getByText(descriptionText, { exact: true })
+  const description = page.getByRole('region', { name: 'QR code creator description' })
 
   await expect(description).toBeVisible()
+  await expect(description.getByText(descriptionText, { exact: true })).toBeVisible()
+  await expect(description.getByText(saveDescriptionText, { exact: true })).toBeVisible()
 
   await page.getByRole('button', { name: 'Dismiss homepage description' }).click()
 
@@ -22,5 +25,5 @@ test('dismisses the homepage description and remembers it with a cookie', async 
 
   await page.reload()
 
-  await expect(page.getByText(descriptionText, { exact: true })).toBeHidden()
+  await expect(page.getByRole('region', { name: 'QR code creator description' })).toBeHidden()
 })

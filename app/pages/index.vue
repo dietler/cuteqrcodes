@@ -1221,23 +1221,28 @@ onUnmounted(() => {
     <section
       v-if="shouldShowHomepageDescription"
       aria-label="QR code creator description"
-      class="relative rounded-lg border border-slate-200 bg-white px-4 py-3 pr-12 text-sm leading-6 text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200"
+      class="homepage-description relative rounded-lg p-px"
     >
-      <p>
-        Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on. Register for an account to Save QR Code designs.
-      </p>
-      <button
-        aria-label="Dismiss homepage description"
-        class="absolute right-2 top-2 inline-grid size-8 place-items-center rounded-md text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:text-slate-400 dark:hover:bg-slate-900 dark:hover:text-slate-100"
-        type="button"
-        @click="dismissHomepageDescription"
-      >
-        <UIcon
-          aria-hidden="true"
-          name="i-lucide-x"
-          class="size-4"
-        />
-      </button>
+      <div class="homepage-description-content relative rounded-[calc(0.5rem-1px)] px-4 py-3 pr-12 text-sm leading-6 text-slate-700 dark:text-slate-100">
+        <p>
+          Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on.
+        </p>
+        <p class="mt-2">
+          Register for an account to Save QR Code designs.
+        </p>
+        <button
+          aria-label="Dismiss homepage description"
+          class="absolute right-2 top-2 inline-grid size-8 place-items-center rounded-md text-slate-500 transition hover:bg-white/60 hover:text-slate-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-white"
+          type="button"
+          @click="dismissHomepageDescription"
+        >
+          <UIcon
+            aria-hidden="true"
+            name="i-lucide-x"
+            class="size-4"
+          />
+        </button>
+      </div>
     </section>
 
     <UCard>
@@ -2119,3 +2124,72 @@ onUnmounted(() => {
     </UModal>
   </UContainer>
 </template>
+
+<style scoped>
+@property --homepage-description-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.homepage-description {
+  --logo-blue: #0bb1d3;
+  --logo-purple: #9d31fe;
+  animation: homepage-description-glow-spin 7s linear infinite;
+  background: conic-gradient(
+    from var(--homepage-description-angle),
+    rgb(11 177 211 / 92%),
+    rgb(157 49 254 / 94%),
+    rgb(11 177 211 / 92%)
+  );
+  box-shadow:
+    0 0 20px rgb(11 177 211 / 22%),
+    0 0 30px rgb(157 49 254 / 20%);
+  isolation: isolate;
+}
+
+.homepage-description::before {
+  position: absolute;
+  inset: -14px;
+  z-index: 0;
+  background: conic-gradient(
+    from var(--homepage-description-angle),
+    transparent 0deg,
+    rgb(11 177 211 / 82%) 65deg,
+    rgb(157 49 254 / 88%) 160deg,
+    transparent 250deg,
+    rgb(11 177 211 / 82%) 360deg
+  );
+  border-radius: inherit;
+  content: '';
+  filter: blur(14px);
+  opacity: 0.72;
+  pointer-events: none;
+}
+
+.homepage-description-content {
+  z-index: 1;
+  background:
+    linear-gradient(135deg, rgb(11 177 211 / 10%), rgb(157 49 254 / 12%)),
+    rgb(255 255 255 / 94%);
+  backdrop-filter: blur(10px);
+}
+
+:global(.dark) .homepage-description-content {
+  background:
+    linear-gradient(135deg, rgb(11 177 211 / 14%), rgb(157 49 254 / 18%)),
+    rgb(2 6 23 / 92%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .homepage-description {
+    animation: none;
+  }
+}
+
+@keyframes homepage-description-glow-spin {
+  to {
+    --homepage-description-angle: 360deg;
+  }
+}
+</style>
