@@ -6,10 +6,10 @@ import {
   StandardFonts,
   type PDFFont,
   type PDFImage,
-  type PDFPage
-} from 'pdf-lib'
-import { computed, onMounted, ref } from 'vue'
-import type { CreditsSummary, PurchasedPdf } from '~/utils/credits'
+  type PDFPage,
+} from "pdf-lib";
+import { computed, onMounted, ref } from "vue";
+import type { CreditsSummary, PurchasedPdf } from "~/utils/credits";
 import {
   createLabelPrintPayloadFromSavedQr,
   getLabelArtworkPlacement,
@@ -19,149 +19,152 @@ import {
   labelTemplates,
   type LabelTemplate,
   type LabelTemplateType,
-  type LabelPrintPayload
-} from '~/utils/label-print'
-import type { SavedQrCode } from '~/utils/saved-qr'
-import { useSession } from '~~/lib/auth-client'
+  type LabelPrintPayload,
+} from "~/utils/label-print";
+import type { SavedQrCode } from "~/utils/saved-qr";
+import { useSession } from "~~/lib/auth-client";
 
-type LabelType = LabelTemplateType
-type LabelSortOrder = 'largest-to-smallest' | 'smallest-to-largest'
+type LabelType = LabelTemplateType;
+type LabelSortOrder = "largest-to-smallest" | "smallest-to-largest";
 
-const selectedLabelType = ref<LabelType>('rectangle')
-const selectedLabelSortOrder = ref<LabelSortOrder>('largest-to-smallest')
-const printPayload = ref<LabelPrintPayload | null>(null)
-const session = useSession()
-const creditBalance = ref<number | null>(null)
-const didAutoSelectLabelType = ref(false)
-const isLoadingPrintPayload = ref(false)
-const activePdfAction = ref('')
-const pdfError = ref('')
-const route = useRoute()
+const selectedLabelType = ref<LabelType>("rectangle");
+const selectedLabelSortOrder = ref<LabelSortOrder>("largest-to-smallest");
+const printPayload = ref<LabelPrintPayload | null>(null);
+const session = useSession();
+const creditBalance = ref<number | null>(null);
+const didAutoSelectLabelType = ref(false);
+const isLoadingPrintPayload = ref(false);
+const activePdfAction = ref("");
+const pdfError = ref("");
+const route = useRoute();
 
-const labelTypeOptions: { label: string, value: LabelType }[] = [
-  { label: 'Rectangle', value: 'rectangle' },
-  { label: 'Square', value: 'square' },
-  { label: 'Circle', value: 'circle' }
-]
-const labelSortOrderOptions: { label: string, value: LabelSortOrder }[] = [
-  { label: 'Largest to Smallest', value: 'largest-to-smallest' },
-  { label: 'Smallest to Largest', value: 'smallest-to-largest' }
-]
+const labelTypeOptions: { label: string; value: LabelType }[] = [
+  { label: "Rectangle", value: "rectangle" },
+  { label: "Square", value: "square" },
+  { label: "Circle", value: "circle" },
+];
+const labelSortOrderOptions: { label: string; value: LabelSortOrder }[] = [
+  { label: "Largest to Smallest", value: "largest-to-smallest" },
+  { label: "Smallest to Largest", value: "smallest-to-largest" },
+];
 
-const hasPrintPayload = computed(() => Boolean(printPayload.value))
-const isCreatingPdf = computed(() => Boolean(activePdfAction.value))
+const hasPrintPayload = computed(() => Boolean(printPayload.value));
+const isCreatingPdf = computed(() => Boolean(activePdfAction.value));
 const activeLabelTemplates = computed(() =>
   labelTemplates
-    .filter(template => template.type === selectedLabelType.value)
-    .toSorted(compareLabelTemplatesBySelectedSortOrder)
-)
+    .filter((template) => template.type === selectedLabelType.value)
+    .toSorted(compareLabelTemplatesBySelectedSortOrder),
+);
 const printPayloadSvgDataUrl = computed(() =>
-  printPayload.value ? createSvgDataUrl(printPayload.value.svg) : ''
-)
+  printPayload.value ? createSvgDataUrl(printPayload.value.svg) : "",
+);
 const suggestedLabelTemplateIds = computed(
   () =>
     new Set(
       printPayload.value
         ? getSuggestedLabelTemplateIds(printPayload.value)
-        : []
-    )
-)
+        : [],
+    ),
+);
 const suggestedLabelTypes = computed(
   () =>
     new Set(
       labelTemplates
-        .filter(template => suggestedLabelTemplateIds.value.has(template.id))
-        .map(template => template.type)
-    )
-)
+        .filter((template) => suggestedLabelTemplateIds.value.has(template.id))
+        .map((template) => template.type),
+    ),
+);
 
 onMounted(() => {
-  void loadPrintPayload()
-  void loadCreditBalance({ silent: true })
-})
+  void loadPrintPayload();
+  void loadCreditBalance({ silent: true });
+});
 
 function selectLabelType(value: LabelType) {
-  didAutoSelectLabelType.value = true
-  selectedLabelType.value = value
-  pdfError.value = ''
+  didAutoSelectLabelType.value = true;
+  selectedLabelType.value = value;
+  pdfError.value = "";
 }
 
-function compareLabelTemplatesBySelectedSortOrder(first: LabelTemplate, second: LabelTemplate) {
-  const firstArea = getLabelTemplateArea(first)
-  const secondArea = getLabelTemplateArea(second)
+function compareLabelTemplatesBySelectedSortOrder(
+  first: LabelTemplate,
+  second: LabelTemplate,
+) {
+  const firstArea = getLabelTemplateArea(first);
+  const secondArea = getLabelTemplateArea(second);
 
-  return selectedLabelSortOrder.value === 'largest-to-smallest'
+  return selectedLabelSortOrder.value === "largest-to-smallest"
     ? secondArea - firstArea
-    : firstArea - secondArea
+    : firstArea - secondArea;
 }
 
 function getLabelTemplateArea(template: LabelTemplate) {
-  return template.layout.labelWidth * template.layout.labelHeight
+  return template.layout.labelWidth * template.layout.labelHeight;
 }
 
 function applySuggestedLabelType() {
   if (didAutoSelectLabelType.value || !suggestedLabelTemplateIds.value.size) {
-    return
+    return;
   }
 
-  const firstSuggestedTemplate = labelTemplates.find(template =>
-    suggestedLabelTemplateIds.value.has(template.id)
-  )
+  const firstSuggestedTemplate = labelTemplates.find((template) =>
+    suggestedLabelTemplateIds.value.has(template.id),
+  );
 
   if (firstSuggestedTemplate) {
-    selectedLabelType.value = firstSuggestedTemplate.type
-    didAutoSelectLabelType.value = true
+    selectedLabelType.value = firstSuggestedTemplate.type;
+    didAutoSelectLabelType.value = true;
   }
 }
 
-function getActionId(action: 'preview' | 'purchase', template: LabelTemplate) {
-  return `${action}:${template.id}`
+function getActionId(action: "preview" | "purchase", template: LabelTemplate) {
+  return `${action}:${template.id}`;
 }
 
 function isTemplateActionLoading(
-  action: 'preview' | 'purchase',
-  template: LabelTemplate
+  action: "preview" | "purchase",
+  template: LabelTemplate,
 ) {
-  return activePdfAction.value === getActionId(action, template)
+  return activePdfAction.value === getActionId(action, template);
 }
 
 function isSuggestedLabelTemplate(template: LabelTemplate) {
-  return suggestedLabelTemplateIds.value.has(template.id)
+  return suggestedLabelTemplateIds.value.has(template.id);
 }
 
 function isSuggestedLabelType(value: LabelType) {
-  return suggestedLabelTypes.value.has(value)
+  return suggestedLabelTypes.value.has(value);
 }
 
 function getAveryTemplateUrl(template: LabelTemplate) {
-  return `https://www.avery.com/blank/labels/${template.templateNumber}`
+  return `https://www.avery.com/blank/labels/${template.templateNumber}`;
 }
 
 function getAmazonTemplateUrl(template: LabelTemplate) {
-  return `https://www.amazon.com/s?k=avery+${template.templateNumber}`
+  return `https://www.amazon.com/s?k=avery+${template.templateNumber}`;
 }
 
 function getLabelPreviewAlt(template: LabelTemplate) {
-  const title = printPayload.value?.title || 'QR code'
+  const title = printPayload.value?.title || "QR code";
 
-  return `${title} printed on ${template.description}`
+  return `${title} printed on ${template.description}`;
 }
 
 function getLabelPreviewStyle(template: LabelTemplate) {
-  const { height, width } = getLabelPreviewDimensions(template)
+  const { height, width } = getLabelPreviewDimensions(template);
 
   return {
     height: `${pointsToInches(height)}in`,
-    width: `${pointsToInches(width)}in`
-  }
+    width: `${pointsToInches(width)}in`,
+  };
 }
 
 function getLabelPreviewClass(template: LabelTemplate) {
-  return template.type === 'circle' ? 'rounded-full' : ''
+  return template.type === "circle" ? "rounded-full" : "";
 }
 
 function getLabelPreviewDimensions(template: LabelTemplate) {
-  const artworkPlacement = getLabelPreviewArtworkPlacement(template)
+  const artworkPlacement = getLabelPreviewArtworkPlacement(template);
 
   return {
     height: artworkPlacement.rotate
@@ -169,335 +172,335 @@ function getLabelPreviewDimensions(template: LabelTemplate) {
       : template.layout.labelHeight,
     width: artworkPlacement.rotate
       ? template.layout.labelHeight
-      : template.layout.labelWidth
-  }
+      : template.layout.labelWidth,
+  };
 }
 
 function getLabelPreviewDimensionLabels(template: LabelTemplate) {
-  const artworkPlacement = getLabelPreviewArtworkPlacement(template)
-  const { height, width } = getLabelTemplateDimensionLabels(template)
+  const artworkPlacement = getLabelPreviewArtworkPlacement(template);
+  const { height, width } = getLabelTemplateDimensionLabels(template);
 
   return {
     bottom: artworkPlacement.rotate ? height : width,
-    right: artworkPlacement.rotate ? width : height
-  }
+    right: artworkPlacement.rotate ? width : height,
+  };
 }
 
 function getLabelTemplateDimensionLabels(template: LabelTemplate) {
-  const [first, second]
-    = template.label.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? []
+  const [first, second] =
+    template.label.match(/\d+(?:\.\d+)?/g)?.map(Number) ?? [];
 
   if (Number.isFinite(first) && Number.isFinite(second)) {
-    const layoutWidth = pointsToInches(template.layout.labelWidth)
-    const layoutHeight = pointsToInches(template.layout.labelHeight)
-    const listedOrderScore
-      = Math.abs(first! - layoutWidth) + Math.abs(second! - layoutHeight)
-    const swappedOrderScore
-      = Math.abs(second! - layoutWidth) + Math.abs(first! - layoutHeight)
+    const layoutWidth = pointsToInches(template.layout.labelWidth);
+    const layoutHeight = pointsToInches(template.layout.labelHeight);
+    const listedOrderScore =
+      Math.abs(first! - layoutWidth) + Math.abs(second! - layoutHeight);
+    const swappedOrderScore =
+      Math.abs(second! - layoutWidth) + Math.abs(first! - layoutHeight);
 
     if (listedOrderScore <= swappedOrderScore) {
       return {
         height: formatInches(second!),
-        width: formatInches(first!)
-      }
+        width: formatInches(first!),
+      };
     }
 
     return {
       height: formatInches(first!),
-      width: formatInches(second!)
-    }
+      width: formatInches(second!),
+    };
   }
 
   return {
     height: formatInches(pointsToInches(template.layout.labelHeight)),
-    width: formatInches(pointsToInches(template.layout.labelWidth))
-  }
+    width: formatInches(pointsToInches(template.layout.labelWidth)),
+  };
 }
 
 function getLabelPreviewArtworkFrameStyle(template: LabelTemplate) {
-  const artworkPlacement = getLabelPreviewArtworkPlacement(template)
+  const artworkPlacement = getLabelPreviewArtworkPlacement(template);
   const width = artworkPlacement.rotate
     ? artworkPlacement.height
-    : artworkPlacement.width
+    : artworkPlacement.width;
   const height = artworkPlacement.rotate
     ? artworkPlacement.width
-    : artworkPlacement.height
+    : artworkPlacement.height;
 
   return {
     height: `${pointsToInches(height)}in`,
-    width: `${pointsToInches(width)}in`
-  }
+    width: `${pointsToInches(width)}in`,
+  };
 }
 
 function getLabelPreviewArtworkImageStyle() {
   return {
-    height: '100%',
-    transform: 'translate(-50%, -50%)',
-    width: '100%'
-  }
+    height: "100%",
+    transform: "translate(-50%, -50%)",
+    width: "100%",
+  };
 }
 
 function getLabelPreviewArtworkPlacement(template: LabelTemplate) {
-  const payload = printPayload.value
+  const payload = printPayload.value;
 
   if (!payload) {
     return {
       height: 0,
       rotate: false,
       scale: 0,
-      width: 0
-    }
+      width: 0,
+    };
   }
 
-  return getLabelArtworkPlacement(payload, template)
+  return getLabelArtworkPlacement(payload, template);
 }
 
 function pointsToInches(points: number) {
-  return points / pdfPointsPerInch
+  return points / pdfPointsPerInch;
 }
 
 function formatInches(value: number) {
-  return `${Number.isInteger(value) ? value : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}"`
+  return `${Number.isInteger(value) ? value : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "")}"`;
 }
 
 function createSvgDataUrl(svg: string) {
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 function readPrintPayload() {
-  const rawPayload = sessionStorage.getItem(labelPrintPayloadStorageKey)
+  const rawPayload = sessionStorage.getItem(labelPrintPayloadStorageKey);
 
   if (!rawPayload) {
-    return null
+    return null;
   }
 
   try {
-    const payload = JSON.parse(rawPayload) as Partial<LabelPrintPayload>
+    const payload = JSON.parse(rawPayload) as Partial<LabelPrintPayload>;
 
     if (
-      typeof payload.svg !== 'string'
-      || typeof payload.title !== 'string'
-      || !Number.isFinite(payload.width)
-      || !Number.isFinite(payload.height)
-      || typeof payload.createdAt !== 'number'
+      typeof payload.svg !== "string" ||
+      typeof payload.title !== "string" ||
+      !Number.isFinite(payload.width) ||
+      !Number.isFinite(payload.height) ||
+      typeof payload.createdAt !== "number"
     ) {
-      return null
+      return null;
     }
 
-    if (typeof payload.name !== 'string') {
-      delete payload.name
+    if (typeof payload.name !== "string") {
+      delete payload.name;
     }
 
-    if (typeof payload.url !== 'string') {
-      delete payload.url
+    if (typeof payload.url !== "string") {
+      delete payload.url;
     }
 
-    return payload as LabelPrintPayload
+    return payload as LabelPrintPayload;
   } catch {
-    return null
+    return null;
   }
 }
 
 async function loadPrintPayload() {
-  const storedPayload = readPrintPayload()
-  const savedQrCodeId
-    = typeof route.query.saved === 'string' ? route.query.saved : ''
+  const storedPayload = readPrintPayload();
+  const savedQrCodeId =
+    typeof route.query.saved === "string" ? route.query.saved : "";
 
-  printPayload.value = storedPayload
+  printPayload.value = storedPayload;
 
   if (!savedQrCodeId) {
-    applySuggestedLabelType()
-    return
+    applySuggestedLabelType();
+    return;
   }
 
-  isLoadingPrintPayload.value = true
+  isLoadingPrintPayload.value = true;
 
   try {
     const response = await $fetch<{ qrCode: SavedQrCode }>(
-      `/api/qr/saved/${encodeURIComponent(savedQrCodeId)}`
-    )
+      `/api/qr/saved/${encodeURIComponent(savedQrCodeId)}`,
+    );
 
-    printPayload.value = createLabelPrintPayloadFromSavedQr(response.qrCode)
+    printPayload.value = createLabelPrintPayloadFromSavedQr(response.qrCode);
     sessionStorage.setItem(
       labelPrintPayloadStorageKey,
-      JSON.stringify(printPayload.value)
-    )
-    applySuggestedLabelType()
+      JSON.stringify(printPayload.value),
+    );
+    applySuggestedLabelType();
   } catch (error) {
-    applySuggestedLabelType()
+    applySuggestedLabelType();
 
     if (!storedPayload) {
       pdfError.value = getErrorMessage(
         error,
-        'Unable to load the saved QR code for labels.'
-      )
+        "Unable to load the saved QR code for labels.",
+      );
     }
   } finally {
-    isLoadingPrintPayload.value = false
+    isLoadingPrintPayload.value = false;
   }
 }
 
 async function loadCreditBalance({
-  silent = false
+  silent = false,
 }: { silent?: boolean } = {}) {
   try {
-    const response = await $fetch<CreditsSummary>('/api/credits/summary')
+    const response = await $fetch<CreditsSummary>("/api/credits/summary");
 
-    creditBalance.value = response.balance
+    creditBalance.value = response.balance;
   } catch (error) {
-    creditBalance.value = null
+    creditBalance.value = null;
 
     if (!silent) {
-      pdfError.value = getErrorMessage(error, 'Unable to load credits.')
+      pdfError.value = getErrorMessage(error, "Unable to load credits.");
     }
   }
 }
 
 async function previewLabelPdf(template: LabelTemplate) {
-  const payload = printPayload.value
+  const payload = printPayload.value;
 
   if (!payload || isCreatingPdf.value) {
-    return
+    return;
   }
 
-  const pdfWindow = window.open('', '_blank')
-  const actionId = getActionId('preview', template)
+  const pdfWindow = window.open("", "_blank");
+  const actionId = getActionId("preview", template);
 
-  activePdfAction.value = actionId
-  pdfError.value = ''
+  activePdfAction.value = actionId;
+  pdfError.value = "";
 
   try {
     openPdfBytes(
       await createLabelPdfBytes(template, { watermark: true }),
-      pdfWindow
-    )
+      pdfWindow,
+    );
   } catch (error) {
-    pdfWindow?.close()
+    pdfWindow?.close();
     pdfError.value = getErrorMessage(
       error,
-      'Unable to create the label PDF preview.'
-    )
+      "Unable to create the label PDF preview.",
+    );
   } finally {
     if (activePdfAction.value === actionId) {
-      activePdfAction.value = ''
+      activePdfAction.value = "";
     }
   }
 }
 
 async function purchaseLabelPdf(template: LabelTemplate) {
-  const payload = printPayload.value
+  const payload = printPayload.value;
 
   if (!payload || isCreatingPdf.value) {
-    return
+    return;
   }
 
   if (!session.value.data?.user) {
     await navigateTo({
-      path: '/credits',
+      path: "/credits",
       query: {
-        needCredits: '1',
-        returnTo: route.fullPath
-      }
-    })
-    return
+        needCredits: "1",
+        returnTo: route.fullPath,
+      },
+    });
+    return;
   }
 
-  let balance = creditBalance.value
+  let balance = creditBalance.value;
 
   if (balance === null) {
-    await loadCreditBalance()
-    balance = creditBalance.value
+    await loadCreditBalance();
+    balance = creditBalance.value;
   }
 
   if (balance === null || balance < 1) {
     await navigateTo({
-      path: '/credits',
+      path: "/credits",
       query: {
-        needCredits: '1',
-        returnTo: route.fullPath
-      }
-    })
-    return
+        needCredits: "1",
+        returnTo: route.fullPath,
+      },
+    });
+    return;
   }
 
-  const pdfWindow = window.open('', '_blank')
-  const actionId = getActionId('purchase', template)
+  const pdfWindow = window.open("", "_blank");
+  const actionId = getActionId("purchase", template);
 
-  activePdfAction.value = actionId
-  pdfError.value = ''
+  activePdfAction.value = actionId;
+  pdfError.value = "";
 
   try {
-    const pdfBytes = await createLabelPdfBytes(template, { watermark: false })
-    const response = await $fetch<{ balance: number, pdf: PurchasedPdf }>(
-      '/api/credits/pdf-purchases',
+    const pdfBytes = await createLabelPdfBytes(template, { watermark: false });
+    const response = await $fetch<{ balance: number; pdf: PurchasedPdf }>(
+      "/api/credits/pdf-purchases",
       {
         body: {
           pdfBase64: uint8ArrayToBase64(pdfBytes),
           qrTitle: payload.name || payload.title,
-          templateId: template.id
+          templateId: template.id,
         },
-        method: 'POST'
-      }
-    )
+        method: "POST",
+      },
+    );
 
-    creditBalance.value = response.balance
-    openPurchasedPdf(response.pdf.downloadUrl, pdfWindow)
+    creditBalance.value = response.balance;
+    openPurchasedPdf(response.pdf.downloadUrl, pdfWindow);
   } catch (error) {
-    pdfWindow?.close()
+    pdfWindow?.close();
 
     if (getErrorStatusCode(error) === 402) {
       await navigateTo({
-        path: '/credits',
+        path: "/credits",
         query: {
-          needCredits: '1',
-          returnTo: route.fullPath
-        }
-      })
-      return
+          needCredits: "1",
+          returnTo: route.fullPath,
+        },
+      });
+      return;
     }
 
     pdfError.value = getErrorMessage(
       error,
-      'Unable to purchase the label PDF.'
-    )
+      "Unable to purchase the label PDF.",
+    );
   } finally {
     if (activePdfAction.value === actionId) {
-      activePdfAction.value = ''
+      activePdfAction.value = "";
     }
   }
 }
 
 async function createLabelPdfBytes(
   template: LabelTemplate,
-  { watermark }: { watermark: boolean }
+  { watermark }: { watermark: boolean },
 ) {
-  const payload = printPayload.value
+  const payload = printPayload.value;
 
   if (!payload) {
-    throw new Error('No QR code is ready for labels.')
+    throw new Error("No QR code is ready for labels.");
   }
 
-  await document.fonts?.ready
+  await document.fonts?.ready;
 
-  const { layout } = template
-  const artworkPlacement = getLabelArtworkPlacement(payload, template)
+  const { layout } = template;
+  const artworkPlacement = getLabelArtworkPlacement(payload, template);
   const qrPngDataUrl = await renderPayloadToPng(
     payload,
-    artworkPlacement.rotate
-  )
-  const pdfDocument = await PDFDocument.create()
-  const page = pdfDocument.addPage([layout.pageWidth, layout.pageHeight])
-  const qrImage = await pdfDocument.embedPng(qrPngDataUrl)
+    artworkPlacement.rotate,
+  );
+  const pdfDocument = await PDFDocument.create();
+  const page = pdfDocument.addPage([layout.pageWidth, layout.pageHeight]);
+  const qrImage = await pdfDocument.embedPng(qrPngDataUrl);
   const headerLogoImage = await pdfDocument.embedPng(
-    await renderSvgAssetToPng('/icons/qr-code.svg', 96, 96)
-  )
+    await renderSvgAssetToPng("/icons/qr-code.svg", 96, 96),
+  );
   const headerBoldFont = await pdfDocument.embedFont(
-    StandardFonts.HelveticaBold
-  )
-  const footerFont = await pdfDocument.embedFont(StandardFonts.Helvetica)
-  const labelsPerSheet = layout.columns * layout.rows
-  const imageWidth = artworkPlacement.width
-  const imageHeight = artworkPlacement.height
+    StandardFonts.HelveticaBold,
+  );
+  const footerFont = await pdfDocument.embedFont(StandardFonts.Helvetica);
+  const labelsPerSheet = layout.columns * layout.rows;
+  const imageWidth = artworkPlacement.width;
+  const imageHeight = artworkPlacement.height;
 
   drawPdfHeader(page, {
     logoImage: headerLogoImage,
@@ -506,24 +509,24 @@ async function createLabelPdfBytes(
     pageWidth: layout.pageWidth,
     topMargin: layout.marginTop,
     url: payload.url || payload.title,
-    boldFont: headerBoldFont
-  })
+    boldFont: headerBoldFont,
+  });
 
   for (let index = 0; index < labelsPerSheet; index++) {
-    const column = index % layout.columns
-    const row = Math.floor(index / layout.columns)
-    const labelX
-      = layout.marginLeft + column * (layout.labelWidth + layout.columnGap)
-    const labelTopY
-      = layout.marginTop + row * (layout.labelHeight + layout.rowGap)
-    const labelY = layout.pageHeight - labelTopY - layout.labelHeight
+    const column = index % layout.columns;
+    const row = Math.floor(index / layout.columns);
+    const labelX =
+      layout.marginLeft + column * (layout.labelWidth + layout.columnGap);
+    const labelTopY =
+      layout.marginTop + row * (layout.labelHeight + layout.rowGap);
+    const labelY = layout.pageHeight - labelTopY - layout.labelHeight;
 
     page.drawImage(qrImage, {
       x: labelX + (layout.labelWidth - imageWidth) / 2,
       y: labelY + (layout.labelHeight - imageHeight) / 2,
       width: imageWidth,
-      height: imageHeight
-    })
+      height: imageHeight,
+    });
   }
 
   if (watermark) {
@@ -531,27 +534,27 @@ async function createLabelPdfBytes(
       boldFont: headerBoldFont,
       logoImage: headerLogoImage,
       pageHeight: layout.pageHeight,
-      pageWidth: layout.pageWidth
-    })
+      pageWidth: layout.pageWidth,
+    });
   }
 
   drawPdfFooter(page, {
     bottomMargin: getLayoutBottomMargin(layout),
     font: footerFont,
     pageWidth: layout.pageWidth,
-    template
-  })
+    template,
+  });
 
-  return pdfDocument.save()
+  return pdfDocument.save();
 }
 
-function getLayoutBottomMargin(layout: LabelTemplate['layout']) {
+function getLayoutBottomMargin(layout: LabelTemplate["layout"]) {
   return (
-    layout.pageHeight
-    - layout.marginTop
-    - layout.rows * layout.labelHeight
-    - (layout.rows - 1) * layout.rowGap
-  )
+    layout.pageHeight -
+    layout.marginTop -
+    layout.rows * layout.labelHeight -
+    (layout.rows - 1) * layout.rowGap
+  );
 }
 
 function drawPdfHeader(
@@ -563,40 +566,40 @@ function drawPdfHeader(
     pageHeight,
     pageWidth,
     topMargin,
-    url
+    url,
   }: {
-    boldFont: PDFFont
-    logoImage: PDFImage
-    name: string
-    pageHeight: number
-    pageWidth: number
-    topMargin: number
-    url: string
-  }
+    boldFont: PDFFont;
+    logoImage: PDFImage;
+    name: string;
+    pageHeight: number;
+    pageWidth: number;
+    topMargin: number;
+    url: string;
+  },
 ) {
   if (topMargin < 24) {
-    return
+    return;
   }
 
-  const headerBottom = pageHeight - topMargin
-  const horizontalPadding = 24
-  const textFontSize = Math.min(9, Math.max(7, topMargin * 0.24))
-  const logoSize = textFontSize * 2
-  const logoY = headerBottom + (topMargin - logoSize) / 2
-  const textX = horizontalPadding + logoSize + 8
-  const maxTextWidth = pageWidth - textX - horizontalPadding
-  const textY = headerBottom + (topMargin - textFontSize) / 2
-  const headerText = ['QR Codes On Labels', name, url]
-    .map(value => value.trim())
+  const headerBottom = pageHeight - topMargin;
+  const horizontalPadding = 24;
+  const textFontSize = Math.min(9, Math.max(7, topMargin * 0.24));
+  const logoSize = textFontSize * 2;
+  const logoY = headerBottom + (topMargin - logoSize) / 2;
+  const textX = horizontalPadding + logoSize + 8;
+  const maxTextWidth = pageWidth - textX - horizontalPadding;
+  const textY = headerBottom + (topMargin - textFontSize) / 2;
+  const headerText = ["QR Codes On Labels", name, url]
+    .map((value) => value.trim())
     .filter(Boolean)
-    .join(' - ')
+    .join(" - ");
 
   page.drawImage(logoImage, {
     height: logoSize,
     width: logoSize,
     x: horizontalPadding,
-    y: logoY
-  })
+    y: logoY,
+  });
   page.drawText(
     truncatePdfText(boldFont, headerText, textFontSize, maxTextWidth),
     {
@@ -604,9 +607,9 @@ function drawPdfHeader(
       font: boldFont,
       size: textFontSize,
       x: textX,
-      y: textY
-    }
-  )
+      y: textY,
+    },
+  );
 }
 
 function drawPdfFooter(
@@ -615,32 +618,32 @@ function drawPdfFooter(
     bottomMargin,
     font,
     pageWidth,
-    template
+    template,
   }: {
-    bottomMargin: number
-    font: PDFFont
-    pageWidth: number
-    template: LabelTemplate
-  }
+    bottomMargin: number;
+    font: PDFFont;
+    pageWidth: number;
+    template: LabelTemplate;
+  },
 ) {
   if (bottomMargin < 16) {
-    return
+    return;
   }
 
-  const horizontalPadding = 24
-  const maxTextWidth = pageWidth - horizontalPadding * 2
-  const textFontSize = Math.min(8, Math.max(6, bottomMargin * 0.22))
-  const footerText = `Template size: ${template.label} - ${template.description}`
-  const text = truncatePdfText(font, footerText, textFontSize, maxTextWidth)
-  const textWidth = font.widthOfTextAtSize(text, textFontSize)
+  const horizontalPadding = 24;
+  const maxTextWidth = pageWidth - horizontalPadding * 2;
+  const textFontSize = Math.min(8, Math.max(6, bottomMargin * 0.22));
+  const footerText = `Template size: ${template.label} - ${template.description}`;
+  const text = truncatePdfText(font, footerText, textFontSize, maxTextWidth);
+  const textWidth = font.widthOfTextAtSize(text, textFontSize);
 
   page.drawText(text, {
     color: rgb(0.39, 0.45, 0.54),
     font,
     size: textFontSize,
     x: Math.max(horizontalPadding, (pageWidth - textWidth) / 2),
-    y: Math.max(4, (bottomMargin - textFontSize) / 2)
-  })
+    y: Math.max(4, (bottomMargin - textFontSize) / 2),
+  });
 }
 
 function drawPdfWatermark(
@@ -649,20 +652,20 @@ function drawPdfWatermark(
     boldFont,
     logoImage,
     pageHeight,
-    pageWidth
+    pageWidth,
   }: {
-    boldFont: PDFFont
-    logoImage: PDFImage
-    pageHeight: number
-    pageWidth: number
-  }
+    boldFont: PDFFont;
+    logoImage: PDFImage;
+    pageHeight: number;
+    pageWidth: number;
+  },
 ) {
-  const text = 'QR Codes On Labels'
-  const textSize = 18
-  const logoSize = 28
-  const watermarkOpacity = 0.34
-  const stepX = 144
-  const stepY = 96
+  const text = "QR Codes On Labels";
+  const textSize = 18;
+  const logoSize = 28;
+  const watermarkOpacity = 0.34;
+  const stepX = 144;
+  const stepY = 96;
 
   for (let y = -stepY; y < pageHeight + stepY; y += stepY) {
     for (let x = -stepX; x < pageWidth + stepX; x += stepX) {
@@ -672,8 +675,8 @@ function drawPdfWatermark(
         rotate: degrees(-25),
         width: logoSize,
         x,
-        y
-      })
+        y,
+      });
       page.drawText(text, {
         color: rgb(0.08, 0.09, 0.11),
         font: boldFont,
@@ -681,192 +684,192 @@ function drawPdfWatermark(
         rotate: degrees(-25),
         size: textSize,
         x: x + logoSize + 6,
-        y
-      })
+        y,
+      });
     }
   }
 }
 
 function openPdfBytes(pdfBytes: Uint8Array, pdfWindow: Window | null) {
-  const pdfBuffer = new ArrayBuffer(pdfBytes.byteLength)
+  const pdfBuffer = new ArrayBuffer(pdfBytes.byteLength);
 
-  new Uint8Array(pdfBuffer).set(pdfBytes)
+  new Uint8Array(pdfBuffer).set(pdfBytes);
 
   const pdfUrl = URL.createObjectURL(
-    new Blob([pdfBuffer], { type: 'application/pdf' })
-  )
+    new Blob([pdfBuffer], { type: "application/pdf" }),
+  );
 
   if (pdfWindow) {
-    pdfWindow.location.href = pdfUrl
+    pdfWindow.location.href = pdfUrl;
   } else {
-    const link = document.createElement('a')
-    link.href = pdfUrl
-    link.target = '_blank'
-    link.rel = 'noopener'
-    link.click()
+    const link = document.createElement("a");
+    link.href = pdfUrl;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.click();
   }
 
-  window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000)
+  window.setTimeout(() => URL.revokeObjectURL(pdfUrl), 60000);
 }
 
 function openPurchasedPdf(downloadUrl: string, pdfWindow: Window | null) {
   if (pdfWindow) {
-    pdfWindow.location.href = downloadUrl
-    return
+    pdfWindow.location.href = downloadUrl;
+    return;
   }
 
-  const link = document.createElement('a')
+  const link = document.createElement("a");
 
-  link.href = downloadUrl
-  link.target = '_blank'
-  link.rel = 'noopener'
-  link.click()
+  link.href = downloadUrl;
+  link.target = "_blank";
+  link.rel = "noopener";
+  link.click();
 }
 
 function uint8ArrayToBase64(bytes: Uint8Array) {
-  let binary = ''
-  const chunkSize = 0x8000
+  let binary = "";
+  const chunkSize = 0x8000;
 
   for (let index = 0; index < bytes.length; index += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize))
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunkSize));
   }
 
-  return btoa(binary)
+  return btoa(binary);
 }
 
 function truncatePdfText(
   font: PDFFont,
   value: string,
   fontSize: number,
-  maxWidth: number
+  maxWidth: number,
 ) {
-  const text = value.trim()
+  const text = value.trim();
 
   if (font.widthOfTextAtSize(text, fontSize) <= maxWidth) {
-    return text
+    return text;
   }
 
-  const ellipsis = '...'
-  let low = 0
-  let high = text.length
+  const ellipsis = "...";
+  let low = 0;
+  let high = text.length;
 
   while (low < high) {
-    const middle = Math.ceil((low + high) / 2)
-    const candidate = `${text.slice(0, middle)}${ellipsis}`
+    const middle = Math.ceil((low + high) / 2);
+    const candidate = `${text.slice(0, middle)}${ellipsis}`;
 
     if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) {
-      low = middle
+      low = middle;
     } else {
-      high = middle - 1
+      high = middle - 1;
     }
   }
 
-  return `${text.slice(0, low)}${ellipsis}`
+  return `${text.slice(0, low)}${ellipsis}`;
 }
 
 async function renderSvgAssetToPng(src: string, width: number, height: number) {
-  const response = await fetch(src)
+  const response = await fetch(src);
 
   if (!response.ok) {
-    throw new Error('Unable to load the PDF header logo.')
+    throw new Error("Unable to load the PDF header logo.");
   }
 
-  const svg = await response.text()
+  const svg = await response.text();
   const image = await loadImage(
-    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
-  )
-  const canvas = document.createElement('canvas')
-  const scale = 3
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+  );
+  const canvas = document.createElement("canvas");
+  const scale = 3;
 
-  canvas.width = width * scale
-  canvas.height = height * scale
+  canvas.width = width * scale;
+  canvas.height = height * scale;
 
-  const context = canvas.getContext('2d')
+  const context = canvas.getContext("2d");
 
   if (!context) {
-    throw new Error('Canvas rendering is not available.')
+    throw new Error("Canvas rendering is not available.");
   }
 
-  context.clearRect(0, 0, canvas.width, canvas.height)
-  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL("image/png");
 }
 
 async function renderPayloadToPng(
   payload: LabelPrintPayload,
-  rotateArtwork: boolean
+  rotateArtwork: boolean,
 ) {
   const svgImage = await loadImage(
-    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(payload.svg)}`
-  )
-  const renderScale
-    = labelPdfRenderLongEdgePixels / Math.max(payload.width, payload.height)
-  const renderedWidth = Math.ceil(payload.width * renderScale)
-  const renderedHeight = Math.ceil(payload.height * renderScale)
-  const canvas = document.createElement('canvas')
+    `data:image/svg+xml;charset=utf-8,${encodeURIComponent(payload.svg)}`,
+  );
+  const renderScale =
+    labelPdfRenderLongEdgePixels / Math.max(payload.width, payload.height);
+  const renderedWidth = Math.ceil(payload.width * renderScale);
+  const renderedHeight = Math.ceil(payload.height * renderScale);
+  const canvas = document.createElement("canvas");
 
-  canvas.width = rotateArtwork ? renderedHeight : renderedWidth
-  canvas.height = rotateArtwork ? renderedWidth : renderedHeight
+  canvas.width = rotateArtwork ? renderedHeight : renderedWidth;
+  canvas.height = rotateArtwork ? renderedWidth : renderedHeight;
 
-  const context = canvas.getContext('2d')
+  const context = canvas.getContext("2d");
 
   if (!context) {
-    throw new Error('Canvas rendering is not available.')
+    throw new Error("Canvas rendering is not available.");
   }
 
-  context.fillStyle = '#fff'
-  context.fillRect(0, 0, canvas.width, canvas.height)
+  context.fillStyle = "#fff";
+  context.fillRect(0, 0, canvas.width, canvas.height);
 
   if (rotateArtwork) {
-    context.translate(canvas.width, 0)
-    context.rotate(Math.PI / 2)
+    context.translate(canvas.width, 0);
+    context.rotate(Math.PI / 2);
   }
 
-  context.drawImage(svgImage, 0, 0, renderedWidth, renderedHeight)
+  context.drawImage(svgImage, 0, 0, renderedWidth, renderedHeight);
 
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL("image/png");
 }
 
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image()
+    const image = new Image();
 
-    image.addEventListener('load', () => resolve(image))
-    image.addEventListener('error', () =>
-      reject(new Error('Unable to render QR artwork for PDF.'))
-    )
-    image.src = src
-  })
+    image.addEventListener("load", () => resolve(image));
+    image.addEventListener("error", () =>
+      reject(new Error("Unable to render QR artwork for PDF.")),
+    );
+    image.src = src;
+  });
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-  if (typeof error === 'object' && error !== null && 'data' in error) {
+  if (typeof error === "object" && error !== null && "data" in error) {
     const data = (
-      error as { data?: { message?: string, statusMessage?: string } }
-    ).data
-    const message = data?.statusMessage || data?.message
+      error as { data?: { message?: string; statusMessage?: string } }
+    ).data;
+    const message = data?.statusMessage || data?.message;
 
     if (message) {
-      return message
+      return message;
     }
   }
 
-  return error instanceof Error ? error.message : fallback
+  return error instanceof Error ? error.message : fallback;
 }
 
 function getErrorStatusCode(error: unknown) {
-  if (typeof error === 'object' && error !== null && 'statusCode' in error) {
-    return Number((error as { statusCode?: unknown }).statusCode)
+  if (typeof error === "object" && error !== null && "statusCode" in error) {
+    return Number((error as { statusCode?: unknown }).statusCode);
   }
 
-  if (typeof error === 'object' && error !== null && 'data' in error) {
+  if (typeof error === "object" && error !== null && "data" in error) {
     return Number(
-      (error as { data?: { statusCode?: unknown } }).data?.statusCode
-    )
+      (error as { data?: { statusCode?: unknown } }).data?.statusCode,
+    );
   }
 
-  return 0
+  return 0;
 }
 </script>
 
@@ -891,10 +894,7 @@ function getErrorStatusCode(error: unknown) {
           <h1 class="text-lg font-semibold text-highlighted">
             Print to Labels
           </h1>
-          <p
-            v-if="printPayload"
-            class="mt-1 truncate text-sm text-muted"
-          >
+          <p v-if="printPayload" class="mt-1 truncate text-sm text-muted">
             {{ printPayload.title }}
           </p>
         </div>
@@ -922,7 +922,9 @@ function getErrorStatusCode(error: unknown) {
         />
 
         <template v-if="hasPrintPayload">
-          <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-end">
+          <div
+            class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_14rem] sm:items-end"
+          >
             <UFormField label="Label Type">
               <div
                 aria-label="Label Type"
@@ -1024,7 +1026,7 @@ function getErrorStatusCode(error: unknown) {
                           draggable="false"
                           :src="printPayloadSvgDataUrl"
                           :style="getLabelPreviewArtworkImageStyle()"
-                        >
+                        />
                       </div>
                     </div>
                     <span
@@ -1057,7 +1059,9 @@ function getErrorStatusCode(error: unknown) {
                       class="flex min-w-0 flex-col items-center leading-tight"
                     >
                       <span>Preview</span>
-                      <span class="text-xs font-normal opacity-75">Watermarked</span>
+                      <span class="text-xs font-normal opacity-75"
+                        >Watermarked</span
+                      >
                     </span>
                   </UButton>
                   <UButton
@@ -1072,7 +1076,9 @@ function getErrorStatusCode(error: unknown) {
                       class="flex min-w-0 flex-col items-center leading-tight"
                     >
                       <span>Purchase Printable PDF</span>
-                      <span class="text-xs font-normal opacity-75">1 Credit</span>
+                      <span class="text-xs font-normal opacity-75"
+                        >1 Credit</span
+                      >
                     </span>
                   </UButton>
                 </div>
@@ -1137,7 +1143,7 @@ function getErrorStatusCode(error: unknown) {
                       src="/logos/amazon.svg"
                       alt="Amazon"
                       class="h-[17px] w-[56px] object-contain"
-                    >
+                    />
                   </a>
                 </div>
               </div>
