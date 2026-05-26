@@ -98,7 +98,6 @@ async function handleLogout() {
             />
           </UDropdownMenu>
         </div>
-        <UColorModeButton />
       </template>
 
       <template #body>

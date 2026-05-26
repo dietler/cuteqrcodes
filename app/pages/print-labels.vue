@@ -23,7 +23,6 @@ const session = useSession()
 const creditBalance = ref<number | null>(null)
 const didAutoSelectLabelType = ref(false)
 const isLoadingPrintPayload = ref(false)
-const isLoadingCredits = ref(false)
 const activePdfAction = ref('')
 const pdfError = ref('')
 const route = useRoute()
@@ -97,13 +96,60 @@ function getLabelPreviewAlt(template: LabelTemplate) {
 }
 
 function getLabelPreviewStyle(template: LabelTemplate) {
-  const artworkPlacement = getLabelPreviewArtworkPlacement(template)
-  const width = artworkPlacement.rotate ? template.layout.labelHeight : template.layout.labelWidth
-  const height = artworkPlacement.rotate ? template.layout.labelWidth : template.layout.labelHeight
+  const { height, width } = getLabelPreviewDimensions(template)
 
   return {
     height: `${pointsToInches(height)}in`,
     width: `${pointsToInches(width)}in`
+  }
+}
+
+function getLabelPreviewDimensions(template: LabelTemplate) {
+  const artworkPlacement = getLabelPreviewArtworkPlacement(template)
+
+  return {
+    height: artworkPlacement.rotate ? template.layout.labelWidth : template.layout.labelHeight,
+    width: artworkPlacement.rotate ? template.layout.labelHeight : template.layout.labelWidth
+  }
+}
+
+function getLabelPreviewDimensionLabels(template: LabelTemplate) {
+  const artworkPlacement = getLabelPreviewArtworkPlacement(template)
+  const { height, width } = getLabelTemplateDimensionLabels(template)
+
+  return {
+    bottom: artworkPlacement.rotate ? height : width,
+    right: artworkPlacement.rotate ? width : height
+  }
+}
+
+function getLabelTemplateDimensionLabels(template: LabelTemplate) {
+  const [first, second] = template.label
+    .match(/\d+(?:\.\d+)?/g)
+    ?.map(Number) ?? []
+
+  if (Number.isFinite(first) && Number.isFinite(second)) {
+    const layoutWidth = pointsToInches(template.layout.labelWidth)
+    const layoutHeight = pointsToInches(template.layout.labelHeight)
+    const listedOrderScore = Math.abs(first! - layoutWidth) + Math.abs(second! - layoutHeight)
+    const swappedOrderScore = Math.abs(second! - layoutWidth) + Math.abs(first! - layoutHeight)
+
+    if (listedOrderScore <= swappedOrderScore) {
+      return {
+        height: formatInches(second!),
+        width: formatInches(first!)
+      }
+    }
+
+    return {
+      height: formatInches(first!),
+      width: formatInches(second!)
+    }
+  }
+
+  return {
+    height: formatInches(pointsToInches(template.layout.labelHeight)),
+    width: formatInches(pointsToInches(template.layout.labelWidth))
   }
 }
 
@@ -143,6 +189,10 @@ function getLabelPreviewArtworkPlacement(template: LabelTemplate) {
 
 function pointsToInches(points: number) {
   return points / pdfPointsPerInch
+}
+
+function formatInches(value: number) {
+  return `${Number.isInteger(value) ? value : value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}"`
 }
 
 function createSvgDataUrl(svg: string) {
@@ -214,8 +264,6 @@ async function loadPrintPayload() {
 }
 
 async function loadCreditBalance({ silent = false }: { silent?: boolean } = {}) {
-  isLoadingCredits.value = true
-
   try {
     const response = await $fetch<CreditsSummary>('/api/credits/summary')
 
@@ -226,8 +274,6 @@ async function loadCreditBalance({ silent = false }: { silent?: boolean } = {}) 
     if (!silent) {
       pdfError.value = getErrorMessage(error, 'Unable to load credits.')
     }
-  } finally {
-    isLoadingCredits.value = false
   }
 }
 
@@ -350,6 +396,7 @@ async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { wat
   const qrImage = await pdfDocument.embedPng(qrPngDataUrl)
   const headerLogoImage = await pdfDocument.embedPng(await renderSvgAssetToPng('/icons/rabbit.svg', 96, 96))
   const headerBoldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold)
+  const footerFont = await pdfDocument.embedFont(StandardFonts.Helvetica)
   const labelsPerSheet = layout.columns * layout.rows
   const imageWidth = artworkPlacement.width
   const imageHeight = artworkPlacement.height
@@ -388,7 +435,21 @@ async function createLabelPdfBytes(template: LabelTemplate, { watermark }: { wat
     })
   }
 
+  drawPdfFooter(page, {
+    bottomMargin: getLayoutBottomMargin(layout),
+    font: footerFont,
+    pageWidth: layout.pageWidth,
+    template
+  })
+
   return pdfDocument.save()
+}
+
+function getLayoutBottomMargin(layout: LabelTemplate['layout']) {
+  return layout.pageHeight
+    - layout.marginTop
+    - layout.rows * layout.labelHeight
+    - (layout.rows - 1) * layout.rowGap
 }
 
 function drawPdfHeader(page: PDFPage, {
@@ -440,6 +501,37 @@ function drawPdfHeader(page: PDFPage, {
   })
 }
 
+function drawPdfFooter(page: PDFPage, {
+  bottomMargin,
+  font,
+  pageWidth,
+  template
+}: {
+  bottomMargin: number
+  font: PDFFont
+  pageWidth: number
+  template: LabelTemplate
+}) {
+  if (bottomMargin < 16) {
+    return
+  }
+
+  const horizontalPadding = 24
+  const maxTextWidth = pageWidth - horizontalPadding * 2
+  const textFontSize = Math.min(8, Math.max(6, bottomMargin * 0.22))
+  const footerText = `Template size: ${template.label} - ${template.description}`
+  const text = truncatePdfText(font, footerText, textFontSize, maxTextWidth)
+  const textWidth = font.widthOfTextAtSize(text, textFontSize)
+
+  page.drawText(text, {
+    color: rgb(0.39, 0.45, 0.54),
+    font,
+    size: textFontSize,
+    x: Math.max(horizontalPadding, (pageWidth - textWidth) / 2),
+    y: Math.max(4, (bottomMargin - textFontSize) / 2)
+  })
+}
+
 function drawPdfWatermark(page: PDFPage, {
   boldFont,
   logoImage,
@@ -454,6 +546,7 @@ function drawPdfWatermark(page: PDFPage, {
   const text = 'QR Codes On Labels'
   const textSize = 18
   const logoSize = 14
+  const watermarkOpacity = 0.22
   const stepX = 144
   const stepY = 96
 
@@ -461,7 +554,7 @@ function drawPdfWatermark(page: PDFPage, {
     for (let x = -stepX; x < pageWidth + stepX; x += stepX) {
       page.drawImage(logoImage, {
         height: logoSize,
-        opacity: 0.12,
+        opacity: watermarkOpacity,
         rotate: degrees(-25),
         width: logoSize,
         x,
@@ -470,7 +563,7 @@ function drawPdfWatermark(page: PDFPage, {
       page.drawText(text, {
         color: rgb(0.08, 0.09, 0.11),
         font: boldFont,
-        opacity: 0.12,
+        opacity: watermarkOpacity,
         rotate: degrees(-25),
         size: textSize,
         x: x + logoSize + 6,
@@ -728,164 +821,159 @@ function getErrorStatusCode(error: unknown) {
             <div
               v-for="template in activeLabelTemplates"
               :key="template.id"
-              class="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-950"
+              class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
             >
-              <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
-                <div class="min-w-0">
-                  <div class="flex items-start gap-3 px-1 py-1">
-                    <UIcon
-                      name="i-lucide-file-text"
-                      class="mt-0.5 size-5 shrink-0 text-muted"
-                    />
-                    <span class="min-w-0 flex-1">
-                      <span class="flex flex-wrap items-center gap-2 text-sm font-semibold text-highlighted">
-                        <span>{{ template.label }}</span>
-                        <UBadge
-                          v-if="isSuggestedLabelTemplate(template)"
-                          color="primary"
-                          :data-testid="`label-template-suggested-badge-${template.id}`"
-                          size="sm"
-                          variant="subtle"
-                        >
-                          Suggested Size
-                        </UBadge>
-                      </span>
-                      <span class="block text-sm text-muted">{{ template.description }}</span>
-                    </span>
-                  </div>
-
-                  <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                    <UButton
-                      block
-                      color="neutral"
-                      :data-testid="`label-template-preview-button-${template.id}`"
-                      icon="i-lucide-eye"
-                      :loading="isTemplateActionLoading('preview', template)"
+              <div class="min-w-0 space-y-4">
+                <div class="text-center">
+                  <div class="flex flex-wrap items-center justify-center gap-2 text-lg font-semibold text-highlighted">
+                    <span>{{ template.label }}</span>
+                    <UBadge
+                      v-if="isSuggestedLabelTemplate(template)"
+                      color="primary"
+                      :data-testid="`label-template-suggested-badge-${template.id}`"
+                      size="sm"
                       variant="subtle"
-                      @click="previewLabelPdf(template)"
                     >
-                      Preview
-                    </UButton>
-                    <UButton
-                      block
-                      :data-testid="`label-template-purchase-button-${template.id}`"
-                      icon="i-lucide-circle-dollar-sign"
-                      :loading="isTemplateActionLoading('purchase', template)"
-                      @click="purchaseLabelPdf(template)"
-                    >
-                      Purchase for 1 credit
-                    </UButton>
+                      Suggested Size
+                    </UBadge>
                   </div>
-
-                  <div
-                    v-if="creditBalance !== null"
-                    class="mt-2 flex items-center gap-1 px-1 text-xs text-muted"
-                  >
-                    <UIcon
-                      name="i-lucide-wallet"
-                      class="size-3.5"
-                    />
-                    <span>{{ creditBalance }} credits available</span>
-                  </div>
-                  <div
-                    v-else-if="isLoadingCredits"
-                    class="mt-2 flex items-center gap-1 px-1 text-xs text-muted"
-                  >
-                    <UIcon
-                      name="i-lucide-loader-circle"
-                      class="size-3.5 animate-spin"
-                    />
-                    <span>Checking credits...</span>
-                  </div>
-
-                  <div class="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
-                    <span class="text-sm font-medium text-muted">Buy From:</span>
-                    <a
-                      :aria-label="`Buy ${template.description} from Avery`"
-                      class="inline-flex h-7 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
-                      :href="getAveryTemplateUrl(template)"
-                      rel="noopener noreferrer"
-                      target="_blank"
-                    >
-                      <svg
-                        aria-label="Avery"
-                        xmlns="http://www.w3.org/2000/svg"
-                        role="img"
-                        viewBox="0 0 97.75 46.23"
-                        class="h-[17px] w-[35.5px]"
-                      >
-                        <title>Avery</title>
-                        <polygon
-                          points="92.19 14.47 87.89 21.91 83.58 14.47 78.19 14.47 85.18 26.58 82.29 31.58 87.68 31.58 97.58 14.47 92.19 14.47"
-                          class="fill-[#005da8]"
-                        />
-                        <path
-                          d="M70.46,22.64h-5v-4.1h5c1.59,0,2.56.678,2.56,2C73.02,21.753,72.129,22.64,70.46,22.64Zm7.3-2.29h0a5.328,5.328,0,0,0-1.51-4c-1.15-1.17-3-1.86-5.56-1.86H60.75V31.58h4.73v-5.2h3.94l3.47,5.2h5.46l-4.1-6A5.387,5.387,0,0,0,77.76,20.35Z"
-                          class="fill-[#005da8]"
-                        />
-                        <polygon
-                          points="8.16 30.57 10.5 46.23 50.72 40.22 49.71 33.47 47.38 33.47 48.09 38.27 12.45 43.6 10.5 30.57 8.16 30.57"
-                          class="fill-[#de1d37]"
-                        />
-                        <polygon
-                          points="46.55 24.81 54.72 24.81 54.72 21.08 46.55 21.08 46.55 18.49 57.15 18.49 57.15 14.47 41.86 14.47 41.86 31.58 57.27 31.58 57.27 27.55 46.55 27.55 46.55 24.81"
-                          class="fill-[#005da8]"
-                        />
-                        <polygon
-                          points="29.77 25.18 24.32 14.47 18.85 14.47 27.55 31.58 31.99 31.58 40.69 14.47 35.22 14.47 29.77 25.18"
-                          class="fill-[#005da8]"
-                        />
-                        <path
-                          d="M11.54,19.88L14.22,25H8.87ZM9,14.47L0,31.58H5.38l1.55-2.94h9.23l1.55,2.94h5.38l-9-17.11H9Z"
-                          class="fill-[#005da8]"
-                        />
-                        <polygon
-                          points="44.71 0 4.49 6.01 6 16.07 7.31 13.57 7.82 12.62 7.12 7.95 42.77 2.63 44.25 12.54 46.58 12.54 44.71 0"
-                          class="fill-[#de1d37]"
-                        />
-                      </svg>
-                    </a>
-                    <a
-                      :aria-label="`Buy ${template.description} from Amazon`"
-                      class="inline-flex h-7 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
-                      :href="getAmazonTemplateUrl(template)"
-                      rel="noopener noreferrer"
-                      target="_blank"
-                    >
-                      <img
-                        src="/logos/amazon.svg"
-                        alt="Amazon"
-                        class="h-[17px] w-[56px] object-contain"
-                      >
-                    </a>
+                  <div class="mt-1 text-sm text-muted">
+                    {{ template.description }}
                   </div>
                 </div>
 
                 <div
                   :aria-label="`${template.description} label preview`"
-                  class="-mx-1 min-w-0 overflow-auto px-1 pb-1 [touch-action:pan-x_pan-y] [-webkit-overflow-scrolling:touch] sm:mx-0 sm:justify-self-end sm:px-0"
+                  class="-mx-1 min-w-0 overflow-auto px-1 pb-6 pr-8 [touch-action:pan-x_pan-y] [-webkit-overflow-scrolling:touch] sm:mx-0 sm:px-8 sm:pb-6"
                   :data-testid="`label-template-preview-scroll-${template.id}`"
                   tabindex="0"
                 >
-                  <div
-                    class="box-border inline-flex shrink-0 items-center justify-center border border-slate-300 bg-white shadow-sm dark:border-slate-700"
-                    :data-testid="`label-template-preview-${template.id}`"
-                    :style="getLabelPreviewStyle(template)"
-                  >
+                  <div class="relative mx-auto w-max">
                     <div
-                      class="relative shrink-0 overflow-hidden"
-                      :data-testid="`label-template-artwork-${template.id}`"
-                      :style="getLabelPreviewArtworkFrameStyle(template)"
+                      class="box-border flex shrink-0 items-center justify-center border border-slate-300 bg-white shadow-sm dark:border-slate-700"
+                      :data-testid="`label-template-preview-${template.id}`"
+                      :style="getLabelPreviewStyle(template)"
                     >
-                      <img
-                        :alt="getLabelPreviewAlt(template)"
-                        class="absolute left-1/2 top-1/2 block object-contain"
-                        draggable="false"
-                        :src="printPayloadSvgDataUrl"
-                        :style="getLabelPreviewArtworkImageStyle()"
+                      <div
+                        class="relative shrink-0 overflow-hidden"
+                        :data-testid="`label-template-artwork-${template.id}`"
+                        :style="getLabelPreviewArtworkFrameStyle(template)"
                       >
+                        <img
+                          :alt="getLabelPreviewAlt(template)"
+                          class="absolute left-1/2 top-1/2 block object-contain"
+                          draggable="false"
+                          :src="printPayloadSvgDataUrl"
+                          :style="getLabelPreviewArtworkImageStyle()"
+                        >
+                      </div>
                     </div>
+                    <span
+                      class="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 text-xs font-medium leading-none text-slate-300 dark:text-slate-700"
+                      :data-testid="`label-template-preview-width-${template.id}`"
+                    >
+                      {{ getLabelPreviewDimensionLabels(template).bottom }}
+                    </span>
+                    <span
+                      class="pointer-events-none absolute left-full top-1/2 ml-1 -translate-y-1/2 text-xs font-medium leading-none text-slate-300 dark:text-slate-700 [writing-mode:vertical-rl]"
+                      :data-testid="`label-template-preview-height-${template.id}`"
+                    >
+                      {{ getLabelPreviewDimensionLabels(template).right }}
+                    </span>
                   </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                  <UButton
+                    block
+                    class="min-h-16 justify-center whitespace-normal text-center"
+                    color="neutral"
+                    :data-testid="`label-template-preview-button-${template.id}`"
+                    icon="i-lucide-eye"
+                    :loading="isTemplateActionLoading('preview', template)"
+                    variant="subtle"
+                    @click="previewLabelPdf(template)"
+                  >
+                    <span class="flex min-w-0 flex-col items-center leading-tight">
+                      <span>Preview</span>
+                      <span class="text-xs font-normal opacity-75">Watermarked</span>
+                    </span>
+                  </UButton>
+                  <UButton
+                    block
+                    class="min-h-16 justify-center whitespace-normal text-center"
+                    :data-testid="`label-template-purchase-button-${template.id}`"
+                    icon="i-lucide-circle-dollar-sign"
+                    :loading="isTemplateActionLoading('purchase', template)"
+                    @click="purchaseLabelPdf(template)"
+                  >
+                    <span class="flex min-w-0 flex-col items-center leading-tight">
+                      <span>Purchase Printable PDF</span>
+                      <span class="text-xs font-normal opacity-75">1 Credit</span>
+                    </span>
+                  </UButton>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800">
+                  <span class="text-sm font-medium text-muted">Buy From:</span>
+                  <a
+                    :aria-label="`Buy ${template.description} from Avery`"
+                    class="inline-flex h-8 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                    :href="getAveryTemplateUrl(template)"
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <svg
+                      aria-label="Avery"
+                      xmlns="http://www.w3.org/2000/svg"
+                      role="img"
+                      viewBox="0 0 97.75 46.23"
+                      class="h-[17px] w-[35.5px]"
+                    >
+                      <title>Avery</title>
+                      <polygon
+                        points="92.19 14.47 87.89 21.91 83.58 14.47 78.19 14.47 85.18 26.58 82.29 31.58 87.68 31.58 97.58 14.47 92.19 14.47"
+                        class="fill-[#005da8]"
+                      />
+                      <path
+                        d="M70.46,22.64h-5v-4.1h5c1.59,0,2.56.678,2.56,2C73.02,21.753,72.129,22.64,70.46,22.64Zm7.3-2.29h0a5.328,5.328,0,0,0-1.51-4c-1.15-1.17-3-1.86-5.56-1.86H60.75V31.58h4.73v-5.2h3.94l3.47,5.2h5.46l-4.1-6A5.387,5.387,0,0,0,77.76,20.35Z"
+                        class="fill-[#005da8]"
+                      />
+                      <polygon
+                        points="8.16 30.57 10.5 46.23 50.72 40.22 49.71 33.47 47.38 33.47 48.09 38.27 12.45 43.6 10.5 30.57 8.16 30.57"
+                        class="fill-[#de1d37]"
+                      />
+                      <polygon
+                        points="46.55 24.81 54.72 24.81 54.72 21.08 46.55 21.08 46.55 18.49 57.15 18.49 57.15 14.47 41.86 14.47 41.86 31.58 57.27 31.58 57.27 27.55 46.55 27.55 46.55 24.81"
+                        class="fill-[#005da8]"
+                      />
+                      <polygon
+                        points="29.77 25.18 24.32 14.47 18.85 14.47 27.55 31.58 31.99 31.58 40.69 14.47 35.22 14.47 29.77 25.18"
+                        class="fill-[#005da8]"
+                      />
+                      <path
+                        d="M11.54,19.88L14.22,25H8.87ZM9,14.47L0,31.58H5.38l1.55-2.94h9.23l1.55,2.94h5.38l-9-17.11H9Z"
+                        class="fill-[#005da8]"
+                      />
+                      <polygon
+                        points="44.71 0 4.49 6.01 6 16.07 7.31 13.57 7.82 12.62 7.12 7.95 42.77 2.63 44.25 12.54 46.58 12.54 44.71 0"
+                        class="fill-[#de1d37]"
+                      />
+                    </svg>
+                  </a>
+                  <a
+                    :aria-label="`Buy ${template.description} from Amazon`"
+                    class="inline-flex h-8 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                    :href="getAmazonTemplateUrl(template)"
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    <img
+                      src="/logos/amazon.svg"
+                      alt="Amazon"
+                      class="h-[17px] w-[56px] object-contain"
+                    >
+                  </a>
                 </div>
               </div>
             </div>

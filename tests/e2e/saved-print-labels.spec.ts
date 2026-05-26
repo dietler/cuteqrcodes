@@ -109,6 +109,8 @@ test('saved QR print link loads labels from the saved id', async ({ page }) => {
 
   await page.getByRole('radio', { name: 'Rectangle' }).click()
   await expect(page.getByTestId('label-template-preview-avery-presta-94256')).toBeVisible()
+  await expect(page.getByTestId('label-template-preview-width-avery-presta-94256')).toHaveText('3.5"')
+  await expect(page.getByTestId('label-template-preview-height-avery-presta-94256')).toHaveText('5"')
 
   const largeRectanglePreview = await page.getByTestId('label-template-preview-avery-presta-94256').boundingBox()
 
@@ -119,6 +121,8 @@ test('saved QR print link loads labels from the saved id', async ({ page }) => {
 
   expect(wideLabelPreview?.width).toBeCloseTo(384, 0)
   expect(wideLabelPreview?.height).toBeCloseTo(192, 0)
+  await expect(page.getByTestId('label-template-preview-width-avery-presta-94207')).toHaveText('4"')
+  await expect(page.getByTestId('label-template-preview-height-avery-presta-94207')).toHaveText('2"')
 
   const rotatedArtwork = await page.getByTestId('label-template-artwork-avery-presta-94207').boundingBox()
 
@@ -186,6 +190,8 @@ test('rotates preview label outline for tall QR labels that print sideways', asy
   expect(tallOnLandscapeTransform).not.toContain('rotate')
   expect(tallOnLandscapePreview!.height).toBeGreaterThan(tallOnLandscapePreview!.width)
   expect(tallOnLandscapeArtwork!.height).toBeGreaterThan(tallOnLandscapeArtwork!.width)
+  await expect(page.getByTestId('label-template-preview-width-avery-presta-94207')).toHaveText('2"')
+  await expect(page.getByTestId('label-template-preview-height-avery-presta-94207')).toHaveText('4"')
 })
 
 test('rotates preview label outline differently for wide QR labels', async ({ page }) => {
