@@ -129,6 +129,33 @@ test("saved QR print link loads labels from the saved id", async ({ page }) => {
   await expect(
     page.getByTestId("label-template-suggested-badge-avery-presta-94101"),
   ).toBeVisible();
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94107"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94106"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94103"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("label-template-preview-width-avery-presta-94107"),
+  ).toHaveText('2"');
+  await expect(
+    page.getByTestId("label-template-preview-height-avery-presta-94107"),
+  ).toHaveText('2"');
+  await expect(
+    page.getByTestId("label-template-preview-width-avery-presta-94106"),
+  ).toHaveText('1.5"');
+  await expect(
+    page.getByTestId("label-template-preview-height-avery-presta-94106"),
+  ).toHaveText('1.5"');
+  await expect(
+    page.getByTestId("label-template-preview-width-avery-presta-94103"),
+  ).toHaveText('1"');
+  await expect(
+    page.getByTestId("label-template-preview-height-avery-presta-94103"),
+  ).toHaveText('1"');
 
   await page.getByRole("radio", { name: "Rectangle" }).click();
   await expect(
