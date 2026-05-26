@@ -51,6 +51,54 @@ export default defineNuxtConfig({
       name: 'Bebas Neue',
       provider: 'google',
       weights: [400]
+    }, {
+      name: 'Oswald',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Roboto',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Roboto Condensed',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Figtree',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Libre Baskerville',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Changa One',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Lexend',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Rye',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Sancreek',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'IM Fell Great Primer',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Creepster',
+      provider: 'google',
+      weights: [400]
+    }, {
+      name: 'Jersey 25',
+      provider: 'google',
+      weights: [400]
     }]
   }
 })

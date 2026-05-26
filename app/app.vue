@@ -5,6 +5,30 @@ import { signOut, useSession } from '~~/lib/auth-client'
 const session = useSession()
 const isNavigationOpen = ref(false)
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
+const userEmail = computed(() => session.value.data?.user.email || '')
+const navigationItems = computed(() => {
+  if (isLoggedIn.value) {
+    return [{
+      label: 'Saved QR Codes',
+      icon: 'i-lucide-folder-open',
+      to: '/saved-qr-codes'
+    }, {
+      label: 'Logout',
+      icon: 'i-lucide-log-out',
+      onSelect: handleLogout
+    }]
+  }
+
+  return [{
+    label: 'Login',
+    icon: 'i-lucide-log-in',
+    to: '/login'
+  }, {
+    label: 'Register',
+    icon: 'i-lucide-user-plus',
+    to: '/register'
+  }]
+})
 
 useHead({
   meta: [
@@ -56,62 +80,33 @@ async function handleLogout() {
       </template>
 
       <template #right>
+        <div class="hidden lg:block">
+          <UDropdownMenu
+            :content="{ align: 'end' }"
+            :items="navigationItems"
+          >
+            <UButton
+              :aria-label="isLoggedIn ? `Account menu for ${userEmail}` : 'Account menu'"
+              color="neutral"
+              icon="i-lucide-user"
+              :label="isLoggedIn ? userEmail : undefined"
+              variant="ghost"
+            />
+          </UDropdownMenu>
+        </div>
         <UColorModeButton />
       </template>
 
       <template #body>
-        <nav
+        <UNavigationMenu
+          :items="navigationItems"
           aria-label="Primary navigation"
-          class="mx-auto flex w-full max-w-sm flex-col gap-2 pt-6"
-        >
-          <UButton
-            v-if="isLoggedIn"
-            class="justify-start"
-            color="neutral"
-            icon="i-lucide-folder-open"
-            size="xl"
-            to="/saved-qr-codes"
-            variant="ghost"
-          >
-            Saved QR Codes
-          </UButton>
-
-          <UButton
-            v-if="!isLoggedIn"
-            class="justify-start"
-            color="neutral"
-            icon="i-lucide-log-in"
-            size="xl"
-            to="/login"
-            variant="ghost"
-          >
-            Login
-          </UButton>
-
-          <UButton
-            v-if="!isLoggedIn"
-            class="justify-start"
-            color="neutral"
-            icon="i-lucide-user-plus"
-            size="xl"
-            to="/register"
-            variant="ghost"
-          >
-            Register
-          </UButton>
-
-          <UButton
-            v-if="isLoggedIn"
-            class="justify-start"
-            color="neutral"
-            icon="i-lucide-log-out"
-            size="xl"
-            variant="ghost"
-            @click="handleLogout"
-          >
-            Logout
-          </UButton>
-        </nav>
+          as="nav"
+          class="mx-auto w-full max-w-sm pt-6"
+          color="neutral"
+          orientation="vertical"
+          variant="pill"
+        />
       </template>
     </UHeader>
 

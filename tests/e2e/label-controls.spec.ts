@@ -4,7 +4,7 @@ test('aligns label panel controls', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com')
-  await page.getByRole('button', { name: 'Label' }).click()
+  await page.getByRole('button', { name: 'Label', exact: true }).click()
 
   const metrics = await page.evaluate(() => {
     function bounds(selector: string) {

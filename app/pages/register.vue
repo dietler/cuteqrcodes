@@ -4,7 +4,6 @@ import { signUp, useSession } from '~~/lib/auth-client'
 
 const route = useRoute()
 const session = useSession()
-const name = ref('')
 const email = ref('')
 const password = ref('')
 const passwordConfirmation = ref('')
@@ -18,9 +17,10 @@ const redirectPath = computed(() => {
 
 async function submitRegister() {
   authError.value = ''
+  const trimmedEmail = email.value.trim()
 
-  if (!name.value.trim() || !email.value.trim() || !password.value) {
-    authError.value = 'Name, email, and password are required.'
+  if (!trimmedEmail || !password.value) {
+    authError.value = 'Email and password are required.'
     return
   }
 
@@ -33,8 +33,8 @@ async function submitRegister() {
 
   try {
     const result = await signUp.email({
-      email: email.value.trim(),
-      name: name.value.trim(),
+      email: trimmedEmail,
+      name: trimmedEmail,
       password: password.value
     })
 
@@ -76,16 +76,6 @@ async function submitRegister() {
           :title="authError"
           variant="subtle"
         />
-
-        <UFormField label="Name">
-          <UInput
-            v-model="name"
-            autocomplete="name"
-            class="w-full"
-            icon="i-lucide-user"
-            size="lg"
-          />
-        </UFormField>
 
         <UFormField label="Email">
           <UInput

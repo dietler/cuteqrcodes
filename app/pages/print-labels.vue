@@ -96,7 +96,6 @@ async function createLabelPdf(template: LabelTemplate) {
     const page = pdfDocument.addPage([layout.pageWidth, layout.pageHeight])
     const qrImage = await pdfDocument.embedPng(qrPngDataUrl)
     const headerLogoImage = await pdfDocument.embedPng(await renderSvgAssetToPng('/icons/rabbit.svg', 96, 96))
-    const headerFont = await pdfDocument.embedFont(StandardFonts.Helvetica)
     const headerBoldFont = await pdfDocument.embedFont(StandardFonts.HelveticaBold)
     const labelsPerSheet = layout.columns * layout.rows
     const availableWidth = layout.labelWidth - layout.labelPadding * 2
@@ -106,7 +105,6 @@ async function createLabelPdf(template: LabelTemplate) {
     const imageHeight = qrImage.height * imageScale
 
     drawPdfHeader(page, {
-      font: headerFont,
       logoImage: headerLogoImage,
       name: payload.name || payload.title,
       pageHeight: layout.pageHeight,
@@ -159,7 +157,6 @@ async function createLabelPdf(template: LabelTemplate) {
 
 function drawPdfHeader(page: PDFPage, {
   boldFont,
-  font,
   logoImage,
   name,
   pageHeight,
@@ -168,7 +165,6 @@ function drawPdfHeader(page: PDFPage, {
   url
 }: {
   boldFont: PDFFont
-  font: PDFFont
   logoImage: PDFImage
   name: string
   pageHeight: number
@@ -182,17 +178,16 @@ function drawPdfHeader(page: PDFPage, {
 
   const headerBottom = pageHeight - topMargin
   const horizontalPadding = 24
-  const logoSize = Math.min(24, Math.max(16, topMargin - 8))
+  const textFontSize = Math.min(9, Math.max(7, topMargin * 0.24))
+  const logoSize = textFontSize
   const logoY = headerBottom + (topMargin - logoSize) / 2
-  const titleFontSize = Math.min(10, Math.max(8, topMargin * 0.28))
-  const detailFontSize = Math.min(7, Math.max(5.5, topMargin * 0.18))
-  const lineGap = 1.5
-  const textBlockHeight = titleFontSize + detailFontSize * 2 + lineGap * 2
   const textX = horizontalPadding + logoSize + 8
   const maxTextWidth = pageWidth - textX - horizontalPadding
-  const titleY = headerBottom + (topMargin + textBlockHeight) / 2 - titleFontSize
-  const nameY = titleY - detailFontSize - lineGap
-  const urlY = nameY - detailFontSize - lineGap
+  const textY = headerBottom + (topMargin - textFontSize) / 2
+  const headerText = ['Cute QR Codes', name, url]
+    .map(value => value.trim())
+    .filter(Boolean)
+    .join(' - ')
 
   page.drawImage(logoImage, {
     height: logoSize,
@@ -200,26 +195,12 @@ function drawPdfHeader(page: PDFPage, {
     x: horizontalPadding,
     y: logoY
   })
-  page.drawText('Cute QR Codes', {
+  page.drawText(truncatePdfText(boldFont, headerText, textFontSize, maxTextWidth), {
     color: rgb(0.07, 0.08, 0.1),
     font: boldFont,
-    size: titleFontSize,
+    size: textFontSize,
     x: textX,
-    y: titleY
-  })
-  page.drawText(truncatePdfText(font, name, detailFontSize, maxTextWidth), {
-    color: rgb(0.25, 0.28, 0.33),
-    font,
-    size: detailFontSize,
-    x: textX,
-    y: nameY
-  })
-  page.drawText(truncatePdfText(font, url, detailFontSize, maxTextWidth), {
-    color: rgb(0.36, 0.39, 0.45),
-    font,
-    size: detailFontSize,
-    x: textX,
-    y: urlY
+    y: textY
   })
 }
 

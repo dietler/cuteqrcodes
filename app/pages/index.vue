@@ -107,7 +107,19 @@ const versionOneCenterIconCircleDiameter = 7
 
 const labelFonts: LabelFont[] = [
   { label: 'Google Sans', value: 'google-sans', class: 'font-google-sans' },
-  { label: 'Bebas Neue', value: 'bebas-neue', class: 'font-bebas-neue' }
+  { label: 'Bebas Neue', value: 'bebas-neue', class: 'font-bebas-neue' },
+  { label: 'Oswald', value: 'oswald', class: 'font-oswald' },
+  { label: 'Roboto', value: 'roboto', class: 'font-roboto' },
+  { label: 'Roboto Condensed', value: 'roboto-condensed', class: 'font-roboto-condensed' },
+  { label: 'Figtree', value: 'figtree', class: 'font-figtree' },
+  { label: 'Baskerville', value: 'libre-baskerville', class: 'font-libre-baskerville' },
+  { label: 'Changa One', value: 'changa-one', class: 'font-changa-one' },
+  { label: 'Lexend', value: 'lexend', class: 'font-lexend' },
+  { label: 'Rye', value: 'rye', class: 'font-rye' },
+  { label: 'Sancreek', value: 'sancreek', class: 'font-sancreek' },
+  { label: 'Fell Great', value: 'im-fell-great-primer', class: 'font-im-fell-great-primer' },
+  { label: 'Creepster', value: 'creepster', class: 'font-creepster' },
+  { label: 'Jersey', value: 'jersey-25', class: 'font-jersey-25' }
 ]
 const fallbackLabelFont = labelFonts[0]!
 const selectedLabelFont = ref(fallbackLabelFont.value)
