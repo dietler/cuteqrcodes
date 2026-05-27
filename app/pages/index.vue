@@ -1389,9 +1389,14 @@ onUnmounted(() => {
           <span class="text-muted">{{ selectedQrColor?.name }} {{ selectedColorStep }}</span>
         </div>
 
+        <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+          <span>Lighter</span>
+          <span>Darker</span>
+        </div>
+
         <USlider
           v-model="selectedColorStep"
-          class="mt-4"
+          class="mt-1"
           :max="900"
           :min="100"
           :step="100"
