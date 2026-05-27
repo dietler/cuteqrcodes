@@ -13,6 +13,10 @@ export type SavedQrPayload = {
   additionalTextSizeStep: number
   centerIcon: string
   border: string
+  gradientStyle?: 'none' | 'directional' | 'radial'
+  gradientDirection?: 'left-to-right' | 'top-to-bottom' | 'diagonal'
+  gradientSecondColorName?: string | null
+  gradientThirdColorName?: string | null
 }
 
 export type SavedQrFolder = {

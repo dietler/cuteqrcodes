@@ -5,12 +5,14 @@ import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/lab
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 import { editQrPayloadStorageKey, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
 
-type QrTool = 'colors' | 'step' | 'label' | 'icon' | 'border'
+type QrTool = 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double'
 type CenterIconValue = string
 type AdditionalTextPlacement = 'above' | 'below'
 type LabelPosition = 'top' | 'left' | 'right' | 'bottom'
 type TailwindColorUtility = 'bg' | 'fill' | 'stroke' | 'text'
+type GradientStyle = 'none' | 'directional' | 'radial'
+type GradientDirection = 'left-to-right' | 'top-to-bottom' | 'diagonal'
 
 type TailwindColor = {
   name: string
@@ -30,6 +32,18 @@ type LabelPositionOption = {
   label: string
   value: LabelPosition
   disabled: boolean
+}
+
+type GradientStyleOption = {
+  label: string
+  value: GradientStyle
+  icon: string
+}
+
+type GradientDirectionOption = {
+  label: string
+  value: GradientDirection
+  icon: string
 }
 
 type CenterIconOption = {
@@ -59,6 +73,26 @@ type BorderStyle = {
   contentGap: number
 }
 
+type GradientBox = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+type LinearGradientCoordinates = {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
+
+type RadialGradientCoordinates = {
+  cx: number
+  cy: number
+  r: number
+}
+
 const qrStore = useQrStore()
 const session = useSession()
 
@@ -76,6 +110,10 @@ const hasColorsAfter = ref(false)
 const hasIconsBefore = ref(false)
 const hasIconsAfter = ref(false)
 const selectedColorStep = ref(500)
+const selectedGradientStyle = ref<GradientStyle>('none')
+const selectedGradientDirection = ref<GradientDirection>('left-to-right')
+const selectedGradientSecondColorName = ref<string | null>(null)
+const selectedGradientThirdColorName = ref<string | null>(null)
 const labelSizeStep = ref(0)
 const additionalTextSizeStep = ref(0)
 const qrLabel = ref('')
@@ -107,6 +145,7 @@ const homepageDescriptionDismissedCookie = useCookie(homepageDescriptionDismisse
 })
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
+const blackColorName = 'Black'
 const additionalTextLineLength = 40
 const preferredAdditionalTextLineLength = 24
 const maxAdditionalTextLength = additionalTextLineLength * 3
@@ -140,6 +179,16 @@ const labelPositionOptions: LabelPositionOption[] = [
   { label: 'Bottom', value: 'bottom', disabled: false },
   { label: 'Right', value: 'right', disabled: false },
   { label: 'Left', value: 'left', disabled: false }
+]
+const gradientStyleOptions: GradientStyleOption[] = [
+  { label: 'No Gradient', value: 'none', icon: 'i-lucide-ban' },
+  { label: 'Directional', value: 'directional', icon: 'i-lucide-arrow-right' },
+  { label: 'Radial', value: 'radial', icon: 'i-lucide-circle-dot' }
+]
+const gradientDirectionOptions: GradientDirectionOption[] = [
+  { label: 'Left to Right', value: 'left-to-right', icon: 'i-lucide-arrow-right' },
+  { label: 'Top to Bottom', value: 'top-to-bottom', icon: 'i-lucide-arrow-down' },
+  { label: 'Diagonal', value: 'diagonal', icon: 'i-lucide-arrow-down-right' }
 ]
 const noCenterIconOption: CenterIconOption = { label: 'None', value: 'none', src: '', categoryLabel: '' }
 const centerIconCategories: CenterIconCategory[] = [
@@ -376,6 +425,32 @@ const qrSvgSize = computed(() => generatedQr.value.code ? generatedQr.value.code
 const qrFillClass = computed(() => selectedQrColor.value ? getTailwindColorClass(selectedQrColor.value, 'fill') : 'fill-black')
 const qrStrokeClass = computed(() => selectedQrColor.value ? getTailwindColorClass(selectedQrColor.value, 'stroke') : 'stroke-black')
 const qrTextClass = computed(() => selectedQrColor.value ? getTailwindColorClass(selectedQrColor.value, 'text') : 'text-black')
+const gradientHasFirstColor = computed(() => Boolean(selectedQrColor.value))
+const gradientNeedsColors = computed(() => selectedGradientStyle.value !== 'none')
+const hasActiveGradient = computed(() => Boolean(gradientHasFirstColor.value && gradientNeedsColors.value && selectedGradientSecondColorName.value))
+const qrPathFillPaint = computed(() => hasActiveGradient.value ? 'url(#qr-path-gradient)' : null)
+const qrArtworkFillPaint = computed(() => hasActiveGradient.value ? 'url(#qr-artwork-gradient)' : null)
+const borderStrokePaint = computed(() => hasActiveGradient.value ? 'url(#qr-border-gradient)' : null)
+const textFillPaint = computed(() => hasActiveGradient.value ? 'url(#qr-text-gradient)' : null)
+const gradientStops = computed(() => {
+  if (!hasActiveGradient.value || !selectedQrColor.value || !selectedGradientSecondColorName.value) {
+    return []
+  }
+
+  const colorNames = [
+    selectedQrColor.value.name,
+    selectedGradientSecondColorName.value,
+    ...(selectedGradientThirdColorName.value ? [selectedGradientThirdColorName.value] : [])
+  ]
+  const lastIndex = colorNames.length - 1
+
+  return colorNames.map((colorName, index) => ({
+    colorName,
+    key: `${colorName}-${index}`,
+    offset: `${(index / lastIndex) * 100}%`,
+    textClass: getGradientColorTextClass(colorName)
+  }))
+})
 const centerIconSearchTerm = computed(() => centerIconSearch.value.trim().toLowerCase())
 const hasCenterIconSearch = computed(() => centerIconSearchTerm.value.length > 0)
 const filteredCenterIconOptions = computed(() => {
@@ -519,9 +594,45 @@ const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(l
   height: outputSvgHeight.value - line.inset * 2,
   width: outputSvgWidth.value - line.inset * 2
 })))
+const borderGradientBox = computed<GradientBox>(() => ({
+  height: Math.max(outputSvgHeight.value, 1),
+  width: Math.max(outputSvgWidth.value, 1),
+  x: 0,
+  y: 0
+}))
+const qrArtworkGradientBox = computed<GradientBox>(() => ({
+  height: Math.max(qrOutputSize.value, 1),
+  width: Math.max(qrOutputSize.value, 1),
+  x: qrOutputX.value,
+  y: qrOutputY.value
+}))
+const qrPathGradientBox = computed<GradientBox>(() => ({
+  height: Math.max(qrSvgSize.value, 1),
+  width: Math.max(qrSvgSize.value, 1),
+  x: 0,
+  y: 0
+}))
+const textGradientBox = computed<GradientBox>(() => ({
+  height: Math.max(labelBlockHeight.value, 1),
+  width: Math.max(labelIsSide.value ? sideLabelWidth.value : outputSvgWidth.value, 1),
+  x: labelIsLeft.value
+    ? borderContentInset.value
+    : labelIsRight.value
+      ? qrOutputX.value + qrOutputSize.value + sideLabelGap.value
+      : 0,
+  y: labelBlockY.value
+}))
+const borderLinearGradientCoordinates = computed(() => getLinearGradientCoordinates(borderGradientBox.value))
+const borderRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(borderGradientBox.value))
+const qrArtworkLinearGradientCoordinates = computed(() => getLinearGradientCoordinates(qrArtworkGradientBox.value))
+const qrArtworkRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(qrArtworkGradientBox.value))
+const qrPathLinearGradientCoordinates = computed(() => getLinearGradientCoordinates(qrPathGradientBox.value))
+const qrPathRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(qrPathGradientBox.value))
+const textLinearGradientCoordinates = computed(() => getLinearGradientCoordinates(textGradientBox.value))
+const textRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(textGradientBox.value))
 
 async function selectTool(tool: QrTool) {
-  if (tool === 'step' && !selectedQrColor.value) {
+  if ((tool === 'step' || tool === 'gradient') && !selectedQrColor.value) {
     return
   }
 
@@ -552,7 +663,7 @@ function selectBlackColor() {
   selectedQrColor.value = null
   selectedColorStep.value = 500
 
-  if (activeTool.value === 'step') {
+  if (activeTool.value === 'step' || activeTool.value === 'gradient') {
     activeTool.value = 'colors'
   }
 }
@@ -567,6 +678,91 @@ function selectQrColor(color: TailwindColor) {
 
 function getTailwindColorClass(color: TailwindColor, utility: TailwindColorUtility) {
   return `${utility}-${color.name.toLowerCase()}-${selectedColorStep.value}`
+}
+
+function selectGradientStyle(style: GradientStyle) {
+  selectedGradientStyle.value = style
+}
+
+function selectGradientDirection(direction: GradientDirection) {
+  selectedGradientDirection.value = direction
+}
+
+function selectGradientSecondColor(colorName: string) {
+  selectedGradientSecondColorName.value = colorName
+}
+
+function selectGradientThirdColor(colorName: string | null) {
+  selectedGradientThirdColorName.value = colorName
+}
+
+function isSelectedGradientColor(selectedColorName: string | null, colorName: string | null) {
+  return selectedColorName === colorName
+}
+
+function getGradientColorTextClass(colorName: string) {
+  if (colorName === blackColorName) {
+    return 'text-black'
+  }
+
+  const color = tailwindColors.find(item => item.name === colorName)
+
+  return color ? getTailwindColorClass(color, 'text') : 'text-black'
+}
+
+function normalizeGradientColorName(colorName: unknown) {
+  if (typeof colorName !== 'string') {
+    return null
+  }
+
+  if (colorName === blackColorName || tailwindColors.some(color => color.name === colorName)) {
+    return colorName
+  }
+
+  return null
+}
+
+function isGradientStyle(value: unknown): value is GradientStyle {
+  return gradientStyleOptions.some(option => option.value === value)
+}
+
+function isGradientDirection(value: unknown): value is GradientDirection {
+  return gradientDirectionOptions.some(option => option.value === value)
+}
+
+function getLinearGradientCoordinates(box: GradientBox): LinearGradientCoordinates {
+  if (selectedGradientDirection.value === 'top-to-bottom') {
+    return {
+      x1: box.x,
+      y1: box.y,
+      x2: box.x,
+      y2: box.y + box.height
+    }
+  }
+
+  if (selectedGradientDirection.value === 'diagonal') {
+    return {
+      x1: box.x,
+      y1: box.y,
+      x2: box.x + box.width,
+      y2: box.y + box.height
+    }
+  }
+
+  return {
+    x1: box.x,
+    y1: box.y,
+    x2: box.x + box.width,
+    y2: box.y
+  }
+}
+
+function getRadialGradientCoordinates(box: GradientBox): RadialGradientCoordinates {
+  return {
+    cx: box.x + box.width / 2,
+    cy: box.y + box.height / 2,
+    r: Math.hypot(box.width, box.height) / 2
+  }
 }
 
 function selectBorder(border: BorderStyle) {
@@ -975,6 +1171,10 @@ function createSavedQrPayload(): SavedQrPayload {
     centerIcon: selectedCenterIcon.value,
     colorName: selectedQrColor.value?.name ?? null,
     colorStep: selectedColorStep.value,
+    gradientDirection: selectedGradientDirection.value,
+    gradientSecondColorName: selectedGradientSecondColorName.value,
+    gradientStyle: selectedGradientStyle.value,
+    gradientThirdColorName: selectedGradientThirdColorName.value,
     label: qrLabel.value,
     labelFont: selectedLabelFont.value,
     labelPosition: selectedLabelPosition.value,
@@ -1008,6 +1208,10 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   qrStore.url = typeof payload.url === 'string' ? payload.url : ''
   selectedQrColor.value = payload.colorName ? tailwindColors.find(color => color.name === payload.colorName) ?? null : null
   selectedColorStep.value = tailwindColorSteps.includes(payload.colorStep) ? payload.colorStep : 500
+  selectedGradientStyle.value = isGradientStyle(payload.gradientStyle) && selectedQrColor.value ? payload.gradientStyle : 'none'
+  selectedGradientDirection.value = isGradientDirection(payload.gradientDirection) ? payload.gradientDirection : 'left-to-right'
+  selectedGradientSecondColorName.value = normalizeGradientColorName(payload.gradientSecondColorName)
+  selectedGradientThirdColorName.value = normalizeGradientColorName(payload.gradientThirdColorName)
   qrLabel.value = typeof payload.label === 'string' ? payload.label : ''
   qrAdditionalText.value = typeof payload.additionalText === 'string' ? payload.additionalText.slice(0, maxAdditionalTextLength) : ''
   selectedAdditionalTextPlacement.value = payload.additionalTextPlacement === 'above' ? 'above' : 'below'
@@ -1069,7 +1273,7 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
 function inlineComputedSvgStyles(sourceSvg: SVGSVGElement, clonedSvg: SVGSVGElement) {
   const sourceElements = [sourceSvg, ...sourceSvg.querySelectorAll('*')]
   const clonedElements = [clonedSvg, ...clonedSvg.querySelectorAll('*')]
-  const styleProperties = ['color', 'fill', 'stroke', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'opacity']
+  const styleProperties = ['color', 'fill', 'stroke', 'stop-color', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'opacity']
 
   sourceElements.forEach((sourceElement, index) => {
     const clonedElement = clonedElements[index]
@@ -1294,6 +1498,16 @@ onUnmounted(() => {
             >
               Steps
             </UButton>
+            <UButton
+              v-if="selectedQrColor"
+              :aria-pressed="activeTool === 'gradient'"
+              :color="activeTool === 'gradient' ? 'primary' : 'neutral'"
+              icon="i-lucide-sparkles"
+              :variant="activeTool === 'gradient' ? 'solid' : 'subtle'"
+              @click="selectTool('gradient')"
+            >
+              Gradient
+            </UButton>
           </UFieldGroup>
           <UButton
             :aria-pressed="activeTool === 'label'"
@@ -1410,6 +1624,148 @@ onUnmounted(() => {
           >
             {{ step }}
           </span>
+        </div>
+      </div>
+
+      <div
+        v-else-if="activeTool === 'gradient'"
+        class="space-y-5 rounded-lg border border-default bg-default p-4"
+      >
+        <div class="space-y-2">
+          <span class="text-sm font-medium text-highlighted">Gradient</span>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              v-for="option in gradientStyleOptions"
+              :key="option.value"
+              :aria-pressed="selectedGradientStyle === option.value"
+              :color="selectedGradientStyle === option.value ? 'primary' : 'neutral'"
+              :icon="option.icon"
+              size="sm"
+              :variant="selectedGradientStyle === option.value ? 'solid' : 'subtle'"
+              @click="selectGradientStyle(option.value)"
+            >
+              {{ option.label }}
+            </UButton>
+          </div>
+        </div>
+
+        <div
+          v-if="selectedGradientStyle === 'directional'"
+          class="space-y-2"
+        >
+          <span class="text-sm font-medium text-highlighted">Direction</span>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              v-for="option in gradientDirectionOptions"
+              :key="option.value"
+              :aria-pressed="selectedGradientDirection === option.value"
+              :color="selectedGradientDirection === option.value ? 'primary' : 'neutral'"
+              :icon="option.icon"
+              size="sm"
+              :variant="selectedGradientDirection === option.value ? 'solid' : 'subtle'"
+              @click="selectGradientDirection(option.value)"
+            >
+              {{ option.label }}
+            </UButton>
+          </div>
+        </div>
+
+        <div
+          v-if="gradientNeedsColors"
+          class="space-y-2"
+        >
+          <span class="text-sm font-medium text-highlighted">2nd Color</span>
+          <div class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2">
+            <button
+              :aria-label="`Use ${blackColorName} as the 2nd gradient color`"
+              :aria-pressed="isSelectedGradientColor(selectedGradientSecondColorName, blackColorName)"
+              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+              :class="isSelectedGradientColor(selectedGradientSecondColorName, blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectGradientSecondColor(blackColorName)"
+            >
+              <span
+                aria-hidden="true"
+                class="size-4 rounded-full bg-black ring-1 ring-black/10"
+              />
+              <span>{{ blackColorName }}</span>
+            </button>
+
+            <button
+              v-for="color in tailwindColors"
+              :key="`second-${color.name}`"
+              :aria-label="`Use ${color.name} as the 2nd gradient color`"
+              :aria-pressed="isSelectedGradientColor(selectedGradientSecondColorName, color.name)"
+              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+              :class="isSelectedGradientColor(selectedGradientSecondColorName, color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectGradientSecondColor(color.name)"
+            >
+              <span
+                aria-hidden="true"
+                class="size-4 rounded-full ring-1 ring-black/10"
+                :class="getTailwindColorClass(color, 'bg')"
+              />
+              <span>{{ color.name }}</span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="gradientNeedsColors"
+          class="space-y-2"
+        >
+          <span class="text-sm font-medium text-highlighted">3rd Color</span>
+          <div class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2">
+            <button
+              aria-label="Use no 3rd gradient color"
+              :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, null)"
+              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+              :class="isSelectedGradientColor(selectedGradientThirdColorName, null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectGradientThirdColor(null)"
+            >
+              <UIcon
+                aria-hidden="true"
+                class="size-4"
+                name="i-lucide-ban"
+              />
+              <span>No 3rd Color</span>
+            </button>
+
+            <button
+              :aria-label="`Use ${blackColorName} as the 3rd gradient color`"
+              :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, blackColorName)"
+              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+              :class="isSelectedGradientColor(selectedGradientThirdColorName, blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectGradientThirdColor(blackColorName)"
+            >
+              <span
+                aria-hidden="true"
+                class="size-4 rounded-full bg-black ring-1 ring-black/10"
+              />
+              <span>{{ blackColorName }}</span>
+            </button>
+
+            <button
+              v-for="color in tailwindColors"
+              :key="`third-${color.name}`"
+              :aria-label="`Use ${color.name} as the 3rd gradient color`"
+              :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, color.name)"
+              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+              :class="isSelectedGradientColor(selectedGradientThirdColorName, color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              type="button"
+              @click="selectGradientThirdColor(color.name)"
+            >
+              <span
+                aria-hidden="true"
+                class="size-4 rounded-full ring-1 ring-black/10"
+                :class="getTailwindColorClass(color, 'bg')"
+              />
+              <span>{{ color.name }}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1887,6 +2243,92 @@ onUnmounted(() => {
               :height="outputSvgHeight"
               :width="outputSvgWidth"
             />
+            <defs v-if="hasActiveGradient">
+              <linearGradient
+                v-if="selectedGradientStyle === 'directional'"
+                id="qr-border-gradient"
+                gradientUnits="userSpaceOnUse"
+                v-bind="borderLinearGradientCoordinates"
+              >
+                <stop
+                  v-for="stop in gradientStops"
+                  :key="`border-${stop.key}`"
+                  :class="stop.textClass"
+                  :offset="stop.offset"
+                  stop-color="currentColor"
+                />
+              </linearGradient>
+              <radialGradient
+                v-else
+                id="qr-border-gradient"
+                gradientUnits="userSpaceOnUse"
+                v-bind="borderRadialGradientCoordinates"
+              >
+                <stop
+                  v-for="stop in gradientStops"
+                  :key="`border-${stop.key}`"
+                  :class="stop.textClass"
+                  :offset="stop.offset"
+                  stop-color="currentColor"
+                />
+              </radialGradient>
+              <linearGradient
+                v-if="selectedGradientStyle === 'directional'"
+                id="qr-artwork-gradient"
+                gradientUnits="userSpaceOnUse"
+                v-bind="qrArtworkLinearGradientCoordinates"
+              >
+                <stop
+                  v-for="stop in gradientStops"
+                  :key="`artwork-${stop.key}`"
+                  :class="stop.textClass"
+                  :offset="stop.offset"
+                  stop-color="currentColor"
+                />
+              </linearGradient>
+              <radialGradient
+                v-else
+                id="qr-artwork-gradient"
+                gradientUnits="userSpaceOnUse"
+                v-bind="qrArtworkRadialGradientCoordinates"
+              >
+                <stop
+                  v-for="stop in gradientStops"
+                  :key="`artwork-${stop.key}`"
+                  :class="stop.textClass"
+                  :offset="stop.offset"
+                  stop-color="currentColor"
+                />
+              </radialGradient>
+              <linearGradient
+                v-if="selectedGradientStyle === 'directional'"
+                id="qr-text-gradient"
+                gradientUnits="userSpaceOnUse"
+                v-bind="textLinearGradientCoordinates"
+              >
+                <stop
+                  v-for="stop in gradientStops"
+                  :key="`text-${stop.key}`"
+                  :class="stop.textClass"
+                  :offset="stop.offset"
+                  stop-color="currentColor"
+                />
+              </linearGradient>
+              <radialGradient
+                v-else
+                id="qr-text-gradient"
+                gradientUnits="userSpaceOnUse"
+                v-bind="textRadialGradientCoordinates"
+              >
+                <stop
+                  v-for="stop in gradientStops"
+                  :key="`text-${stop.key}`"
+                  :class="stop.textClass"
+                  :offset="stop.offset"
+                  stop-color="currentColor"
+                />
+              </radialGradient>
+            </defs>
             <g shape-rendering="crispEdges">
               <svg
                 :height="qrOutputSize"
@@ -1895,9 +2337,40 @@ onUnmounted(() => {
                 :x="qrOutputX"
                 :y="qrOutputY"
               >
+                <defs v-if="hasActiveGradient">
+                  <linearGradient
+                    v-if="selectedGradientStyle === 'directional'"
+                    id="qr-path-gradient"
+                    gradientUnits="userSpaceOnUse"
+                    v-bind="qrPathLinearGradientCoordinates"
+                  >
+                    <stop
+                      v-for="stop in gradientStops"
+                      :key="`path-${stop.key}`"
+                      :class="stop.textClass"
+                      :offset="stop.offset"
+                      stop-color="currentColor"
+                    />
+                  </linearGradient>
+                  <radialGradient
+                    v-else
+                    id="qr-path-gradient"
+                    gradientUnits="userSpaceOnUse"
+                    v-bind="qrPathRadialGradientCoordinates"
+                  >
+                    <stop
+                      v-for="stop in gradientStops"
+                      :key="`path-${stop.key}`"
+                      :class="stop.textClass"
+                      :offset="stop.offset"
+                      stop-color="currentColor"
+                    />
+                  </radialGradient>
+                </defs>
                 <path
-                  :class="qrFillClass"
                   :d="qrPath"
+                  :class="qrPathFillPaint ? undefined : qrFillClass"
+                  :fill="qrPathFillPaint ?? undefined"
                 />
               </svg>
             </g>
@@ -1927,7 +2400,8 @@ onUnmounted(() => {
                 />
               </mask>
               <rect
-                :class="qrFillClass"
+                :class="qrArtworkFillPaint ? undefined : qrFillClass"
+                :fill="qrArtworkFillPaint ?? undefined"
                 :height="centerIconSize"
                 mask="url(#center-icon-mask)"
                 :width="centerIconSize"
@@ -1959,20 +2433,20 @@ onUnmounted(() => {
             </text>
             <text
               v-if="labelText"
-              fill="currentColor"
+              :fill="textFillPaint ?? 'currentColor'"
               :font-size="labelFontSize"
               :x="labelX"
               :y="labelY"
               dominant-baseline="central"
               text-anchor="middle"
-              :class="[qrTextClass, selectedLabelFontClass]"
+              :class="textFillPaint ? selectedLabelFontClass : [qrTextClass, selectedLabelFontClass]"
             >
               {{ labelText }}
             </text>
             <text
               v-for="(line, index) in additionalTextLines"
               :key="`additional-text-${index}`"
-              fill="currentColor"
+              :fill="textFillPaint ?? 'currentColor'"
               :font-size="additionalTextFontSize"
               font-weight="300"
               opacity="0.68"
@@ -1980,7 +2454,7 @@ onUnmounted(() => {
               :y="getAdditionalTextLineY(index)"
               dominant-baseline="central"
               text-anchor="middle"
-              :class="[qrTextClass, selectedAdditionalTextFontClass]"
+              :class="textFillPaint ? selectedAdditionalTextFontClass : [qrTextClass, selectedAdditionalTextFontClass]"
             >
               {{ line }}
             </text>
@@ -1992,7 +2466,8 @@ onUnmounted(() => {
               :width="line.width"
               :x="line.inset"
               :y="line.inset"
-              :class="qrStrokeClass"
+              :class="borderStrokePaint ? undefined : qrStrokeClass"
+              :stroke="borderStrokePaint ?? undefined"
               :stroke-width="line.strokeWidth"
             />
           </svg>
