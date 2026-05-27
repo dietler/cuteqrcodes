@@ -3,9 +3,32 @@ import { computed, ref } from 'vue'
 import { signOut, useSession } from '~~/lib/auth-client'
 
 const session = useSession()
+const route = useRoute()
 const isNavigationOpen = ref(false)
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
 const userEmail = computed(() => session.value.data?.user.email || '')
+const siteName = 'QR Codes On Labels'
+const siteUrl = 'https://qrcodesonlabels.com'
+const canonicalUrl = computed(() => new URL(route.path || '/', siteUrl).toString())
+const title = 'Custom Printable QR Codes for Avery Labels | QR Codes On Labels'
+const description = 'Create custom printable QR codes for Avery labels and Presta templates. Add colors, icons, circular QR codes, label text, then download a print-ready PDF.'
+const seoTopics = [
+  'QR codes',
+  'Avery labels',
+  'printable labels',
+  'custom QR codes',
+  'printable QR codes',
+  'Presta templates',
+  'circular QR codes',
+  'QR code labels',
+  'menu QR codes',
+  'waiver QR codes',
+  'event QR codes',
+  'ticket QR codes',
+  'review QR codes',
+  'payment QR codes',
+  'restaurant QR codes'
+]
 const navigationItems = computed(() => {
   if (isLoggedIn.value) {
     return [
@@ -41,23 +64,76 @@ const navigationItems = computed(() => {
   ]
 })
 
-useHead({
-  meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1' }],
-  link: [{ rel: 'icon', type: 'image/svg+xml', href: '/icons/qr-code.svg' }],
+useHead(() => ({
+  meta: [
+    { name: 'viewport', content: 'width=device-width, initial-scale=1' },
+    { name: 'application-name', content: siteName },
+    { name: 'apple-mobile-web-app-title', content: siteName },
+    { name: 'theme-color', content: '#4f46e5' }
+  ],
+  link: [
+    { rel: 'icon', type: 'image/svg+xml', href: '/icons/qr-code.svg' },
+    { rel: 'canonical', href: canonicalUrl.value }
+  ],
+  script: [
+    {
+      key: 'structured-data',
+      type: 'application/ld+json',
+      innerHTML: JSON.stringify({
+        '@context': 'https://schema.org',
+        '@graph': [
+          {
+            '@type': 'Organization',
+            '@id': `${siteUrl}/#organization`,
+            'name': siteName,
+            'url': `${siteUrl}/`,
+            'email': 'andy@qrcodesonlabels.com',
+            'logo': `${siteUrl}/icons/qr-code.svg`
+          },
+          {
+            '@type': 'WebSite',
+            '@id': `${siteUrl}/#website`,
+            'name': siteName,
+            'url': `${siteUrl}/`,
+            'description': description,
+            'inLanguage': 'en-US',
+            'publisher': { '@id': `${siteUrl}/#organization` }
+          },
+          {
+            '@type': 'WebPage',
+            '@id': `${canonicalUrl.value}#webpage`,
+            'url': canonicalUrl.value,
+            'name': title,
+            'description': description,
+            'isPartOf': { '@id': `${siteUrl}/#website` },
+            'about': seoTopics.map(topic => ({
+              '@type': 'Thing',
+              'name': topic
+            })),
+            'keywords': seoTopics.join(', '),
+            'inLanguage': 'en-US'
+          }
+        ]
+      })
+    }
+  ],
   htmlAttrs: {
     lang: 'en'
   }
-})
-
-const title = 'QR Codes On Labels'
-const description = 'Create QR codes and print them on labels.'
+}))
 
 useSeoMeta({
   title,
   description,
+  robots: 'index, follow, max-image-preview:large',
   ogTitle: title,
   ogDescription: description,
-  twitterCard: 'summary_large_image'
+  ogSiteName: siteName,
+  ogType: 'website',
+  ogUrl: canonicalUrl,
+  twitterTitle: title,
+  twitterDescription: description,
+  twitterCard: 'summary'
 })
 
 async function handleLogout() {

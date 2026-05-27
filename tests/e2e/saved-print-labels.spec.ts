@@ -1,5 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
+const labelPrintPayloadStorageKey = "cuteqrcodes.labelPrintPayload";
+
 const savedQrCode = {
   createdAt: "2026-05-26T00:00:00.000Z",
   folderId: "folder-print",
@@ -46,6 +48,20 @@ const wideSavedQrCode = {
   previewSvg:
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 70"><rect width="100" height="70" fill="white"/><rect x="5" y="5" width="90" height="60" fill="black"/></svg>',
   previewWidth: 100,
+};
+
+const circleSavedQrCode = {
+  ...savedQrCode,
+  id: "saved-circle",
+  name: "Circle saved print link",
+  payload: {
+    ...savedQrCode.payload,
+    shape: "circle",
+  },
+  previewHeight: 30,
+  previewSvg:
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 30 30"><rect width="30" height="30" fill="white"/><circle cx="15" cy="15" r="15" fill="black"/></svg>',
+  previewWidth: 30,
 };
 
 async function routeSavedPrintFixtures(
@@ -297,6 +313,131 @@ test("unwatermarked purchase redirects to credits when balance is empty", async 
   await expect(
     page.getByText("Purchase credits before creating an unwatermarked PDF."),
   ).toBeVisible();
+});
+
+test("expands circle shaped QR artwork to fit circular labels", async ({
+  page,
+}) => {
+  await routeSavedPrintFixtures(page, { qrCode: circleSavedQrCode });
+
+  await page.goto("/print-labels?saved=saved-circle");
+  await expect(page.getByText("Circle saved print link")).toBeVisible();
+
+  await expect(page.getByRole("radio", { name: "Circle" })).toHaveAttribute(
+    "aria-checked",
+    "true",
+  );
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94514"),
+  ).toBeVisible();
+  await page.getByRole("radio", { name: "Square" }).click();
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94100"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94101"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94107"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94106"),
+  ).toHaveCount(0);
+  await expect(
+    page.getByTestId("label-template-suggested-badge-avery-presta-94103"),
+  ).toHaveCount(0);
+  await page.getByRole("radio", { name: "Circle" }).click();
+
+  const largeCirclePreview = await page
+    .getByTestId("label-template-preview-avery-presta-94514")
+    .boundingBox();
+  const largeCircleArtwork = await page
+    .getByTestId("label-template-artwork-avery-presta-94514")
+    .boundingBox();
+  const largeCirclePreviewBorder = await page
+    .getByTestId("label-template-preview-border-avery-presta-94514")
+    .boundingBox();
+  const previewLayering = await page
+    .getByTestId("label-template-preview-avery-presta-94514")
+    .evaluate((preview) => {
+      const artwork = preview.querySelector(
+        '[data-testid="label-template-artwork-avery-presta-94514"]',
+      );
+      const border = preview.querySelector(
+        '[data-testid="label-template-preview-border-avery-presta-94514"]',
+      );
+
+      return {
+        artworkBeforeBorder: Boolean(
+          artwork &&
+            border &&
+            (artwork.compareDocumentPosition(border) &
+              Node.DOCUMENT_POSITION_FOLLOWING) !==
+              0,
+        ),
+        borderZIndex: border ? getComputedStyle(border).zIndex : "",
+      };
+    });
+
+  expect(largeCirclePreview).not.toBeNull();
+  expect(largeCircleArtwork).not.toBeNull();
+  expect(largeCirclePreviewBorder).not.toBeNull();
+  expect(largeCirclePreview!.width).toBeCloseTo(336, 0);
+  expect(largeCirclePreview!.height).toBeCloseTo(336, 0);
+  expect(largeCircleArtwork!.width).toBeCloseTo(312, 0);
+  expect(largeCircleArtwork!.height).toBeCloseTo(312, 0);
+  expect(largeCirclePreviewBorder!.width).toBeCloseTo(
+    largeCirclePreview!.width,
+    0,
+  );
+  expect(largeCirclePreviewBorder!.height).toBeCloseTo(
+    largeCirclePreview!.height,
+    0,
+  );
+  expect(previewLayering).toEqual({
+    artworkBeforeBorder: true,
+    borderZIndex: "10",
+  });
+  expect(largeCircleArtwork!.width).toBeGreaterThan(
+    largeCirclePreview!.width / Math.SQRT2,
+  );
+});
+
+test("expands circle shaped QR artwork from the builder to fit circular labels", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.waitForFunction(
+    () => "_value" in document.querySelector('input[type="url"]'),
+  );
+  await page
+    .locator('input[type="url"]')
+    .fill("https://example.com/circle-print-builder");
+
+  await page.getByRole("button", { name: "Shape" }).click();
+  await page.getByRole("radio", { name: "Circle" }).click();
+  await page.getByRole("button", { exact: true, name: "Border" }).click();
+  await page.getByRole("radio", { name: "Thin border" }).click();
+  await page.getByRole("button", { exact: true, name: "Print to Labels" }).click();
+  await page.waitForURL("**/print-labels");
+
+  const payloadShape = await page.evaluate((storageKey) => {
+    const rawPayload = sessionStorage.getItem(storageKey);
+
+    return rawPayload ? JSON.parse(rawPayload).qrShape : null;
+  }, labelPrintPayloadStorageKey);
+
+  expect(payloadShape).toBe("circle");
+
+  await page.getByRole("radio", { name: "Circle" }).click();
+
+  const largeCircleArtwork = await page
+    .getByTestId("label-template-artwork-avery-presta-94514")
+    .boundingBox();
+
+  expect(largeCircleArtwork).not.toBeNull();
+  expect(largeCircleArtwork!.width).toBeCloseTo(312, 0);
+  expect(largeCircleArtwork!.height).toBeCloseTo(312, 0);
 });
 
 test("suggests rectangle labels closest to the QR aspect ratio", async ({

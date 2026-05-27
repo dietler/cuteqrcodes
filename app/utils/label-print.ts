@@ -4,6 +4,7 @@ export type LabelPrintPayload = {
   createdAt: number;
   height: number;
   name?: string;
+  qrShape?: "rectangle" | "circle";
   svg: string;
   title: string;
   url?: string;
@@ -56,6 +57,7 @@ export function createLabelPrintPayloadFromSavedQr(
     createdAt: Date.now(),
     height: qrCode.previewHeight,
     name: qrCode.name,
+    qrShape: qrCode.payload?.shape === "circle" ? "circle" : "rectangle",
     svg: qrCode.previewSvg,
     title: qrCode.name,
     url:
@@ -65,13 +67,19 @@ export function createLabelPrintPayloadFromSavedQr(
 }
 
 export function getSuggestedLabelTemplateIds(
-  payload: Pick<LabelPrintPayload, "height" | "width">,
+  payload: Pick<LabelPrintPayload, "height" | "qrShape" | "width">,
   templates = labelTemplates,
 ) {
   const payloadAspectRatio = getAspectRatio(payload.width, payload.height);
 
   if (!Number.isFinite(payloadAspectRatio)) {
     return [];
+  }
+
+  if (payload.qrShape === "circle") {
+    return templates
+      .filter((template) => template.type === "circle")
+      .map((template) => template.id);
   }
 
   if (isSquareAspectRatio(payloadAspectRatio)) {
@@ -94,10 +102,10 @@ export function getSuggestedLabelTemplateIds(
 }
 
 export function getLabelArtworkPlacement(
-  payload: Pick<LabelPrintPayload, "height" | "width">,
+  payload: Pick<LabelPrintPayload, "height" | "qrShape" | "width">,
   template: LabelTemplate,
 ): LabelArtworkPlacement {
-  const availableArea = getLabelArtworkAvailableArea(template);
+  const availableArea = getLabelArtworkAvailableArea(template, payload);
   const { availableHeight, availableWidth } = availableArea;
   const uprightFit = getArtworkFit(
     payload.width,
@@ -213,11 +221,11 @@ function getArtworkFit(
 }
 
 function getLabelArtworkOccupancyScore(
-  payload: Pick<LabelPrintPayload, "height" | "width">,
+  payload: Pick<LabelPrintPayload, "height" | "qrShape" | "width">,
   template: LabelTemplate,
 ) {
   const { availableHeight, availableWidth } =
-    getLabelArtworkAvailableArea(template);
+    getLabelArtworkAvailableArea(template, payload);
   const placement = getLabelArtworkPlacement(payload, template);
   const availableArea = availableWidth * availableHeight;
 
@@ -226,14 +234,23 @@ function getLabelArtworkOccupancyScore(
     : 0;
 }
 
-function getLabelArtworkAvailableArea(template: LabelTemplate) {
+function getLabelArtworkAvailableArea(
+  template: LabelTemplate,
+  payload: Pick<LabelPrintPayload, "qrShape">,
+) {
   if (template.type === "circle") {
     const diameter = Math.min(
       template.layout.labelWidth,
       template.layout.labelHeight,
     );
+    const availableDiameter = Math.max(
+      0,
+      diameter - template.layout.labelPadding * 2,
+    );
     const availableSide =
-      Math.max(0, diameter - template.layout.labelPadding * 2) / Math.SQRT2;
+      payload.qrShape === "circle"
+        ? availableDiameter
+        : availableDiameter / Math.SQRT2;
 
     return {
       availableHeight: availableSide,

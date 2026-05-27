@@ -35,3 +35,27 @@ test('shows added center icons and lets them be selected', async ({ page }) => {
     await page.getByRole('button', { name: 'Folders' }).click()
   }
 })
+
+test('uses high error correction with version 3 minimum when a center icon is selected', async ({ page }) => {
+  await page.goto('/')
+  const urlInput = page.locator('input[type="url"]')
+
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await urlInput.fill('https://q.co')
+
+  const qrSvg = page.locator('svg[aria-label="Generated QR code"]')
+
+  await expect(qrSvg).toHaveAttribute('data-error-correction-level', 'medium')
+  await expect(page.getByText('Version 1', { exact: false })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Icon' }).click()
+  await page.getByRole('button', { name: 'Open Restaurant icons' }).click()
+  await page.getByRole('radio', { name: 'Use Salad as the center icon' }).click()
+
+  await expect(qrSvg).toHaveAttribute('data-error-correction-level', 'high')
+  await expect(page.getByText('Version 3', { exact: false })).toBeVisible()
+})

@@ -1,3 +1,13 @@
+export type CircleLabelPlacement = 'top' | 'bottom' | 'left' | 'right'
+export type CircleLabelOrientation = 'up' | 'down'
+
+export type CircleLabelPayload = {
+  text: string
+  font: string
+  sizeStep: number
+  orientation?: CircleLabelOrientation
+}
+
 export type SavedQrPayload = {
   version: 1
   url: string
@@ -13,6 +23,8 @@ export type SavedQrPayload = {
   additionalTextSizeStep: number
   centerIcon: string
   border: string
+  shape?: 'rectangle' | 'circle'
+  circleLabels?: Record<CircleLabelPlacement, CircleLabelPayload>
   gradientStyle?: 'none' | 'directional' | 'radial'
   gradientDirection?: 'left-to-right' | 'top-to-bottom' | 'diagonal'
   gradientSecondColorName?: string | null

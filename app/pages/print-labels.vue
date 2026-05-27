@@ -293,6 +293,10 @@ function readPrintPayload() {
       delete payload.name;
     }
 
+    if (payload.qrShape !== "circle") {
+      payload.qrShape = "rectangle";
+    }
+
     if (typeof payload.url !== "string") {
       delete payload.url;
     }
@@ -1039,7 +1043,7 @@ function getErrorStatusCode(error: unknown) {
                 >
                   <div class="relative mx-auto w-max">
                     <div
-                      class="box-border flex shrink-0 items-center justify-center border border-slate-300 bg-white shadow-sm dark:border-slate-700"
+                      class="relative box-border flex shrink-0 items-center justify-center border border-transparent bg-white shadow-sm"
                       :class="getLabelPreviewClass(template)"
                       :data-testid="`label-template-preview-${template.id}`"
                       :style="getLabelPreviewStyle(template)"
@@ -1057,6 +1061,12 @@ function getErrorStatusCode(error: unknown) {
                           :style="getLabelPreviewArtworkImageStyle()"
                         />
                       </div>
+                      <div
+                        aria-hidden="true"
+                        class="pointer-events-none absolute -inset-px z-10 box-border border border-slate-300 dark:border-slate-700"
+                        :class="getLabelPreviewClass(template)"
+                        :data-testid="`label-template-preview-border-${template.id}`"
+                      />
                     </div>
                     <span
                       class="pointer-events-none absolute left-1/2 top-full mt-1 -translate-x-1/2 text-xs font-medium leading-none text-slate-300 dark:text-slate-700"
@@ -1115,7 +1125,7 @@ function getErrorStatusCode(error: unknown) {
                 <div
                   class="flex flex-wrap items-center justify-center gap-2 border-t border-slate-100 pt-4 dark:border-slate-800"
                 >
-                  <span class="text-sm font-medium text-muted">Buy From:</span>
+                  <span class="text-sm font-medium text-muted">Buy Blank Labels From:</span>
                   <a
                     :aria-label="`Buy ${template.description} from Avery`"
                     class="inline-flex h-8 items-center rounded border border-slate-200 bg-white px-3 py-1.5 transition hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:hover:border-slate-700 dark:hover:bg-slate-900"

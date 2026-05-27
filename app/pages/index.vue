@@ -4,10 +4,11 @@ import { onBeforeRouteLeave } from 'vue-router'
 import { useSession } from '~~/lib/auth-client'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
-import { currentQrDraftStorageKey, editQrPayloadStorageKey, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
+import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
 import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
-type QrTool = 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
+type QrTool = 'shape' | 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
+type QrShape = 'rectangle' | 'circle'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double'
 type CenterIconValue = string
 type AdditionalTextPlacement = 'above' | 'below'
@@ -47,6 +48,26 @@ type GradientDirectionOption = {
   value: GradientDirection
   icon: string
 }
+
+type QrShapeOption = {
+  label: string
+  value: QrShape
+  icon: string
+}
+
+type CircleLabelControl = {
+  label: string
+  placeholder: string
+  value: CircleLabelPlacement
+}
+
+type CircleLabelArc = {
+  start: number
+  end: number
+  sweep: 0 | 1
+}
+
+type CircleLabelPathSide = 'left' | 'right'
 
 type CenterIconOption = {
   label: string
@@ -122,6 +143,7 @@ const selectedGradientStyle = ref<GradientStyle>('none')
 const selectedGradientDirection = ref<GradientDirection>('left-to-right')
 const selectedGradientSecondColorName = ref<string | null>(null)
 const selectedGradientThirdColorName = ref<string | null>(null)
+const selectedQrShape = ref<QrShape>('rectangle')
 const labelSizeStep = ref(0)
 const additionalTextSizeStep = ref(0)
 const qrLabel = ref('')
@@ -162,6 +184,7 @@ const minTextSizeStep = -2
 const maxAdditionalTextSizeStep = 4
 const versionOneQrSize = 21
 const versionOneCenterIconCircleDiameter = 7
+const circleBorderCornerInsetRatio = (Math.SQRT2 - 1) / 2
 
 const labelFonts: LabelFont[] = [
   { label: 'Google Sans', value: 'google-sans', class: 'font-google-sans' },
@@ -182,12 +205,38 @@ const labelFonts: LabelFont[] = [
 const fallbackLabelFont = labelFonts[0]!
 const selectedLabelFont = ref(fallbackLabelFont.value)
 const selectedAdditionalTextFont = ref(fallbackLabelFont.value)
+const circleLabelTop = ref('')
+const circleLabelBottom = ref('')
+const circleLabelLeft = ref('')
+const circleLabelRight = ref('')
+const selectedCircleLabelTopFont = ref(fallbackLabelFont.value)
+const selectedCircleLabelBottomFont = ref(fallbackLabelFont.value)
+const selectedCircleLabelLeftFont = ref(fallbackLabelFont.value)
+const selectedCircleLabelRightFont = ref(fallbackLabelFont.value)
+const circleLabelTopSizeStep = ref(0)
+const circleLabelBottomSizeStep = ref(0)
+const circleLabelLeftSizeStep = ref(0)
+const circleLabelRightSizeStep = ref(0)
+const circleLabelTopOrientation = ref<CircleLabelOrientation>('up')
+const circleLabelBottomOrientation = ref<CircleLabelOrientation>('down')
+const circleLabelLeftOrientation = ref<CircleLabelOrientation>('up')
+const circleLabelRightOrientation = ref<CircleLabelOrientation>('down')
 const labelFontItems = labelFonts.map(font => ({ label: font.label, value: font.value, class: font.class }))
 const labelPositionOptions: LabelPositionOption[] = [
   { label: 'Top', value: 'top', disabled: false },
   { label: 'Bottom', value: 'bottom', disabled: false },
   { label: 'Right', value: 'right', disabled: false },
   { label: 'Left', value: 'left', disabled: false }
+]
+const qrShapeOptions: QrShapeOption[] = [
+  { label: 'Rectangle/Square', value: 'rectangle', icon: 'i-lucide-square' },
+  { label: 'Circle', value: 'circle', icon: 'i-lucide-circle' }
+]
+const circleLabelControls: CircleLabelControl[] = [
+  { label: 'Top', placeholder: 'Top text', value: 'top' },
+  { label: 'Bottom', placeholder: 'Bottom text', value: 'bottom' },
+  { label: 'Left', placeholder: 'Left text', value: 'left' },
+  { label: 'Right', placeholder: 'Right text', value: 'right' }
 ]
 const gradientStyleOptions: GradientStyleOption[] = [
   { label: 'No Gradient', value: 'none', icon: 'i-lucide-ban' },
@@ -448,7 +497,10 @@ const generatedQr = computed(() => {
   }
 
   try {
-    const code = createQrCode(qrStore.content, { minVersion: hasCenterIcon.value ? 3 : 1 })
+    const code = createQrCode(qrStore.content, {
+      errorCorrectionLevel: hasCenterIcon.value ? 'high' : 'medium',
+      minVersion: hasCenterIcon.value ? 3 : 1
+    })
 
     return {
       code,
@@ -513,11 +565,22 @@ const labelText = computed(() => qrLabel.value.trim())
 const additionalText = computed(() => qrAdditionalText.value.trim().slice(0, maxAdditionalTextLength))
 const additionalTextLines = computed(() => wrapAdditionalText(additionalText.value))
 const longestAdditionalTextLine = computed(() => additionalTextLines.value.reduce((longest, line) => line.length > longest.length ? line : longest, ''))
-const hasLabelText = computed(() => labelText.value.length > 0 || additionalText.value.length > 0)
 const selectedLabelFontClass = computed(() => labelFonts.find(font => font.value === selectedLabelFont.value)?.class ?? fallbackLabelFont.class)
 const selectedAdditionalTextFontClass = computed(() => labelFonts.find(font => font.value === selectedAdditionalTextFont.value)?.class ?? fallbackLabelFont.class)
 const selectedBorderStyle = computed(() => borderStyles.find(border => border.value === selectedBorder.value) ?? noBorderStyle)
 const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
+const isCircleShape = computed(() => selectedQrShape.value === 'circle')
+const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
+  bottom: circleLabelBottom.value.trim(),
+  left: circleLabelLeft.value.trim(),
+  right: circleLabelRight.value.trim(),
+  top: circleLabelTop.value.trim()
+}))
+const hasCircleLabelText = computed(() => isCircleShape.value && Object.values(circleLabelTexts.value).some(text => text.length > 0))
+const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0))
+const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value)
+const hasCircleInset = computed(() => isCircleShape.value && (hasBorder.value || hasCircleLabelText.value))
+const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(line => line.inset + line.strokeWidth / 2)) : 0)
 const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
 const labelIsTop = computed(() => hasLabelText.value && selectedLabelPosition.value === 'top')
 const labelIsBottom = computed(() => hasLabelText.value && selectedLabelPosition.value === 'bottom')
@@ -525,13 +588,15 @@ const labelIsLeft = computed(() => hasLabelText.value && selectedLabelPosition.v
 const labelIsRight = computed(() => hasLabelText.value && selectedLabelPosition.value === 'right')
 const labelIsSide = computed(() => labelIsLeft.value || labelIsRight.value)
 const borderContentInset = computed(() => {
+  if (hasCircleInset.value) {
+    return Math.max(qrSvgSize.value * circleBorderCornerInsetRatio, circleBorderInnerEdge.value + selectedBorderStyle.value.contentGap)
+  }
+
   if (!hasBorder.value) {
     return 0
   }
 
-  const innerBorderEdge = Math.max(...selectedBorderStyle.value.lines.map(line => line.inset + line.strokeWidth / 2))
-
-  return innerBorderEdge + selectedBorderStyle.value.contentGap
+  return circleBorderInnerEdge.value + selectedBorderStyle.value.contentGap
 })
 const qrOutputSize = computed(() => qrSvgSize.value)
 const baseLabelFontSize = computed(() => qrOutputSize.value * 0.2)
@@ -593,7 +658,7 @@ const centerIconSize = computed(() => centerIconCircleDiameter.value * 0.68)
 const centerIconX = computed(() => qrOutputX.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
 const centerIconY = computed(() => qrOutputY.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
 const outputSvgWidth = computed(() => borderContentInset.value * 2 + sideLabelWidth.value + sideLabelGap.value + qrOutputSize.value)
-const outputBottomInset = computed(() => hasBorder.value ? borderContentInset.value : bottomLabelGap.value)
+const outputBottomInset = computed(() => hasBorder.value || hasCircleInset.value ? borderContentInset.value : bottomLabelGap.value)
 const outputSvgHeight = computed(() => {
   if (labelIsSide.value) {
     return borderContentInset.value * 2 + sideContentHeight.value
@@ -636,6 +701,27 @@ const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(l
   height: outputSvgHeight.value - line.inset * 2,
   width: outputSvgWidth.value - line.inset * 2
 })))
+const selectedCircleBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
+  ...line,
+  cx: qrOutputX.value + qrOutputSize.value / 2,
+  cy: qrOutputY.value + qrOutputSize.value / 2,
+  radius: qrOutputSize.value / 2 + borderContentInset.value - line.inset
+})))
+const circleBorderBuffer = computed(() => hasCircleInset.value ? Math.max(0.33, qrOutputSize.value * 0.012) : 0)
+const circleBorderBufferRect = computed(() => ({
+  height: qrOutputSize.value + circleBorderBuffer.value * 2,
+  width: qrOutputSize.value + circleBorderBuffer.value * 2,
+  x: qrOutputX.value - circleBorderBuffer.value,
+  y: qrOutputY.value - circleBorderBuffer.value
+}))
+const circleLabelBandWidth = computed(() => Math.max(1, borderContentInset.value - circleBorderInnerEdge.value - circleBorderBuffer.value * 2))
+const baseCircleLabelFontSize = computed(() => Math.min(qrOutputSize.value * 0.095, circleLabelBandWidth.value * 0.62))
+const circleLabelPathMaxRadius = computed(() => Math.max(
+  qrOutputSize.value / 2 + circleBorderBuffer.value,
+  qrOutputSize.value / 2 + borderContentInset.value - circleBorderInnerEdge.value - circleBorderBuffer.value
+))
+const circleLabelArcLength = computed(() => Math.max(1, circleLabelPathMaxRadius.value * Math.PI / 2 * 0.9))
+const visibleCircleLabelControls = computed(() => circleLabelControls.filter(control => getCircleLabelText(control.value).length > 0))
 const borderGradientBox = computed<GradientBox>(() => ({
   height: Math.max(outputSvgHeight.value, 1),
   width: Math.max(outputSvgWidth.value, 1),
@@ -655,14 +741,16 @@ const qrPathGradientBox = computed<GradientBox>(() => ({
   y: 0
 }))
 const textGradientBox = computed<GradientBox>(() => ({
-  height: Math.max(labelBlockHeight.value, 1),
-  width: Math.max(labelIsSide.value ? sideLabelWidth.value : outputSvgWidth.value, 1),
-  x: labelIsLeft.value
-    ? borderContentInset.value
-    : labelIsRight.value
-      ? qrOutputX.value + qrOutputSize.value + sideLabelGap.value
-      : 0,
-  y: labelBlockY.value
+  height: Math.max(hasCircleLabelText.value ? outputSvgHeight.value : labelBlockHeight.value, 1),
+  width: Math.max(hasCircleLabelText.value ? outputSvgWidth.value : labelIsSide.value ? sideLabelWidth.value : outputSvgWidth.value, 1),
+  x: hasCircleLabelText.value
+    ? 0
+    : labelIsLeft.value
+      ? borderContentInset.value
+      : labelIsRight.value
+        ? qrOutputX.value + qrOutputSize.value + sideLabelGap.value
+        : 0,
+  y: hasCircleLabelText.value ? 0 : labelBlockY.value
 }))
 const borderLinearGradientCoordinates = computed(() => getLinearGradientCoordinates(borderGradientBox.value))
 const borderRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(borderGradientBox.value))
@@ -807,6 +895,10 @@ function getRadialGradientCoordinates(box: GradientBox): RadialGradientCoordinat
   }
 }
 
+function selectQrShape(shape: QrShape) {
+  selectedQrShape.value = shape
+}
+
 function selectBorder(border: BorderStyle) {
   selectedBorder.value = border.value
 }
@@ -821,6 +913,54 @@ function selectLabelPosition(option: LabelPositionOption) {
 
 function selectAdditionalTextPlacement(placement: AdditionalTextPlacement) {
   selectedAdditionalTextPlacement.value = placement
+}
+
+function getCircleLabelText(placement: CircleLabelPlacement) {
+  return circleLabelTexts.value[placement]
+}
+
+function setCircleLabelText(placement: CircleLabelPlacement, value: string) {
+  getCircleLabelTextRef(placement).value = value
+}
+
+function getCircleLabelFontValue(placement: CircleLabelPlacement) {
+  return getCircleLabelFontRef(placement).value
+}
+
+function setCircleLabelFont(placement: CircleLabelPlacement, value: string) {
+  getCircleLabelFontRef(placement).value = labelFonts.some(font => font.value === value) ? value : fallbackLabelFont.value
+}
+
+function getCircleLabelSizeStepValue(placement: CircleLabelPlacement) {
+  return getCircleLabelSizeStepRef(placement).value
+}
+
+function setCircleLabelSizeStep(placement: CircleLabelPlacement, value: unknown) {
+  getCircleLabelSizeStepRef(placement).value = clampTextSizeStep(value)
+}
+
+function getCircleLabelOrientationValue(placement: CircleLabelPlacement) {
+  return getCircleLabelOrientationRef(placement).value
+}
+
+function setCircleLabelOrientation(placement: CircleLabelPlacement, value: unknown) {
+  getCircleLabelOrientationRef(placement).value = isCircleLabelOrientation(value)
+    ? value
+    : getDefaultCircleLabelOrientation(placement)
+}
+
+function toggleCircleLabelOrientation(placement: CircleLabelPlacement) {
+  setCircleLabelOrientation(placement, getCircleLabelOrientationValue(placement) === 'up' ? 'down' : 'up')
+}
+
+function getCircleLabelFlipIcon(placement: CircleLabelPlacement) {
+  return getCircleLabelOrientationValue(placement) === 'up' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'
+}
+
+function getCircleLabelFlipAriaLabel(placement: CircleLabelPlacement) {
+  const label = getCircleLabelControlLabel(placement)
+
+  return `Flip ${label} circle label text. Current direction ${getCircleLabelOrientationValue(placement)}`
 }
 
 function increaseLabelSize() {
@@ -845,6 +985,33 @@ function decreaseAdditionalTextSize() {
   if (canDecreaseAdditionalTextSize.value) {
     additionalTextSizeStep.value--
   }
+}
+
+function increaseCircleLabelSize(placement: CircleLabelPlacement) {
+  if (canIncreaseCircleLabelSize(placement)) {
+    setCircleLabelSizeStep(placement, getCircleLabelSizeStepValue(placement) + 1)
+  }
+}
+
+function decreaseCircleLabelSize(placement: CircleLabelPlacement) {
+  if (canDecreaseCircleLabelSize(placement)) {
+    setCircleLabelSizeStep(placement, getCircleLabelSizeStepValue(placement) - 1)
+  }
+}
+
+function canIncreaseCircleLabelSize(placement: CircleLabelPlacement) {
+  const text = getCircleLabelText(placement)
+
+  if (!text || getCircleLabelSizeStepValue(placement) >= 8) {
+    return false
+  }
+
+  return getCircleLabelFontSizeForStep(placement, getCircleLabelSizeStepValue(placement) + 1)
+    > getCircleLabelFontSize(placement) + 0.01
+}
+
+function canDecreaseCircleLabelSize(placement: CircleLabelPlacement) {
+  return getCircleLabelText(placement).length > 0 && getCircleLabelSizeStepValue(placement) > minTextSizeStep
 }
 
 function selectCenterIcon(icon: CenterIconOption) {
@@ -1030,6 +1197,170 @@ function getAdditionalTextLineY(index: number) {
   return y + additionalTextFontSize.value / 2 + index * (additionalTextFontSize.value + additionalTextLineGap.value)
 }
 
+function getCircleLabelTextRef(placement: CircleLabelPlacement) {
+  switch (placement) {
+    case 'bottom':
+      return circleLabelBottom
+    case 'left':
+      return circleLabelLeft
+    case 'right':
+      return circleLabelRight
+    case 'top':
+      return circleLabelTop
+  }
+}
+
+function getCircleLabelFontRef(placement: CircleLabelPlacement) {
+  switch (placement) {
+    case 'bottom':
+      return selectedCircleLabelBottomFont
+    case 'left':
+      return selectedCircleLabelLeftFont
+    case 'right':
+      return selectedCircleLabelRightFont
+    case 'top':
+      return selectedCircleLabelTopFont
+  }
+}
+
+function getCircleLabelSizeStepRef(placement: CircleLabelPlacement) {
+  switch (placement) {
+    case 'bottom':
+      return circleLabelBottomSizeStep
+    case 'left':
+      return circleLabelLeftSizeStep
+    case 'right':
+      return circleLabelRightSizeStep
+    case 'top':
+      return circleLabelTopSizeStep
+  }
+}
+
+function getCircleLabelOrientationRef(placement: CircleLabelPlacement) {
+  switch (placement) {
+    case 'bottom':
+      return circleLabelBottomOrientation
+    case 'left':
+      return circleLabelLeftOrientation
+    case 'right':
+      return circleLabelRightOrientation
+    case 'top':
+      return circleLabelTopOrientation
+  }
+}
+
+function getDefaultCircleLabelOrientation(placement: CircleLabelPlacement): CircleLabelOrientation {
+  return placement === 'bottom' || placement === 'right' ? 'down' : 'up'
+}
+
+function isCircleLabelOrientation(value: unknown): value is CircleLabelOrientation {
+  return value === 'up' || value === 'down'
+}
+
+function getCircleLabelControlLabel(placement: CircleLabelPlacement) {
+  return circleLabelControls.find(control => control.value === placement)?.label ?? placement
+}
+
+function getCircleLabelFontClass(placement: CircleLabelPlacement) {
+  return getLabelFont(getCircleLabelFontValue(placement)).class
+}
+
+function getCircleLabelFontSize(placement: CircleLabelPlacement) {
+  return getCircleLabelFontSizeForStep(placement, getCircleLabelSizeStepValue(placement))
+}
+
+function getCircleLabelFontSizeForStep(placement: CircleLabelPlacement, step: number) {
+  const requestedSize = baseCircleLabelFontSize.value * getSizeMultiplier(step)
+  const text = getCircleLabelText(placement)
+
+  if (!text) {
+    return requestedSize
+  }
+
+  const estimatedWidth = estimateCircleLabelTextWidth(text, requestedSize)
+
+  if (estimatedWidth <= circleLabelArcLength.value) {
+    return requestedSize
+  }
+
+  return Math.max(0.1, requestedSize * circleLabelArcLength.value / estimatedWidth)
+}
+
+function estimateCircleLabelTextWidth(text: string, fontSize: number) {
+  return text.length * fontSize * 0.62
+}
+
+function getCircleLabelPathId(placement: CircleLabelPlacement) {
+  return `circle-label-${placement}-path`
+}
+
+function getCircleLabelPathHref(placement: CircleLabelPlacement) {
+  return `#${getCircleLabelPathId(placement)}`
+}
+
+function getCircleLabelPath(placement: CircleLabelPlacement) {
+  const radius = Math.max(qrOutputSize.value / 2 + circleBorderBuffer.value, circleLabelPathMaxRadius.value - getCircleLabelFontSize(placement) / 2)
+  const centerX = qrOutputX.value + qrOutputSize.value / 2
+  const centerY = qrOutputY.value + qrOutputSize.value / 2
+  const arc = getCircleLabelArc(placement)
+  const start = getCirclePoint(centerX, centerY, radius, arc.start)
+  const end = getCirclePoint(centerX, centerY, radius, arc.end)
+
+  return `M${start.x} ${start.y}A${radius} ${radius} 0 0 ${arc.sweep} ${end.x} ${end.y}`
+}
+
+function getCircleLabelArc(placement: CircleLabelPlacement): CircleLabelArc {
+  const arcs: Record<CircleLabelPlacement, CircleLabelArc> = {
+    bottom: { start: 135, end: 45, sweep: 0 },
+    left: { start: 225, end: 135, sweep: 0 },
+    right: { start: 315, end: 45, sweep: 1 },
+    top: { start: 225, end: 315, sweep: 1 }
+  }
+  const arc = arcs[placement]
+
+  if (getCircleLabelOrientationValue(placement) === getDefaultCircleLabelOrientation(placement)) {
+    return arc
+  }
+
+  return {
+    start: arc.end,
+    end: arc.start,
+    sweep: arc.sweep === 1 ? 0 : 1
+  }
+}
+
+function getCircleLabelPathSide(placement: CircleLabelPlacement) {
+  const defaultSide = getDefaultCircleLabelPathSide(placement)
+
+  return getCircleLabelOrientationValue(placement) === getDefaultCircleLabelOrientation(placement)
+    ? defaultSide
+    : getOppositeCircleLabelPathSide(defaultSide)
+}
+
+function getDefaultCircleLabelPathSide(placement: CircleLabelPlacement): CircleLabelPathSide {
+  switch (placement) {
+    case 'bottom':
+    case 'left':
+      return 'right'
+    case 'right':
+    case 'top':
+      return 'left'
+  }
+}
+
+function getOppositeCircleLabelPathSide(side: CircleLabelPathSide): CircleLabelPathSide {
+  return side === 'left' ? 'right' : 'left'
+}
+
+function getCirclePoint(centerX: number, centerY: number, radius: number, angleDegrees: number) {
+  const angle = angleDegrees * Math.PI / 180
+
+  return {
+    x: centerX + radius * Math.cos(angle),
+    y: centerY + radius * Math.sin(angle)
+  }
+}
+
 function getSizeMultiplier(step: number) {
   return step >= 0 ? 1.25 ** step : 0.75 ** Math.abs(step)
 }
@@ -1069,6 +1400,13 @@ function getLabelFontFromItem(item: unknown) {
 }
 
 function getPreviewPath(line: BorderLine) {
+  if (isCircleShape.value) {
+    const start = 4 + line.inset * 2
+    const radius = 24 - start
+
+    return `M${start} 24A${radius} ${radius} 0 0 1 24 ${start}`
+  }
+
   const start = 4 + line.inset * 2
 
   return `M${start} 24V${start}H24`
@@ -1076,6 +1414,10 @@ function getPreviewPath(line: BorderLine) {
 
 function getPreviewStrokeWidth(line: BorderLine) {
   return line.strokeWidth * 2
+}
+
+function getPreviewStrokeLineCap() {
+  return isCircleShape.value ? 'round' : 'square'
 }
 
 async function goToPrintLabels() {
@@ -1211,6 +1553,7 @@ function createSavedQrPayload(): SavedQrPayload {
     additionalTextSizeStep: additionalTextSizeStep.value,
     border: selectedBorder.value,
     centerIcon: selectedCenterIcon.value,
+    circleLabels: createCircleLabelsPayload(),
     colorName: selectedQrColor.value?.name ?? null,
     colorStep: selectedColorStep.value,
     gradientDirection: selectedGradientDirection.value,
@@ -1221,8 +1564,38 @@ function createSavedQrPayload(): SavedQrPayload {
     labelFont: selectedLabelFont.value,
     labelPosition: selectedLabelPosition.value,
     labelSizeStep: labelSizeStep.value,
+    shape: selectedQrShape.value,
     url: qrStore.url,
     version: 1
+  }
+}
+
+function createCircleLabelsPayload(): Record<CircleLabelPlacement, CircleLabelPayload> {
+  return {
+    bottom: {
+      font: selectedCircleLabelBottomFont.value,
+      orientation: circleLabelBottomOrientation.value,
+      sizeStep: circleLabelBottomSizeStep.value,
+      text: circleLabelBottom.value
+    },
+    left: {
+      font: selectedCircleLabelLeftFont.value,
+      orientation: circleLabelLeftOrientation.value,
+      sizeStep: circleLabelLeftSizeStep.value,
+      text: circleLabelLeft.value
+    },
+    right: {
+      font: selectedCircleLabelRightFont.value,
+      orientation: circleLabelRightOrientation.value,
+      sizeStep: circleLabelRightSizeStep.value,
+      text: circleLabelRight.value
+    },
+    top: {
+      font: selectedCircleLabelTopFont.value,
+      orientation: circleLabelTopOrientation.value,
+      sizeStep: circleLabelTopSizeStep.value,
+      text: circleLabelTop.value
+    }
   }
 }
 
@@ -1318,7 +1691,20 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   additionalTextSizeStep.value = clampAdditionalTextSizeStep(payload.additionalTextSizeStep)
   selectedCenterIcon.value = centerIconOptions.some(icon => icon.value === payload.centerIcon) ? payload.centerIcon : 'none'
   selectedBorder.value = borderStyles.some(border => border.value === payload.border) ? payload.border as BorderValue : 'none'
+  selectedQrShape.value = isQrShape(payload.shape) ? payload.shape : 'rectangle'
+  applyCircleLabelsPayload(payload.circleLabels)
   activeCenterIconCategory.value = null
+}
+
+function applyCircleLabelsPayload(payload: SavedQrPayload['circleLabels']) {
+  for (const placement of circleLabelControls.map(control => control.value)) {
+    const label = payload?.[placement]
+
+    setCircleLabelText(placement, typeof label?.text === 'string' ? label.text : '')
+    setCircleLabelFont(placement, typeof label?.font === 'string' ? label.font : fallbackLabelFont.value)
+    setCircleLabelSizeStep(placement, label?.sizeStep)
+    setCircleLabelOrientation(placement, label?.orientation)
+  }
 }
 
 function clearCurrentQr() {
@@ -1351,12 +1737,14 @@ function resetCurrentQrState() {
   additionalTextSizeStep.value = 0
   qrLabel.value = ''
   qrAdditionalText.value = ''
+  applyCircleLabelsPayload(undefined)
   selectedAdditionalTextPlacement.value = 'below'
   selectedLabelPosition.value = 'top'
   selectedLabelFont.value = fallbackLabelFont.value
   selectedAdditionalTextFont.value = fallbackLabelFont.value
   selectedCenterIcon.value = 'none'
   selectedBorder.value = 'none'
+  selectedQrShape.value = 'rectangle'
   activeTool.value = null
   activeCenterIconCategory.value = null
   centerIconSearch.value = ''
@@ -1380,8 +1768,10 @@ function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
     && payload.additionalTextFont === fallbackLabelFont.value
     && payload.labelSizeStep === 0
     && payload.additionalTextSizeStep === 0
+    && isDefaultCircleLabels(payload.circleLabels)
     && payload.centerIcon === 'none'
     && payload.border === 'none'
+    && (!payload.shape || payload.shape === 'rectangle')
     && (!payload.gradientStyle || payload.gradientStyle === 'none')
     && (!payload.gradientDirection || payload.gradientDirection === 'left-to-right')
     && !payload.gradientSecondColorName
@@ -1389,6 +1779,22 @@ function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
     && !payload.activeTool
     && !payload.activeCenterIconCategory
     && !payload.centerIconSearch
+}
+
+function isDefaultCircleLabels(payload: SavedQrPayload['circleLabels']) {
+  if (!payload) {
+    return true
+  }
+
+  return circleLabelControls.every((control) => {
+    const label = payload[control.value]
+
+    return !label
+      || (label.text === ''
+        && label.font === fallbackLabelFont.value
+        && label.sizeStep === 0
+        && (!label.orientation || label.orientation === getDefaultCircleLabelOrientation(control.value)))
+  })
 }
 
 function normalizeActiveTool(value: unknown): QrTool | null {
@@ -1410,12 +1816,17 @@ function normalizeCenterIconCategory(value: unknown) {
 }
 
 function isQrTool(value: unknown): value is QrTool {
-  return value === 'colors'
+  return value === 'shape'
+    || value === 'colors'
     || value === 'step'
     || value === 'gradient'
     || value === 'label'
     || value === 'icon'
     || value === 'border'
+}
+
+function isQrShape(value: unknown): value is QrShape {
+  return value === 'rectangle' || value === 'circle'
 }
 
 function clampTextSizeStep(value: unknown) {
@@ -1457,6 +1868,7 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
     createdAt: Date.now(),
     height: outputSvgHeight.value,
     name: getDefaultQrName(),
+    qrShape: selectedQrShape.value,
     svg: new XMLSerializer().serializeToString(clonedSvg),
     title: qrStore.content,
     url: qrStore.content,
@@ -1558,14 +1970,31 @@ watch([
   selectedGradientThirdColorName,
   labelSizeStep,
   additionalTextSizeStep,
+  circleLabelTopSizeStep,
+  circleLabelBottomSizeStep,
+  circleLabelLeftSizeStep,
+  circleLabelRightSizeStep,
+  circleLabelTopOrientation,
+  circleLabelBottomOrientation,
+  circleLabelLeftOrientation,
+  circleLabelRightOrientation,
   qrLabel,
   qrAdditionalText,
+  circleLabelTop,
+  circleLabelBottom,
+  circleLabelLeft,
+  circleLabelRight,
   selectedAdditionalTextPlacement,
   selectedLabelPosition,
   selectedLabelFont,
   selectedAdditionalTextFont,
+  selectedCircleLabelTopFont,
+  selectedCircleLabelBottomFont,
+  selectedCircleLabelLeftFont,
+  selectedCircleLabelRightFont,
   selectedCenterIcon,
   selectedBorder,
+  selectedQrShape,
   activeTool,
   activeCenterIconCategory,
   centerIconSearch
@@ -1657,6 +2086,15 @@ onUnmounted(() => {
           class="flex flex-wrap items-center gap-2"
           role="toolbar"
         >
+          <UButton
+            :aria-pressed="activeTool === 'shape'"
+            :color="activeTool === 'shape' ? 'primary' : 'neutral'"
+            icon="i-lucide-shapes"
+            :variant="activeTool === 'shape' ? 'solid' : 'subtle'"
+            @click="selectTool('shape')"
+          >
+            Shape
+          </UButton>
           <UFieldGroup>
             <UButton
               :aria-pressed="activeTool === 'colors'"
@@ -1709,7 +2147,7 @@ onUnmounted(() => {
           <UButton
             :aria-pressed="activeTool === 'border'"
             :color="activeTool === 'border' ? 'primary' : 'neutral'"
-            icon="i-lucide-square"
+            :icon="isCircleShape ? 'i-lucide-circle' : 'i-lucide-square'"
             :variant="activeTool === 'border' ? 'solid' : 'subtle'"
             @click="selectTool('border')"
           >
@@ -1719,7 +2157,32 @@ onUnmounted(() => {
       </div>
 
       <div
-        v-if="activeTool === 'colors'"
+        v-if="activeTool === 'shape'"
+        aria-label="QR code shape"
+        class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
+        role="radiogroup"
+      >
+        <button
+          v-for="option in qrShapeOptions"
+          :key="option.value"
+          :aria-label="option.label"
+          :aria-checked="selectedQrShape === option.value"
+          class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+          :class="selectedQrShape === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+          role="radio"
+          type="button"
+          @click="selectQrShape(option.value)"
+        >
+          <UIcon
+            :name="option.icon"
+            class="size-4"
+          />
+          <span>{{ option.label }}</span>
+        </button>
+      </div>
+
+      <div
+        v-else-if="activeTool === 'colors'"
         class="relative"
       >
         <div
@@ -1952,7 +2415,100 @@ onUnmounted(() => {
         v-else-if="activeTool === 'label'"
         class="space-y-3"
       >
-        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]">
+        <div
+          v-if="isCircleShape"
+          class="space-y-3"
+        >
+          <div
+            v-for="control in circleLabelControls"
+            :key="control.value"
+            class="grid grid-cols-[minmax(0,1fr)_4rem] gap-3 min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem_4rem]"
+          >
+            <UFormField
+              :label="control.label"
+              class="col-span-2 min-[620px]:col-span-1"
+            >
+              <UInput
+                :model-value="getCircleLabelText(control.value)"
+                class="w-full"
+                icon="i-lucide-type"
+                :placeholder="control.placeholder"
+                size="lg"
+                @update:model-value="setCircleLabelText(control.value, String($event))"
+              />
+            </UFormField>
+
+            <UFormField
+              class="col-span-2 min-[620px]:col-span-1"
+              label="Font"
+            >
+              <USelect
+                :model-value="getCircleLabelFontValue(control.value)"
+                class="w-full"
+                :items="labelFontItems"
+                size="lg"
+                @update:model-value="setCircleLabelFont(control.value, String($event))"
+              >
+                <template #default="{ modelValue }">
+                  <span :class="getLabelFont(modelValue).class">
+                    {{ getLabelFont(modelValue).label }}
+                  </span>
+                </template>
+
+                <template #item-label="{ item }">
+                  <span :class="getLabelFontFromItem(item).class">
+                    {{ getLabelFontFromItem(item).label }}
+                  </span>
+                </template>
+              </USelect>
+            </UFormField>
+
+            <UFormField label="Size">
+              <UFieldGroup
+                class="w-full"
+                size="lg"
+              >
+                <UButton
+                  :aria-label="`Decrease ${control.label.toLowerCase()} circle label size`"
+                  class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                  color="neutral"
+                  :disabled="!canDecreaseCircleLabelSize(control.value)"
+                  icon="i-lucide-minus"
+                  size="lg"
+                  variant="subtle"
+                  @click="decreaseCircleLabelSize(control.value)"
+                />
+                <UButton
+                  :aria-label="`Increase ${control.label.toLowerCase()} circle label size`"
+                  class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                  color="neutral"
+                  :disabled="!canIncreaseCircleLabelSize(control.value)"
+                  icon="i-lucide-plus"
+                  size="lg"
+                  variant="subtle"
+                  @click="increaseCircleLabelSize(control.value)"
+                />
+              </UFieldGroup>
+            </UFormField>
+
+            <UFormField label="Flip">
+              <UButton
+                :aria-label="getCircleLabelFlipAriaLabel(control.value)"
+                class="w-full justify-center"
+                color="neutral"
+                :icon="getCircleLabelFlipIcon(control.value)"
+                size="lg"
+                variant="subtle"
+                @click="toggleCircleLabelOrientation(control.value)"
+              />
+            </UFormField>
+          </div>
+        </div>
+
+        <div
+          v-if="!isCircleShape"
+          class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+        >
           <UFormField label="Label">
             <UInput
               v-model="qrLabel"
@@ -2013,7 +2569,10 @@ onUnmounted(() => {
           </UFormField>
         </div>
 
-        <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-x-3 gap-y-1.5 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]">
+        <div
+          v-if="!isCircleShape"
+          class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-x-3 gap-y-1.5 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+        >
           <div class="flex h-6 items-center justify-between gap-3">
             <label
               class="text-sm font-medium text-highlighted"
@@ -2113,7 +2672,10 @@ onUnmounted(() => {
           </UFieldGroup>
         </div>
 
-        <UFormField label="Position">
+        <UFormField
+          v-if="!isCircleShape"
+          label="Position"
+        >
           <div
             aria-label="Label position"
             class="flex flex-wrap gap-2"
@@ -2378,7 +2940,7 @@ onUnmounted(() => {
               :key="`${border.value}-${line.inset}`"
               :d="getPreviewPath(line)"
               stroke="currentColor"
-              stroke-linecap="square"
+              :stroke-linecap="getPreviewStrokeLineCap()"
               stroke-linejoin="miter"
               :stroke-width="getPreviewStrokeWidth(line)"
             />
@@ -2413,6 +2975,7 @@ onUnmounted(() => {
             ref="outputSvgElement"
             aria-label="Generated QR code"
             class="h-auto w-full"
+            :data-error-correction-level="generatedQr.code.errorCorrectionLevel"
             role="img"
             :viewBox="outputViewBox"
             xmlns="http://www.w3.org/2000/svg"
@@ -2422,92 +2985,122 @@ onUnmounted(() => {
               :height="outputSvgHeight"
               :width="outputSvgWidth"
             />
-            <defs v-if="hasActiveGradient">
-              <linearGradient
-                v-if="selectedGradientStyle === 'directional'"
-                id="qr-border-gradient"
-                gradientUnits="userSpaceOnUse"
-                v-bind="borderLinearGradientCoordinates"
-              >
-                <stop
-                  v-for="stop in gradientStops"
-                  :key="`border-${stop.key}`"
-                  :class="stop.textClass"
-                  :offset="stop.offset"
-                  stop-color="currentColor"
-                />
-              </linearGradient>
-              <radialGradient
-                v-else
-                id="qr-border-gradient"
-                gradientUnits="userSpaceOnUse"
-                v-bind="borderRadialGradientCoordinates"
-              >
-                <stop
-                  v-for="stop in gradientStops"
-                  :key="`border-${stop.key}`"
-                  :class="stop.textClass"
-                  :offset="stop.offset"
-                  stop-color="currentColor"
-                />
-              </radialGradient>
-              <linearGradient
-                v-if="selectedGradientStyle === 'directional'"
-                id="qr-artwork-gradient"
-                gradientUnits="userSpaceOnUse"
-                v-bind="qrArtworkLinearGradientCoordinates"
-              >
-                <stop
-                  v-for="stop in gradientStops"
-                  :key="`artwork-${stop.key}`"
-                  :class="stop.textClass"
-                  :offset="stop.offset"
-                  stop-color="currentColor"
-                />
-              </linearGradient>
-              <radialGradient
-                v-else
-                id="qr-artwork-gradient"
-                gradientUnits="userSpaceOnUse"
-                v-bind="qrArtworkRadialGradientCoordinates"
-              >
-                <stop
-                  v-for="stop in gradientStops"
-                  :key="`artwork-${stop.key}`"
-                  :class="stop.textClass"
-                  :offset="stop.offset"
-                  stop-color="currentColor"
-                />
-              </radialGradient>
-              <linearGradient
-                v-if="selectedGradientStyle === 'directional'"
-                id="qr-text-gradient"
-                gradientUnits="userSpaceOnUse"
-                v-bind="textLinearGradientCoordinates"
-              >
-                <stop
-                  v-for="stop in gradientStops"
-                  :key="`text-${stop.key}`"
-                  :class="stop.textClass"
-                  :offset="stop.offset"
-                  stop-color="currentColor"
-                />
-              </linearGradient>
-              <radialGradient
-                v-else
-                id="qr-text-gradient"
-                gradientUnits="userSpaceOnUse"
-                v-bind="textRadialGradientCoordinates"
-              >
-                <stop
-                  v-for="stop in gradientStops"
-                  :key="`text-${stop.key}`"
-                  :class="stop.textClass"
-                  :offset="stop.offset"
-                  stop-color="currentColor"
-                />
-              </radialGradient>
+            <defs v-if="hasActiveGradient || hasCircleLabelText">
+              <template v-if="hasActiveGradient">
+                <linearGradient
+                  v-if="selectedGradientStyle === 'directional'"
+                  id="qr-border-gradient"
+                  gradientUnits="userSpaceOnUse"
+                  v-bind="borderLinearGradientCoordinates"
+                >
+                  <stop
+                    v-for="stop in gradientStops"
+                    :key="`border-${stop.key}`"
+                    :class="stop.textClass"
+                    :offset="stop.offset"
+                    stop-color="currentColor"
+                  />
+                </linearGradient>
+                <radialGradient
+                  v-else
+                  id="qr-border-gradient"
+                  gradientUnits="userSpaceOnUse"
+                  v-bind="borderRadialGradientCoordinates"
+                >
+                  <stop
+                    v-for="stop in gradientStops"
+                    :key="`border-${stop.key}`"
+                    :class="stop.textClass"
+                    :offset="stop.offset"
+                    stop-color="currentColor"
+                  />
+                </radialGradient>
+                <linearGradient
+                  v-if="selectedGradientStyle === 'directional'"
+                  id="qr-artwork-gradient"
+                  gradientUnits="userSpaceOnUse"
+                  v-bind="qrArtworkLinearGradientCoordinates"
+                >
+                  <stop
+                    v-for="stop in gradientStops"
+                    :key="`artwork-${stop.key}`"
+                    :class="stop.textClass"
+                    :offset="stop.offset"
+                    stop-color="currentColor"
+                  />
+                </linearGradient>
+                <radialGradient
+                  v-else
+                  id="qr-artwork-gradient"
+                  gradientUnits="userSpaceOnUse"
+                  v-bind="qrArtworkRadialGradientCoordinates"
+                >
+                  <stop
+                    v-for="stop in gradientStops"
+                    :key="`artwork-${stop.key}`"
+                    :class="stop.textClass"
+                    :offset="stop.offset"
+                    stop-color="currentColor"
+                  />
+                </radialGradient>
+                <linearGradient
+                  v-if="selectedGradientStyle === 'directional'"
+                  id="qr-text-gradient"
+                  gradientUnits="userSpaceOnUse"
+                  v-bind="textLinearGradientCoordinates"
+                >
+                  <stop
+                    v-for="stop in gradientStops"
+                    :key="`text-${stop.key}`"
+                    :class="stop.textClass"
+                    :offset="stop.offset"
+                    stop-color="currentColor"
+                  />
+                </linearGradient>
+                <radialGradient
+                  v-else
+                  id="qr-text-gradient"
+                  gradientUnits="userSpaceOnUse"
+                  v-bind="textRadialGradientCoordinates"
+                >
+                  <stop
+                    v-for="stop in gradientStops"
+                    :key="`text-${stop.key}`"
+                    :class="stop.textClass"
+                    :offset="stop.offset"
+                    stop-color="currentColor"
+                  />
+                </radialGradient>
+              </template>
+              <path
+                v-for="control in visibleCircleLabelControls"
+                :id="getCircleLabelPathId(control.value)"
+                :key="`circle-label-path-${control.value}`"
+                :d="getCircleLabelPath(control.value)"
+              />
             </defs>
+            <g v-if="hasCircleBorder">
+              <circle
+                v-for="line in selectedCircleBorderLines"
+                :key="`circle-${selectedBorder}-${line.inset}`"
+                :data-testid="`qr-circle-border-${line.inset}`"
+                fill="none"
+                :cx="line.cx"
+                :cy="line.cy"
+                :r="line.radius"
+                :class="borderStrokePaint ? undefined : qrStrokeClass"
+                :stroke="borderStrokePaint ?? undefined"
+                :stroke-width="line.strokeWidth"
+              />
+              <rect
+                class="fill-white"
+                data-testid="qr-circle-border-buffer"
+                :height="circleBorderBufferRect.height"
+                :width="circleBorderBufferRect.width"
+                :x="circleBorderBufferRect.x"
+                :y="circleBorderBufferRect.y"
+              />
+            </g>
             <g shape-rendering="crispEdges">
               <svg
                 :height="qrOutputSize"
@@ -2589,7 +3182,7 @@ onUnmounted(() => {
               />
             </template>
             <text
-              v-if="labelText"
+              v-if="!isCircleShape && labelText"
               ref="labelMeasureElement"
               aria-hidden="true"
               fill="currentColor"
@@ -2600,7 +3193,7 @@ onUnmounted(() => {
               {{ labelText }}
             </text>
             <text
-              v-if="longestAdditionalTextLine"
+              v-if="!isCircleShape && longestAdditionalTextLine"
               ref="additionalTextMeasureElement"
               aria-hidden="true"
               fill="currentColor"
@@ -2611,7 +3204,7 @@ onUnmounted(() => {
               {{ longestAdditionalTextLine }}
             </text>
             <text
-              v-if="labelText"
+              v-if="!isCircleShape && labelText"
               :fill="textFillPaint ?? 'currentColor'"
               :font-size="labelFontSize"
               :x="labelX"
@@ -2623,7 +3216,7 @@ onUnmounted(() => {
               {{ labelText }}
             </text>
             <text
-              v-for="(line, index) in additionalTextLines"
+              v-for="(line, index) in isCircleShape ? [] : additionalTextLines"
               :key="`additional-text-${index}`"
               :fill="textFillPaint ?? 'currentColor'"
               :font-size="additionalTextFontSize"
@@ -2637,18 +3230,39 @@ onUnmounted(() => {
             >
               {{ line }}
             </text>
-            <rect
-              v-for="line in selectedBorderLines"
-              :key="`${selectedBorder}-${line.inset}`"
-              fill="none"
-              :height="line.height"
-              :width="line.width"
-              :x="line.inset"
-              :y="line.inset"
-              :class="borderStrokePaint ? undefined : qrStrokeClass"
-              :stroke="borderStrokePaint ?? undefined"
-              :stroke-width="line.strokeWidth"
-            />
+            <text
+              v-for="control in visibleCircleLabelControls"
+              :key="`circle-label-text-${control.value}`"
+              :data-testid="`qr-circle-label-${control.value}`"
+              :fill="textFillPaint ?? 'currentColor'"
+              :font-size="getCircleLabelFontSize(control.value)"
+              dominant-baseline="central"
+              text-anchor="middle"
+              :class="textFillPaint ? getCircleLabelFontClass(control.value) : [qrTextClass, getCircleLabelFontClass(control.value)]"
+            >
+              <textPath
+                :href="getCircleLabelPathHref(control.value)"
+                :side="getCircleLabelPathSide(control.value)"
+                startOffset="50%"
+              >
+                {{ getCircleLabelText(control.value) }}
+              </textPath>
+            </text>
+            <template v-if="!isCircleShape">
+              <rect
+                v-for="line in selectedBorderLines"
+                :key="`${selectedBorder}-${line.inset}`"
+                :data-testid="`qr-rectangle-border-${line.inset}`"
+                fill="none"
+                :height="line.height"
+                :width="line.width"
+                :x="line.inset"
+                :y="line.inset"
+                :class="borderStrokePaint ? undefined : qrStrokeClass"
+                :stroke="borderStrokePaint ?? undefined"
+                :stroke-width="line.strokeWidth"
+              />
+            </template>
           </svg>
 
           <div

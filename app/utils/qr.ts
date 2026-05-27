@@ -1,10 +1,14 @@
+export type QrErrorCorrectionLevel = 'medium' | 'high'
+
 export type QrCode = {
+  errorCorrectionLevel: QrErrorCorrectionLevel
   version: number
   size: number
   modules: boolean[][]
 }
 
 export type QrCodeOptions = {
+  errorCorrectionLevel?: QrErrorCorrectionLevel
   minVersion?: number
 }
 
@@ -26,63 +30,119 @@ type Matrix = {
 }
 
 const BYTE_MODE = 0b0100
-const FORMAT_ERROR_CORRECTION_LEVEL_MEDIUM = 0b00
+const FORMAT_ERROR_CORRECTION_LEVEL_BITS: Record<QrErrorCorrectionLevel, number> = {
+  high: 0b10,
+  medium: 0b00
+}
 const FORMAT_MASK = 0x5412
 const FORMAT_GENERATOR = 0x537
 const VERSION_GENERATOR = 0x1f25
 const REED_SOLOMON_FIELD = 0x11d
 
-const VERSION_CONFIGS: VersionConfig[] = [{
-  version: 1,
-  dataCodewords: 16,
-  errorCorrectionCodewords: 10,
-  groups: [{ count: 1, dataCodewords: 16 }]
-}, {
-  version: 2,
-  dataCodewords: 28,
-  errorCorrectionCodewords: 16,
-  groups: [{ count: 1, dataCodewords: 28 }]
-}, {
-  version: 3,
-  dataCodewords: 44,
-  errorCorrectionCodewords: 26,
-  groups: [{ count: 1, dataCodewords: 44 }]
-}, {
-  version: 4,
-  dataCodewords: 64,
-  errorCorrectionCodewords: 18,
-  groups: [{ count: 2, dataCodewords: 32 }]
-}, {
-  version: 5,
-  dataCodewords: 86,
-  errorCorrectionCodewords: 24,
-  groups: [{ count: 2, dataCodewords: 43 }]
-}, {
-  version: 6,
-  dataCodewords: 108,
-  errorCorrectionCodewords: 16,
-  groups: [{ count: 4, dataCodewords: 27 }]
-}, {
-  version: 7,
-  dataCodewords: 124,
-  errorCorrectionCodewords: 18,
-  groups: [{ count: 4, dataCodewords: 31 }]
-}, {
-  version: 8,
-  dataCodewords: 154,
-  errorCorrectionCodewords: 22,
-  groups: [{ count: 2, dataCodewords: 38 }, { count: 2, dataCodewords: 39 }]
-}, {
-  version: 9,
-  dataCodewords: 182,
-  errorCorrectionCodewords: 22,
-  groups: [{ count: 3, dataCodewords: 36 }, { count: 2, dataCodewords: 37 }]
-}, {
-  version: 10,
-  dataCodewords: 216,
-  errorCorrectionCodewords: 26,
-  groups: [{ count: 4, dataCodewords: 43 }, { count: 1, dataCodewords: 44 }]
-}]
+const VERSION_CONFIGS: Record<QrErrorCorrectionLevel, VersionConfig[]> = {
+  high: [{
+    version: 1,
+    dataCodewords: 9,
+    errorCorrectionCodewords: 17,
+    groups: [{ count: 1, dataCodewords: 9 }]
+  }, {
+    version: 2,
+    dataCodewords: 16,
+    errorCorrectionCodewords: 28,
+    groups: [{ count: 1, dataCodewords: 16 }]
+  }, {
+    version: 3,
+    dataCodewords: 26,
+    errorCorrectionCodewords: 22,
+    groups: [{ count: 2, dataCodewords: 13 }]
+  }, {
+    version: 4,
+    dataCodewords: 36,
+    errorCorrectionCodewords: 16,
+    groups: [{ count: 4, dataCodewords: 9 }]
+  }, {
+    version: 5,
+    dataCodewords: 46,
+    errorCorrectionCodewords: 22,
+    groups: [{ count: 2, dataCodewords: 11 }, { count: 2, dataCodewords: 12 }]
+  }, {
+    version: 6,
+    dataCodewords: 60,
+    errorCorrectionCodewords: 28,
+    groups: [{ count: 4, dataCodewords: 15 }]
+  }, {
+    version: 7,
+    dataCodewords: 66,
+    errorCorrectionCodewords: 26,
+    groups: [{ count: 4, dataCodewords: 13 }, { count: 1, dataCodewords: 14 }]
+  }, {
+    version: 8,
+    dataCodewords: 86,
+    errorCorrectionCodewords: 26,
+    groups: [{ count: 4, dataCodewords: 14 }, { count: 2, dataCodewords: 15 }]
+  }, {
+    version: 9,
+    dataCodewords: 100,
+    errorCorrectionCodewords: 24,
+    groups: [{ count: 4, dataCodewords: 12 }, { count: 4, dataCodewords: 13 }]
+  }, {
+    version: 10,
+    dataCodewords: 122,
+    errorCorrectionCodewords: 28,
+    groups: [{ count: 6, dataCodewords: 15 }, { count: 2, dataCodewords: 16 }]
+  }],
+  medium: [{
+    version: 1,
+    dataCodewords: 16,
+    errorCorrectionCodewords: 10,
+    groups: [{ count: 1, dataCodewords: 16 }]
+  }, {
+    version: 2,
+    dataCodewords: 28,
+    errorCorrectionCodewords: 16,
+    groups: [{ count: 1, dataCodewords: 28 }]
+  }, {
+    version: 3,
+    dataCodewords: 44,
+    errorCorrectionCodewords: 26,
+    groups: [{ count: 1, dataCodewords: 44 }]
+  }, {
+    version: 4,
+    dataCodewords: 64,
+    errorCorrectionCodewords: 18,
+    groups: [{ count: 2, dataCodewords: 32 }]
+  }, {
+    version: 5,
+    dataCodewords: 86,
+    errorCorrectionCodewords: 24,
+    groups: [{ count: 2, dataCodewords: 43 }]
+  }, {
+    version: 6,
+    dataCodewords: 108,
+    errorCorrectionCodewords: 16,
+    groups: [{ count: 4, dataCodewords: 27 }]
+  }, {
+    version: 7,
+    dataCodewords: 124,
+    errorCorrectionCodewords: 18,
+    groups: [{ count: 4, dataCodewords: 31 }]
+  }, {
+    version: 8,
+    dataCodewords: 154,
+    errorCorrectionCodewords: 22,
+    groups: [{ count: 2, dataCodewords: 38 }, { count: 2, dataCodewords: 39 }]
+  }, {
+    version: 9,
+    dataCodewords: 182,
+    errorCorrectionCodewords: 22,
+    groups: [{ count: 3, dataCodewords: 36 }, { count: 2, dataCodewords: 37 }]
+  }, {
+    version: 10,
+    dataCodewords: 216,
+    errorCorrectionCodewords: 26,
+    groups: [{ count: 4, dataCodewords: 43 }, { count: 1, dataCodewords: 44 }]
+  }]
+}
 
 const ALIGNMENT_PATTERN_POSITIONS: Record<number, number[]> = {
   1: [],
@@ -117,12 +177,13 @@ for (let index = 0; index < 255; index++) {
 
 export function createQrCode(value: string, options: QrCodeOptions = {}): QrCode {
   const bytes = new TextEncoder().encode(value)
+  const errorCorrectionLevel = options.errorCorrectionLevel ?? 'medium'
 
   if (bytes.length === 0) {
     throw new Error('Enter a URL to generate a QR code.')
   }
 
-  const config = getSmallestVersionConfig(bytes, options.minVersion ?? 1)
+  const config = getSmallestVersionConfig(bytes, options.minVersion ?? 1, errorCorrectionLevel)
   const dataCodewords = createDataCodewords(bytes, config)
   const codewords = addErrorCorrectionAndInterleave(dataCodewords, config)
 
@@ -130,7 +191,7 @@ export function createQrCode(value: string, options: QrCodeOptions = {}): QrCode
   let bestPenalty = Number.POSITIVE_INFINITY
 
   for (let mask = 0; mask < 8; mask++) {
-    const code = buildMatrix(config.version, codewords, mask)
+    const code = buildMatrix(config.version, codewords, mask, errorCorrectionLevel)
     const penalty = calculatePenalty(code.modules)
 
     if (penalty < bestPenalty) {
@@ -166,15 +227,15 @@ export function getQrSvgViewBox(qrCode: QrCode, quietZone = 4): string {
   return `0 0 ${size} ${size}`
 }
 
-export function getMaxQrByteLength(): number {
-  const config = getLargestVersionConfig()
+export function getMaxQrByteLength(errorCorrectionLevel: QrErrorCorrectionLevel = 'medium'): number {
+  const config = getLargestVersionConfig(errorCorrectionLevel)
   const payloadBits = config.dataCodewords * 8 - 4 - getCharacterCountBits(config.version)
 
   return Math.floor(payloadBits / 8)
 }
 
-function getSmallestVersionConfig(bytes: Uint8Array, minVersion: number): VersionConfig {
-  for (const config of VERSION_CONFIGS) {
+function getSmallestVersionConfig(bytes: Uint8Array, minVersion: number, errorCorrectionLevel: QrErrorCorrectionLevel): VersionConfig {
+  for (const config of VERSION_CONFIGS[errorCorrectionLevel]) {
     if (config.version < minVersion) {
       continue
     }
@@ -187,15 +248,16 @@ function getSmallestVersionConfig(bytes: Uint8Array, minVersion: number): Versio
     }
   }
 
-  throw new Error(`This first QR version supports URLs up to ${getMaxQrByteLength()} UTF-8 bytes.`)
+  throw new Error(`This QR generator supports URLs up to ${getMaxQrByteLength(errorCorrectionLevel)} UTF-8 bytes at this error correction level.`)
 }
 
 function getCharacterCountBits(version: number): number {
   return version < 10 ? 8 : 16
 }
 
-function getLargestVersionConfig(): VersionConfig {
-  const config = VERSION_CONFIGS[VERSION_CONFIGS.length - 1]
+function getLargestVersionConfig(errorCorrectionLevel: QrErrorCorrectionLevel): VersionConfig {
+  const configs = VERSION_CONFIGS[errorCorrectionLevel]
+  const config = configs[configs.length - 1]
 
   if (!config) {
     throw new Error('No QR versions are configured.')
@@ -366,15 +428,16 @@ function reedSolomonMultiply(left: number, right: number): number {
   return value
 }
 
-function buildMatrix(version: number, codewords: number[], mask: number): QrCode {
+function buildMatrix(version: number, codewords: number[], mask: number, errorCorrectionLevel: QrErrorCorrectionLevel): QrCode {
   const size = getSize(version)
   const matrix = createMatrix(size)
 
-  drawFunctionPatterns(matrix, version)
+  drawFunctionPatterns(matrix, version, errorCorrectionLevel)
   drawCodewords(matrix, codewords, mask)
-  drawFormatBits(matrix, mask)
+  drawFormatBits(matrix, mask, errorCorrectionLevel)
 
   return {
+    errorCorrectionLevel,
     version,
     size,
     modules: matrix.modules
@@ -392,7 +455,7 @@ function createMatrix(size: number): Matrix {
   }
 }
 
-function drawFunctionPatterns(matrix: Matrix, version: number) {
+function drawFunctionPatterns(matrix: Matrix, version: number, errorCorrectionLevel: QrErrorCorrectionLevel) {
   const size = matrix.modules.length
 
   drawFinderPattern(matrix, 3, 3)
@@ -418,7 +481,7 @@ function drawFunctionPatterns(matrix: Matrix, version: number) {
     }
   }
 
-  drawFormatBits(matrix, 0)
+  drawFormatBits(matrix, 0, errorCorrectionLevel)
 
   if (version >= 7) {
     drawVersionBits(matrix, version)
@@ -447,9 +510,9 @@ function drawAlignmentPattern(matrix: Matrix, centerX: number, centerY: number) 
   }
 }
 
-function drawFormatBits(matrix: Matrix, mask: number) {
+function drawFormatBits(matrix: Matrix, mask: number, errorCorrectionLevel: QrErrorCorrectionLevel) {
   const size = matrix.modules.length
-  const data = (FORMAT_ERROR_CORRECTION_LEVEL_MEDIUM << 3) | mask
+  const data = (FORMAT_ERROR_CORRECTION_LEVEL_BITS[errorCorrectionLevel] << 3) | mask
   let remainder = data
 
   for (let index = 0; index < 10; index++) {
