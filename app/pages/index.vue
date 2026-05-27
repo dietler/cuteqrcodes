@@ -4,6 +4,7 @@ import { useSession } from '~~/lib/auth-client'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 import { editQrPayloadStorageKey, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
+import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
 type QrTool = 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double'
@@ -1257,6 +1258,7 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
   clonedSvg.setAttribute('height', `${outputSvgHeight.value}`)
 
   inlineComputedSvgStyles(sourceSvg, clonedSvg)
+  await embedUsedSvgFontFaces(clonedSvg)
   await inlineSvgImages(clonedSvg)
 
   return {
@@ -1268,70 +1270,6 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
     url: qrStore.content,
     width: outputSvgWidth.value
   }
-}
-
-function inlineComputedSvgStyles(sourceSvg: SVGSVGElement, clonedSvg: SVGSVGElement) {
-  const sourceElements = [sourceSvg, ...sourceSvg.querySelectorAll('*')]
-  const clonedElements = [clonedSvg, ...clonedSvg.querySelectorAll('*')]
-  const styleProperties = ['color', 'fill', 'stroke', 'stop-color', 'font-family', 'font-size', 'font-style', 'font-weight', 'letter-spacing', 'opacity']
-
-  sourceElements.forEach((sourceElement, index) => {
-    const clonedElement = clonedElements[index]
-
-    if (!(clonedElement instanceof SVGElement)) {
-      return
-    }
-
-    const computedStyle = window.getComputedStyle(sourceElement)
-
-    styleProperties.forEach((property) => {
-      const value = computedStyle.getPropertyValue(property)
-
-      if (value) {
-        clonedElement.style.setProperty(property, value)
-      }
-    })
-  })
-}
-
-async function inlineSvgImages(svg: SVGSVGElement) {
-  const images = Array.from(svg.querySelectorAll('image'))
-
-  await Promise.all(images.map(async (image) => {
-    const href = image.getAttribute('href') || image.getAttributeNS('http://www.w3.org/1999/xlink', 'href')
-
-    if (!href || href.startsWith('data:')) {
-      return
-    }
-
-    const response = await fetch(href)
-
-    if (!response.ok) {
-      throw new Error(`Unable to load icon for PDF: ${href}`)
-    }
-
-    const dataUrl = await blobToDataUrl(await response.blob())
-
-    image.setAttribute('href', dataUrl)
-    image.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl)
-  }))
-}
-
-function blobToDataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-
-    reader.addEventListener('load', () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result)
-        return
-      }
-
-      reject(new Error('Unable to read icon asset.'))
-    })
-    reader.addEventListener('error', () => reject(reader.error ?? new Error('Unable to read icon asset.')))
-    reader.readAsDataURL(blob)
-  })
 }
 
 function getErrorMessage(error: unknown, fallback: string) {

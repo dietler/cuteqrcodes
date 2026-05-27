@@ -22,6 +22,7 @@ import {
   type LabelPrintPayload,
 } from "~/utils/label-print";
 import type { SavedQrCode } from "~/utils/saved-qr";
+import { embedUsedSvgFontFacesInText } from "~/utils/svg-export";
 import { useSession } from "~~/lib/auth-client";
 
 type LabelType = LabelTemplateType;
@@ -302,11 +303,20 @@ function readPrintPayload() {
 }
 
 async function loadPrintPayload() {
-  const storedPayload = readPrintPayload();
+  const storedPayload = await preparePrintPayloadForImageRendering(
+    readPrintPayload(),
+  );
   const savedQrCodeId =
     typeof route.query.saved === "string" ? route.query.saved : "";
 
   printPayload.value = storedPayload;
+
+  if (storedPayload) {
+    sessionStorage.setItem(
+      labelPrintPayloadStorageKey,
+      JSON.stringify(storedPayload),
+    );
+  }
 
   if (!savedQrCodeId) {
     applySuggestedLabelType();
@@ -320,7 +330,9 @@ async function loadPrintPayload() {
       `/api/qr/saved/${encodeURIComponent(savedQrCodeId)}`,
     );
 
-    printPayload.value = createLabelPrintPayloadFromSavedQr(response.qrCode);
+    printPayload.value = await preparePrintPayloadForImageRendering(
+      createLabelPrintPayloadFromSavedQr(response.qrCode),
+    );
     sessionStorage.setItem(
       labelPrintPayloadStorageKey,
       JSON.stringify(printPayload.value),
@@ -337,6 +349,22 @@ async function loadPrintPayload() {
     }
   } finally {
     isLoadingPrintPayload.value = false;
+  }
+}
+
+async function preparePrintPayloadForImageRendering(
+  payload: LabelPrintPayload | null,
+) {
+  if (!payload) {
+    return null;
+  }
+
+  try {
+    const svg = await embedUsedSvgFontFacesInText(payload.svg);
+
+    return svg === payload.svg ? payload : { ...payload, svg };
+  } catch {
+    return payload;
   }
 }
 
