@@ -225,6 +225,16 @@ const centerIconCategories: CenterIconCategory[] = [
     ]
   },
   {
+    label: 'Faces',
+    value: 'faces',
+    src: '/icons/center/faces/index.svg',
+    icons: [
+      createCenterIconOption('faces', 'Faces', 'Smile', 'smile'),
+      createCenterIconOption('faces', 'Faces', 'Laugh', 'laugh'),
+      createCenterIconOption('faces', 'Faces', 'Wink', 'wink')
+    ]
+  },
+  {
     label: 'Restaurant',
     value: 'restaurant',
     src: '/icons/center/restaurant/index.svg',
@@ -232,6 +242,9 @@ const centerIconCategories: CenterIconCategory[] = [
       createCenterIconOption('restaurant', 'Restaurant', 'Menu', 'menu'),
       createCenterIconOption('restaurant', 'Restaurant', 'Silverware', 'silverware'),
       createCenterIconOption('restaurant', 'Restaurant', 'Dinerware', 'dinerware'),
+      createCenterIconOption('restaurant', 'Restaurant', 'Dessert', 'dessert'),
+      createCenterIconOption('restaurant', 'Restaurant', 'Pastry', 'pastry'),
+      createCenterIconOption('restaurant', 'Restaurant', 'Salad', 'salad'),
       createCenterIconOption('restaurant', 'Restaurant', 'Wine', 'wine'),
       createCenterIconOption('restaurant', 'Restaurant', 'Cocktail', 'cocktail'),
       createCenterIconOption('restaurant', 'Restaurant', 'Beer', 'beer')
@@ -258,6 +271,17 @@ const centerIconCategories: CenterIconCategory[] = [
     ]
   },
   {
+    label: 'Mystery',
+    value: 'mystery',
+    src: '/icons/center/mystery/index.svg',
+    icons: [
+      createCenterIconOption('mystery', 'Mystery', 'Clue', 'clue'),
+      createCenterIconOption('mystery', 'Mystery', 'Padlock', 'padlock'),
+      createCenterIconOption('mystery', 'Mystery', 'Puzzle', 'puzzle'),
+      createCenterIconOption('mystery', 'Mystery', 'Question Mark', 'question-mark')
+    ]
+  },
+  {
     label: 'Legal',
     value: 'legal',
     src: '/icons/center/legal/index.svg',
@@ -276,6 +300,15 @@ const centerIconCategories: CenterIconCategory[] = [
       createCenterIconOption('review', 'Review', 'Google Maps', 'google-maps'),
       createCenterIconOption('review', 'Review', 'Review', 'review'),
       createCenterIconOption('review', 'Review', 'Yelp', 'yelp')
+    ]
+  },
+  {
+    label: 'Rewards',
+    value: 'rewards',
+    src: '/icons/center/rewards/index.svg',
+    icons: [
+      createCenterIconOption('rewards', 'Rewards', 'Gift', 'gift'),
+      createCenterIconOption('rewards', 'Rewards', 'Trophy', 'trophy')
     ]
   },
   {
