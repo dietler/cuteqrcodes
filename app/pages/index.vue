@@ -81,7 +81,7 @@ const additionalTextSizeStep = ref(0)
 const qrLabel = ref('')
 const qrAdditionalText = ref('')
 const selectedAdditionalTextPlacement = ref<AdditionalTextPlacement>('below')
-const selectedLabelPosition = ref<LabelPosition>('bottom')
+const selectedLabelPosition = ref<LabelPosition>('top')
 const selectedCenterIcon = ref<CenterIconValue>('none')
 const activeCenterIconCategory = ref<string | null>(null)
 const centerIconSearch = ref('')
@@ -136,8 +136,8 @@ const selectedLabelFont = ref(fallbackLabelFont.value)
 const selectedAdditionalTextFont = ref(fallbackLabelFont.value)
 const labelFontItems = labelFonts.map(font => ({ label: font.label, value: font.value, class: font.class }))
 const labelPositionOptions: LabelPositionOption[] = [
-  { label: 'Bottom', value: 'bottom', disabled: false },
   { label: 'Top', value: 'top', disabled: false },
+  { label: 'Bottom', value: 'bottom', disabled: false },
   { label: 'Right', value: 'right', disabled: false },
   { label: 'Left', value: 'left', disabled: false }
 ]
@@ -1011,7 +1011,7 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   qrLabel.value = typeof payload.label === 'string' ? payload.label : ''
   qrAdditionalText.value = typeof payload.additionalText === 'string' ? payload.additionalText.slice(0, maxAdditionalTextLength) : ''
   selectedAdditionalTextPlacement.value = payload.additionalTextPlacement === 'above' ? 'above' : 'below'
-  selectedLabelPosition.value = labelPositionOptions.some(option => option.value === payload.labelPosition) ? payload.labelPosition : 'bottom'
+  selectedLabelPosition.value = labelPositionOptions.some(option => option.value === payload.labelPosition) ? payload.labelPosition : 'top'
   selectedLabelFont.value = labelFonts.some(font => font.value === payload.labelFont) ? payload.labelFont : fallbackLabelFont.value
   selectedAdditionalTextFont.value = labelFonts.some(font => font.value === payload.additionalTextFont) ? payload.additionalTextFont : fallbackLabelFont.value
   labelSizeStep.value = clampTextSizeStep(payload.labelSizeStep)

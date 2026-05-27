@@ -6,6 +6,9 @@ test('aligns label panel controls', async ({ page }) => {
   await page.locator('input[type="url"]').fill('https://example.com')
   await page.getByRole('button', { name: 'Label', exact: true }).click()
 
+  await expect(page.getByRole('radio', { name: 'Top' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radiogroup', { name: 'Label position' }).locator('button').first()).toHaveText('Top')
+
   const metrics = await page.evaluate(() => {
     function bounds(selector: string) {
       const element = document.querySelector(selector)
