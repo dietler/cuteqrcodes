@@ -42,4 +42,5 @@ export type SavedQrFolderWithCodes = SavedQrFolder & {
   qrCodes: SavedQrCode[]
 }
 
+export const currentQrDraftStorageKey = 'cuteqrcodes.currentQrDraft'
 export const editQrPayloadStorageKey = 'cuteqrcodes.editQrPayload'

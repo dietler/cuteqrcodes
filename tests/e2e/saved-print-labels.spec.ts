@@ -224,6 +224,29 @@ test("saved QR print link loads labels from the saved id", async ({ page }) => {
   expect(largeCirclePreview?.width).toBeCloseTo(336, 0);
   expect(largeCirclePreview?.height).toBeCloseTo(336, 0);
 
+  await page.getByRole("radio", { name: "Jumbo" }).click();
+  await expect(
+    page.getByTestId("label-template-preview-avery-presta-94268"),
+  ).toBeVisible();
+  await expect(
+    page.getByTestId("label-template-preview-width-avery-presta-94268"),
+  ).toHaveText('8.5"');
+  await expect(
+    page.getByTestId("label-template-preview-height-avery-presta-94268"),
+  ).toHaveText('11"');
+  await expect(
+    page.getByTestId("label-template-preview-width-avery-presta-94261"),
+  ).toHaveText('8"');
+  await expect(
+    page.getByTestId("label-template-preview-height-avery-presta-94261"),
+  ).toHaveText('3.5"');
+  await expect(
+    page.getByTestId("label-template-preview-width-avery-presta-94229"),
+  ).toHaveText('8.5"');
+  await expect(
+    page.getByTestId("label-template-preview-height-avery-presta-94229"),
+  ).toHaveText('5.5"');
+
   await page.getByRole("radio", { name: "Rectangle" }).click();
 
   const rotatedArtwork = await page

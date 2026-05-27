@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useSession } from '~~/lib/auth-client'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
-import { editQrPayloadStorageKey, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
+import { currentQrDraftStorageKey, editQrPayloadStorageKey, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
 import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
 type QrTool = 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
@@ -94,6 +95,12 @@ type RadialGradientCoordinates = {
   r: number
 }
 
+type CurrentQrDraftPayload = SavedQrPayload & {
+  activeCenterIconCategory?: string | null
+  activeTool?: QrTool | null
+  centerIconSearch?: string
+}
+
 const qrStore = useQrStore()
 const session = useSession()
 
@@ -130,6 +137,7 @@ const isSaveDialogOpen = ref(false)
 const isLoadingSaveFolders = ref(false)
 const isCreatingSaveFolder = ref(false)
 const isSavingQr = ref(false)
+let isClearingCurrentQrDraft = false
 const saveQrName = ref('')
 const newSaveFolderName = ref('')
 const selectedSaveFolderId = ref('')
@@ -1218,20 +1226,74 @@ function createSavedQrPayload(): SavedQrPayload {
   }
 }
 
+function createCurrentQrDraftPayload(): CurrentQrDraftPayload {
+  return {
+    ...createSavedQrPayload(),
+    activeCenterIconCategory: activeCenterIconCategory.value,
+    activeTool: activeTool.value,
+    centerIconSearch: centerIconSearch.value
+  }
+}
+
+function persistCurrentQrDraft() {
+  if (!import.meta.client || isClearingCurrentQrDraft) {
+    return
+  }
+
+  try {
+    const payload = createCurrentQrDraftPayload()
+
+    if (isDefaultCurrentQrDraftPayload(payload)) {
+      sessionStorage.removeItem(currentQrDraftStorageKey)
+      return
+    }
+
+    sessionStorage.setItem(currentQrDraftStorageKey, JSON.stringify(payload))
+  } catch {
+    // Session storage can be unavailable in private or locked-down browser modes.
+  }
+}
+
+function restoreCurrentQrDraftFromStorage() {
+  const rawPayload = sessionStorage.getItem(currentQrDraftStorageKey)
+
+  if (!rawPayload) {
+    return false
+  }
+
+  try {
+    applyCurrentQrDraftPayload(JSON.parse(rawPayload) as CurrentQrDraftPayload)
+    return true
+  } catch {
+    sessionStorage.removeItem(currentQrDraftStorageKey)
+    printLabelError.value = 'Unable to load the current QR code.'
+    return false
+  }
+}
+
 function restoreSavedQrPayloadFromStorage() {
   const rawPayload = sessionStorage.getItem(editQrPayloadStorageKey)
 
   if (!rawPayload) {
-    return
+    return false
   }
 
   sessionStorage.removeItem(editQrPayloadStorageKey)
 
   try {
     applySavedQrPayload(JSON.parse(rawPayload) as SavedQrPayload)
+    return true
   } catch {
     printLabelError.value = 'Unable to load the saved QR code.'
+    return false
   }
+}
+
+function applyCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
+  applySavedQrPayload(payload)
+  activeTool.value = normalizeActiveTool(payload.activeTool)
+  activeCenterIconCategory.value = normalizeCenterIconCategory(payload.activeCenterIconCategory)
+  centerIconSearch.value = typeof payload.centerIconSearch === 'string' ? payload.centerIconSearch : ''
 }
 
 function applySavedQrPayload(payload: SavedQrPayload) {
@@ -1257,6 +1319,103 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   selectedCenterIcon.value = centerIconOptions.some(icon => icon.value === payload.centerIcon) ? payload.centerIcon : 'none'
   selectedBorder.value = borderStyles.some(border => border.value === payload.border) ? payload.border as BorderValue : 'none'
   activeCenterIconCategory.value = null
+}
+
+function clearCurrentQr() {
+  isClearingCurrentQrDraft = true
+  resetCurrentQrState()
+
+  if (import.meta.client) {
+    sessionStorage.removeItem(currentQrDraftStorageKey)
+    sessionStorage.removeItem(labelPrintPayloadStorageKey)
+  }
+
+  void nextTick(() => {
+    if (import.meta.client) {
+      sessionStorage.removeItem(currentQrDraftStorageKey)
+    }
+
+    isClearingCurrentQrDraft = false
+  })
+}
+
+function resetCurrentQrState() {
+  qrStore.url = ''
+  selectedQrColor.value = null
+  selectedColorStep.value = 500
+  selectedGradientStyle.value = 'none'
+  selectedGradientDirection.value = 'left-to-right'
+  selectedGradientSecondColorName.value = null
+  selectedGradientThirdColorName.value = null
+  labelSizeStep.value = 0
+  additionalTextSizeStep.value = 0
+  qrLabel.value = ''
+  qrAdditionalText.value = ''
+  selectedAdditionalTextPlacement.value = 'below'
+  selectedLabelPosition.value = 'top'
+  selectedLabelFont.value = fallbackLabelFont.value
+  selectedAdditionalTextFont.value = fallbackLabelFont.value
+  selectedCenterIcon.value = 'none'
+  selectedBorder.value = 'none'
+  activeTool.value = null
+  activeCenterIconCategory.value = null
+  centerIconSearch.value = ''
+  printLabelError.value = ''
+  isSaveDialogOpen.value = false
+  saveQrName.value = ''
+  newSaveFolderName.value = ''
+  selectedSaveFolderId.value = ''
+  saveQrError.value = ''
+}
+
+function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
+  return payload.url === ''
+    && payload.colorName === null
+    && payload.colorStep === 500
+    && payload.label === ''
+    && payload.additionalText === ''
+    && payload.additionalTextPlacement === 'below'
+    && payload.labelPosition === 'top'
+    && payload.labelFont === fallbackLabelFont.value
+    && payload.additionalTextFont === fallbackLabelFont.value
+    && payload.labelSizeStep === 0
+    && payload.additionalTextSizeStep === 0
+    && payload.centerIcon === 'none'
+    && payload.border === 'none'
+    && (!payload.gradientStyle || payload.gradientStyle === 'none')
+    && (!payload.gradientDirection || payload.gradientDirection === 'left-to-right')
+    && !payload.gradientSecondColorName
+    && !payload.gradientThirdColorName
+    && !payload.activeTool
+    && !payload.activeCenterIconCategory
+    && !payload.centerIconSearch
+}
+
+function normalizeActiveTool(value: unknown): QrTool | null {
+  if (!hasQrContent.value || !isQrTool(value)) {
+    return null
+  }
+
+  if ((value === 'step' || value === 'gradient') && !selectedQrColor.value) {
+    return 'colors'
+  }
+
+  return value
+}
+
+function normalizeCenterIconCategory(value: unknown) {
+  return typeof value === 'string' && centerIconCategoryList.some(category => category.value === value)
+    ? value
+    : null
+}
+
+function isQrTool(value: unknown): value is QrTool {
+  return value === 'colors'
+    || value === 'step'
+    || value === 'gradient'
+    || value === 'label'
+    || value === 'icon'
+    || value === 'border'
 }
 
 function clampTextSizeStep(value: unknown) {
@@ -1367,10 +1526,14 @@ function dismissHomepageDescription() {
 }
 
 onMounted(async () => {
-  restoreSavedQrPayloadFromStorage()
+  if (!restoreSavedQrPayloadFromStorage()) {
+    restoreCurrentQrDraftFromStorage()
+  }
+
   await nextTick()
   updateScrollStates()
   window.addEventListener('resize', updateScrollStates)
+  window.addEventListener('pagehide', persistCurrentQrDraft)
 
   await updateTextMeasurements()
   void document.fonts?.ready.then(updateTextMeasurements)
@@ -1385,9 +1548,36 @@ watch(hasQrContent, (hasContent) => {
     activeTool.value = null
   }
 })
+watch([
+  () => qrStore.url,
+  selectedQrColor,
+  selectedColorStep,
+  selectedGradientStyle,
+  selectedGradientDirection,
+  selectedGradientSecondColorName,
+  selectedGradientThirdColorName,
+  labelSizeStep,
+  additionalTextSizeStep,
+  qrLabel,
+  qrAdditionalText,
+  selectedAdditionalTextPlacement,
+  selectedLabelPosition,
+  selectedLabelFont,
+  selectedAdditionalTextFont,
+  selectedCenterIcon,
+  selectedBorder,
+  activeTool,
+  activeCenterIconCategory,
+  centerIconSearch
+], persistCurrentQrDraft)
+
+onBeforeRouteLeave(() => {
+  persistCurrentQrDraft()
+})
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateScrollStates)
+  window.removeEventListener('pagehide', persistCurrentQrDraft)
 })
 </script>
 
@@ -1403,7 +1593,13 @@ onUnmounted(() => {
           Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on.
         </p>
         <p class="mt-2">
-          Register for an account to Save QR Code designs.
+          <NuxtLink
+            to="/register"
+            class="font-semibold text-primary underline underline-offset-2 transition hover:text-primary/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            Register
+          </NuxtLink>
+          for an account to Save QR Code designs.
         </p>
         <button
           aria-label="Dismiss homepage description"
@@ -1422,14 +1618,26 @@ onUnmounted(() => {
 
     <UCard>
       <UFormField label="URL">
-        <UInput
-          v-model="qrStore.url"
-          autofocus
-          class="w-full"
-          icon="i-lucide-link"
-          size="xl"
-          type="url"
-        />
+        <UFieldGroup class="w-full">
+          <UInput
+            v-model="qrStore.url"
+            autofocus
+            class="min-w-0 flex-1"
+            icon="i-lucide-link"
+            size="xl"
+            type="url"
+          />
+          <UButton
+            aria-label="Clear current QR code"
+            color="neutral"
+            icon="i-lucide-rotate-ccw"
+            size="xl"
+            variant="subtle"
+            @click="clearCurrentQr"
+          >
+            Clear
+          </UButton>
+        </UFieldGroup>
         <p
           v-if="!hasQrContent"
           class="mt-2 text-sm text-muted"

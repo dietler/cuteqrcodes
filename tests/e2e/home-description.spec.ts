@@ -13,6 +13,7 @@ test('dismisses the homepage description and remembers it with a cookie', async 
   await expect(description).toBeVisible()
   await expect(description.getByText(descriptionText, { exact: true })).toBeVisible()
   await expect(description.getByText(saveDescriptionText, { exact: true })).toBeVisible()
+  await expect(description.getByRole('link', { name: 'Register' })).toHaveAttribute('href', '/register')
 
   await page.getByRole('button', { name: 'Dismiss homepage description' }).click()
 

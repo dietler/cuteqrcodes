@@ -43,6 +43,7 @@ const labelTypeOptions: { label: string; value: LabelType }[] = [
   { label: "Rectangle", value: "rectangle" },
   { label: "Square", value: "square" },
   { label: "Circle", value: "circle" },
+  { label: "Jumbo", value: "jumbo" },
 ];
 const labelSortOrderOptions: { label: string; value: LabelSortOrder }[] = [
   { label: "Largest to Smallest", value: "largest-to-smallest" },

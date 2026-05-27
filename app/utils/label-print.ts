@@ -10,7 +10,7 @@ export type LabelPrintPayload = {
   width: number;
 };
 
-export type LabelTemplateType = "rectangle" | "square" | "circle";
+export type LabelTemplateType = "rectangle" | "square" | "circle" | "jumbo";
 
 export type LabelTemplateLayout = {
   columns: number;
@@ -451,6 +451,51 @@ export const labelTemplates: LabelTemplate[] = [
       labelHeight: 1.5,
       marginLeft: 0.5,
       marginTop: 0.75,
+    }),
+  }),
+  createLabelTemplate({
+    id: "avery-presta-94268",
+    label: '8.5" x 11"',
+    description: "Avery Presta® Template 94268",
+    templateNumber: "94268",
+    type: "jumbo",
+    layout: createLayout({
+      columns: 1,
+      rows: 1,
+      labelWidth: 8.5,
+      labelHeight: 11,
+      marginLeft: 0,
+      marginTop: 0,
+    }),
+  }),
+  createLabelTemplate({
+    id: "avery-presta-94261",
+    label: '3.5" x 8"',
+    description: "Avery Presta® Template 94261",
+    templateNumber: "94261",
+    type: "jumbo",
+    layout: createLayout({
+      columns: 1,
+      rows: 2,
+      labelWidth: 8,
+      labelHeight: 3.5,
+      marginLeft: 0.5,
+      marginTop: 1.5,
+    }),
+  }),
+  createLabelTemplate({
+    id: "avery-presta-94229",
+    label: '5.5" x 8.5"',
+    description: "Avery Presta® Template 94229",
+    templateNumber: "94229",
+    type: "jumbo",
+    layout: createLayout({
+      columns: 1,
+      rows: 2,
+      labelWidth: 8.5,
+      labelHeight: 5.5,
+      marginLeft: 0,
+      marginTop: 0,
     }),
   }),
 ];
