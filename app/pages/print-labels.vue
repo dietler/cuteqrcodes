@@ -38,6 +38,10 @@ const isLoadingPrintPayload = ref(false);
 const activePdfAction = ref("");
 const pdfError = ref("");
 const route = useRoute();
+const pdfChromeMargin = 18;
+const pdfHeaderFontSize = 8;
+const pdfFooterFontSize = 7;
+const pdfChromeHorizontalPadding = 24;
 
 const labelTypeOptions: { label: string; value: LabelType }[] = [
   { label: "Rectangle", value: "rectangle" },
@@ -535,15 +539,16 @@ async function createLabelPdfBytes(
   const imageWidth = artworkPlacement.width;
   const imageHeight = artworkPlacement.height;
 
-  drawPdfHeader(page, {
-    logoImage: headerLogoImage,
-    name: payload.name || payload.title,
-    pageHeight: layout.pageHeight,
-    pageWidth: layout.pageWidth,
-    topMargin: layout.marginTop,
-    url: payload.url || payload.title,
-    boldFont: headerBoldFont,
-  });
+  if (shouldDrawPdfChrome(template)) {
+    drawPdfHeader(page, {
+      logoImage: headerLogoImage,
+      name: payload.name || payload.title,
+      pageHeight: layout.pageHeight,
+      pageWidth: layout.pageWidth,
+      url: payload.url || payload.title,
+      boldFont: headerBoldFont,
+    });
+  }
 
   for (let index = 0; index < labelsPerSheet; index++) {
     const column = index % layout.columns;
@@ -571,22 +576,30 @@ async function createLabelPdfBytes(
     });
   }
 
-  drawPdfFooter(page, {
-    bottomMargin: getLayoutBottomMargin(layout),
-    font: footerFont,
-    pageWidth: layout.pageWidth,
-    template,
-  });
+  if (shouldDrawPdfChrome(template)) {
+    drawPdfFooter(page, {
+      font: footerFont,
+      pageWidth: layout.pageWidth,
+      template,
+    });
+  }
 
   return pdfDocument.save();
 }
 
-function getLayoutBottomMargin(layout: LabelTemplate["layout"]) {
+function shouldDrawPdfChrome(template: LabelTemplate) {
+  return !isFullSheetJumboTemplate(template);
+}
+
+function isFullSheetJumboTemplate(template: LabelTemplate) {
+  const { layout } = template;
+
   return (
-    layout.pageHeight -
-    layout.marginTop -
-    layout.rows * layout.labelHeight -
-    (layout.rows - 1) * layout.rowGap
+    template.type === "jumbo" &&
+    layout.columns === 1 &&
+    layout.rows === 1 &&
+    Math.abs(layout.labelWidth - layout.pageWidth) < 0.01 &&
+    Math.abs(layout.labelHeight - layout.pageHeight) < 0.01
   );
 }
 
@@ -598,7 +611,6 @@ function drawPdfHeader(
     name,
     pageHeight,
     pageWidth,
-    topMargin,
     url,
   }: {
     boldFont: PDFFont;
@@ -606,22 +618,15 @@ function drawPdfHeader(
     name: string;
     pageHeight: number;
     pageWidth: number;
-    topMargin: number;
     url: string;
   },
 ) {
-  if (topMargin < 24) {
-    return;
-  }
-
-  const headerBottom = pageHeight - topMargin;
-  const horizontalPadding = 24;
-  const textFontSize = Math.min(9, Math.max(7, topMargin * 0.24));
-  const logoSize = textFontSize * 2;
-  const logoY = headerBottom + (topMargin - logoSize) / 2;
-  const textX = horizontalPadding + logoSize + 8;
-  const maxTextWidth = pageWidth - textX - horizontalPadding;
-  const textY = headerBottom + (topMargin - textFontSize) / 2;
+  const logoSize = pdfHeaderFontSize * 2;
+  const headerTop = pageHeight - pdfChromeMargin;
+  const logoY = headerTop - logoSize;
+  const textX = pdfChromeHorizontalPadding + logoSize + 8;
+  const maxTextWidth = pageWidth - textX - pdfChromeHorizontalPadding;
+  const textY = headerTop - logoSize / 2 - pdfHeaderFontSize / 2;
   const headerText = ["QR Codes On Labels", name, url]
     .map((value) => value.trim())
     .filter(Boolean)
@@ -630,15 +635,15 @@ function drawPdfHeader(
   page.drawImage(logoImage, {
     height: logoSize,
     width: logoSize,
-    x: horizontalPadding,
+    x: pdfChromeHorizontalPadding,
     y: logoY,
   });
   page.drawText(
-    truncatePdfText(boldFont, headerText, textFontSize, maxTextWidth),
+    truncatePdfText(boldFont, headerText, pdfHeaderFontSize, maxTextWidth),
     {
       color: rgb(0.07, 0.08, 0.1),
       font: boldFont,
-      size: textFontSize,
+      size: pdfHeaderFontSize,
       x: textX,
       y: textY,
     },
@@ -648,34 +653,26 @@ function drawPdfHeader(
 function drawPdfFooter(
   page: PDFPage,
   {
-    bottomMargin,
     font,
     pageWidth,
     template,
   }: {
-    bottomMargin: number;
     font: PDFFont;
     pageWidth: number;
     template: LabelTemplate;
   },
 ) {
-  if (bottomMargin < 16) {
-    return;
-  }
-
-  const horizontalPadding = 24;
-  const maxTextWidth = pageWidth - horizontalPadding * 2;
-  const textFontSize = Math.min(8, Math.max(6, bottomMargin * 0.22));
+  const maxTextWidth = pageWidth - pdfChromeHorizontalPadding * 2;
   const footerText = `Template size: ${template.label} - ${template.description}`;
-  const text = truncatePdfText(font, footerText, textFontSize, maxTextWidth);
-  const textWidth = font.widthOfTextAtSize(text, textFontSize);
+  const text = truncatePdfText(font, footerText, pdfFooterFontSize, maxTextWidth);
+  const textWidth = font.widthOfTextAtSize(text, pdfFooterFontSize);
 
   page.drawText(text, {
     color: rgb(0.39, 0.45, 0.54),
     font,
-    size: textFontSize,
-    x: Math.max(horizontalPadding, (pageWidth - textWidth) / 2),
-    y: Math.max(4, (bottomMargin - textFontSize) / 2),
+    size: pdfFooterFontSize,
+    x: Math.max(pdfChromeHorizontalPadding, (pageWidth - textWidth) / 2),
+    y: pdfChromeMargin,
   });
 }
 
@@ -908,7 +905,8 @@ function getErrorStatusCode(error: unknown) {
 
 <template>
   <UContainer
-    class="flex min-h-[calc(100svh-4rem)] max-w-3xl flex-col gap-4 py-4 sm:gap-6 sm:py-6"
+    class="flex min-h-[calc(100svh-4rem)] max-w-7xl flex-col gap-4 py-4 sm:gap-6 sm:py-6"
+    data-testid="print-labels-page"
   >
     <div class="flex items-center justify-between gap-3">
       <UButton
@@ -1008,11 +1006,15 @@ function getErrorStatusCode(error: unknown) {
             </UFormField>
           </div>
 
-          <div class="space-y-2">
+          <div
+            class="mx-auto grid w-full max-w-5xl gap-3"
+            data-testid="label-template-grid"
+          >
             <div
               v-for="template in activeLabelTemplates"
               :key="template.id"
-              class="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+              class="min-w-0 rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-950"
+              :data-testid="`label-template-card-${template.id}`"
             >
               <div class="min-w-0 space-y-4">
                 <div class="text-center">

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { inflateSync } from "node:zlib";
 
 const labelPrintPayloadStorageKey = "cuteqrcodes.labelPrintPayload";
 
@@ -129,6 +130,59 @@ async function routeSavedPrintFixtures(
   );
 }
 
+type CapturedPdfPurchase = {
+  pdfBase64: string;
+  templateId: string;
+};
+
+async function routePdfPurchaseCapture(
+  page: Page,
+  capturedPurchases: CapturedPdfPurchase[],
+) {
+  await page.route("**/api/credits/pdf-purchases", async (route) => {
+    const body = route.request().postDataJSON() as {
+      pdfBase64?: string;
+      qrTitle?: string;
+      templateId?: string;
+    };
+    const templateId = body.templateId ?? "unknown-template";
+    const pdfBase64 = body.pdfBase64 ?? "";
+
+    capturedPurchases.push({ pdfBase64, templateId });
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        balance: 25,
+        pdf: {
+          createdAt: "2026-05-26T00:00:00.000Z",
+          downloadUrl: `https://example.com/${templateId}.pdf`,
+          id: `pdf-${capturedPurchases.length}`,
+          qrTitle: body.qrTitle ?? "Saved print link",
+          sizeBytes: Buffer.from(pdfBase64, "base64").byteLength,
+          templateId,
+          templateLabel: templateId,
+        },
+      }),
+    });
+  });
+}
+
+async function purchaseTemplatePdf(
+  page: Page,
+  capturedPurchases: CapturedPdfPurchase[],
+  templateId: string,
+) {
+  const expectedPurchaseCount = capturedPurchases.length + 1;
+
+  await page.getByTestId(`label-template-purchase-button-${templateId}`).click();
+  await expect
+    .poll(() => capturedPurchases.length)
+    .toBe(expectedPurchaseCount);
+
+  return capturedPurchases[expectedPurchaseCount - 1]!;
+}
+
 test("saved QR print link loads labels from the saved id", async ({ page }) => {
   await routeSavedPrintFixtures(page);
 
@@ -139,6 +193,46 @@ test("saved QR print link loads labels from the saved id", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/print-labels\?saved=saved-print$/);
   await expect(page.getByText("Saved print link")).toBeVisible();
+
+  const printLabelsPage = await page
+    .getByTestId("print-labels-page")
+    .boundingBox();
+  const desktopTemplateLayout = await page.evaluate(() => {
+    const page = document.querySelector(
+      '[data-testid="print-labels-page"]',
+    ) as HTMLElement | null;
+    const grid = document.querySelector(
+      '[data-testid="label-template-grid"]',
+    ) as HTMLElement | null;
+    const card = document.querySelector(
+      '[data-testid="label-template-card-avery-presta-94100"]',
+    ) as HTMLElement | null;
+
+    if (!page || !grid || !card) {
+      throw new Error("Missing print labels layout elements.");
+    }
+
+    const pageBox = page.getBoundingClientRect();
+    const gridBox = grid.getBoundingClientRect();
+    const cardBox = card.getBoundingClientRect();
+
+    return {
+      cardWidth: cardBox.width,
+      columns: getComputedStyle(grid).gridTemplateColumns
+        .split(" ")
+        .filter(Boolean).length,
+      gridCenterOffset: Math.abs(
+        gridBox.left + gridBox.width / 2 - (pageBox.left + pageBox.width / 2),
+      ),
+      gridWidth: gridBox.width,
+    };
+  });
+
+  expect(printLabelsPage?.width).toBeGreaterThan(1000);
+  expect(desktopTemplateLayout.columns).toBe(1);
+  expect(desktopTemplateLayout.cardWidth).toBeGreaterThan(900);
+  expect(desktopTemplateLayout.gridWidth).toBeGreaterThan(900);
+  expect(desktopTemplateLayout.gridCenterOffset).toBeLessThan(2);
   await expect(
     page.getByTestId("label-template-suggested-badge-avery-presta-94100"),
   ).toBeVisible();
@@ -313,6 +407,63 @@ test("unwatermarked purchase redirects to credits when balance is empty", async 
   await expect(
     page.getByText("Purchase credits before creating an unwatermarked PDF."),
   ).toBeVisible();
+});
+
+test("anchors PDF header and footer to fixed page margins", async ({ page }) => {
+  const capturedPurchases: CapturedPdfPurchase[] = [];
+
+  await page.addInitScript(() => {
+    window.open = () =>
+      ({
+        close() {},
+        location: { href: "" },
+      }) as Window;
+  });
+  await routeSavedPrintFixtures(page, { balance: 25 });
+  await routePdfPurchaseCapture(page, capturedPurchases);
+
+  await page.goto("/print-labels?saved=saved-print");
+  await expect(page.getByText("Saved print link")).toBeVisible();
+
+  await page.getByRole("radio", { name: "Rectangle" }).click();
+  const rectanglePurchase = await purchaseTemplatePdf(
+    page,
+    capturedPurchases,
+    "avery-presta-94256",
+  );
+
+  await page.getByRole("radio", { name: "Circle" }).click();
+  const circlePurchase = await purchaseTemplatePdf(
+    page,
+    capturedPurchases,
+    "avery-presta-94514",
+  );
+
+  await page.getByRole("radio", { name: "Jumbo" }).click();
+  const fullSheetJumboPurchase = await purchaseTemplatePdf(
+    page,
+    capturedPurchases,
+    "avery-presta-94268",
+  );
+
+  const rectangleChrome = getPdfChromeTextPositions(rectanglePurchase.pdfBase64);
+  const circleChrome = getPdfChromeTextPositions(circlePurchase.pdfBase64);
+  const fullSheetJumboChrome = getPdfChromeTextPositions(
+    fullSheetJumboPurchase.pdfBase64,
+  );
+
+  expect(rectangleChrome.header).toBeDefined();
+  expect(rectangleChrome.footer).toBeDefined();
+  expect(circleChrome.header).toBeDefined();
+  expect(circleChrome.footer).toBeDefined();
+  expect(rectangleChrome.header!.y).toBeCloseTo(circleChrome.header!.y, 4);
+  expect(rectangleChrome.footer!.y).toBeCloseTo(circleChrome.footer!.y, 4);
+  expect(792 - rectangleChrome.header!.y).toBeLessThan(36);
+  expect(792 - rectangleChrome.header!.y).toBeGreaterThan(20);
+  expect(rectangleChrome.footer!.y).toBeGreaterThan(12);
+  expect(rectangleChrome.footer!.y).toBeLessThan(28);
+  expect(fullSheetJumboChrome.header).toBeUndefined();
+  expect(fullSheetJumboChrome.footer).toBeUndefined();
 });
 
 test("expands circle shaped QR artwork to fit circular labels", async ({
@@ -534,3 +685,59 @@ test("rotates preview label outline differently for wide QR labels", async ({
     wideOnPortraitArtwork!.height,
   );
 });
+
+function getPdfChromeTextPositions(pdfBase64: string) {
+  const streams = getInflatedPdfStreams(pdfBase64);
+
+  return {
+    footer: findPdfTextPosition(streams, "Template size:"),
+    header: findPdfTextPosition(streams, "QR Codes On Labels"),
+  };
+}
+
+function getInflatedPdfStreams(pdfBase64: string) {
+  const pdfText = Buffer.from(pdfBase64, "base64").toString("latin1");
+  const streamPattern = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+  const streams: string[] = [];
+
+  for (
+    let match = streamPattern.exec(pdfText);
+    match;
+    match = streamPattern.exec(pdfText)
+  ) {
+    try {
+      streams.push(
+        inflateSync(Buffer.from(match[1]!, "latin1")).toString("latin1"),
+      );
+    } catch {
+      // Some PDF streams are not Flate-compressed content streams.
+    }
+  }
+
+  return streams;
+}
+
+function findPdfTextPosition(streams: string[], textNeedle: string) {
+  const textPattern =
+    /1 0 0 1\s+(-?\d+(?:\.\d+)?)\s+(-?\d+(?:\.\d+)?)\s+Tm\s*<([0-9A-Fa-f]+)>\s*Tj/g;
+
+  for (const stream of streams) {
+    for (
+      let match = textPattern.exec(stream);
+      match;
+      match = textPattern.exec(stream)
+    ) {
+      const text = Buffer.from(match[3]!, "hex").toString("latin1");
+
+      if (text.includes(textNeedle)) {
+        return {
+          text,
+          x: Number(match[1]),
+          y: Number(match[2]),
+        };
+      }
+    }
+  }
+
+  return undefined;
+}

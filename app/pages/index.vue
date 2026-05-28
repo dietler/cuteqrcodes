@@ -138,6 +138,7 @@ const hasColorsBefore = ref(false)
 const hasColorsAfter = ref(false)
 const hasIconsBefore = ref(false)
 const hasIconsAfter = ref(false)
+const mobileScrollDesktopWrapClasses = 'flex flex-nowrap gap-2 overflow-x-auto overscroll-x-contain pb-2 md:flex-wrap md:overflow-x-visible md:pb-0'
 const selectedColorStep = ref(500)
 const selectedGradientStyle = ref<GradientStyle>('none')
 const selectedGradientDirection = ref<GradientDirection>('left-to-right')
@@ -579,7 +580,7 @@ const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
 const hasCircleLabelText = computed(() => isCircleShape.value && Object.values(circleLabelTexts.value).some(text => text.length > 0))
 const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0))
 const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value)
-const hasCircleInset = computed(() => isCircleShape.value && (hasBorder.value || hasCircleLabelText.value))
+const hasCircleInset = computed(() => isCircleShape.value)
 const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(line => line.inset + line.strokeWidth / 2)) : 0)
 const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
 const labelIsTop = computed(() => hasLabelText.value && selectedLabelPosition.value === 'top')
@@ -667,6 +668,15 @@ const outputSvgHeight = computed(() => {
   return borderContentInset.value + topLabelHeight.value + topLabelGap.value + qrOutputSize.value + bottomLabelGap.value + bottomLabelHeight.value + outputBottomInset.value - labelBottomTrim.value
 })
 const outputViewBox = computed(() => generatedQr.value.code ? `0 0 ${outputSvgWidth.value} ${outputSvgHeight.value}` : '0 0 1 1')
+const outputCircleRadius = computed(() => Math.min(outputSvgWidth.value, outputSvgHeight.value) / 2)
+const qrPreviewCardClass = computed(() => [
+  'w-full max-w-[min(86svw,68svh)]',
+  isCircleShape.value ? 'rounded-full' : ''
+])
+const qrPreviewSurfaceClass = computed(() => [
+  'w-full bg-white',
+  isCircleShape.value ? 'rounded-full' : 'rounded-lg'
+])
 const labelX = computed(() => {
   if (labelIsLeft.value) {
     return borderContentInset.value + sideLabelWidth.value / 2
@@ -896,7 +906,31 @@ function getRadialGradientCoordinates(box: GradientBox): RadialGradientCoordinat
 }
 
 function selectQrShape(shape: QrShape) {
+  if (shape === selectedQrShape.value) {
+    return
+  }
+
+  transferLabelTextForShape(shape)
   selectedQrShape.value = shape
+}
+
+function transferLabelTextForShape(shape: QrShape) {
+  if (shape === 'circle') {
+    circleLabelTop.value = qrLabel.value
+    circleLabelBottom.value = qrAdditionalText.value
+    circleLabelLeft.value = ''
+    circleLabelRight.value = ''
+    qrLabel.value = ''
+    qrAdditionalText.value = ''
+    return
+  }
+
+  qrLabel.value = circleLabelTop.value
+  qrAdditionalText.value = circleLabelBottom.value.slice(0, maxAdditionalTextLength)
+  circleLabelTop.value = ''
+  circleLabelBottom.value = ''
+  circleLabelLeft.value = ''
+  circleLabelRight.value = ''
 }
 
 function selectBorder(border: BorderStyle) {
@@ -2011,7 +2045,10 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <UContainer class="flex min-h-[calc(100svh-4rem)] max-w-3xl flex-col gap-4 py-4 sm:gap-6 sm:py-6">
+  <UContainer
+    data-testid="qr-builder-page"
+    class="flex min-h-[calc(100svh-4rem)] max-w-7xl flex-col gap-4 py-4 sm:gap-6 sm:py-6"
+  >
     <section
       v-if="shouldShowHomepageDescription"
       aria-label="QR code creator description"
@@ -2078,270 +2115,148 @@ onUnmounted(() => {
 
     <div
       v-if="hasQrContent"
-      class="space-y-3"
+      data-testid="qr-builder-workspace"
+      class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(22rem,34rem)] xl:items-start"
     >
-      <div class="flex flex-wrap items-center gap-2">
-        <div
-          aria-label="QR code tools"
-          class="flex flex-wrap items-center gap-2"
-          role="toolbar"
-        >
-          <UButton
-            :aria-pressed="activeTool === 'shape'"
-            :color="activeTool === 'shape' ? 'primary' : 'neutral'"
-            icon="i-lucide-shapes"
-            :variant="activeTool === 'shape' ? 'solid' : 'subtle'"
-            @click="selectTool('shape')"
+      <div
+        data-testid="qr-builder-controls"
+        class="min-w-0 space-y-3"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <div
+            aria-label="QR code tools"
+            class="flex flex-wrap items-center gap-2"
+            role="toolbar"
           >
-            Shape
-          </UButton>
-          <UFieldGroup>
             <UButton
-              :aria-pressed="activeTool === 'colors'"
-              :color="activeTool === 'colors' ? 'primary' : 'neutral'"
-              icon="i-lucide-palette"
-              :variant="activeTool === 'colors' ? 'solid' : 'subtle'"
-              @click="selectTool('colors')"
+              :aria-pressed="activeTool === 'shape'"
+              :color="activeTool === 'shape' ? 'primary' : 'neutral'"
+              icon="i-lucide-shapes"
+              :variant="activeTool === 'shape' ? 'solid' : 'subtle'"
+              @click="selectTool('shape')"
             >
-              Colors
+              Shape
+            </UButton>
+            <UFieldGroup>
+              <UButton
+                :aria-pressed="activeTool === 'colors'"
+                :color="activeTool === 'colors' ? 'primary' : 'neutral'"
+                icon="i-lucide-palette"
+                :variant="activeTool === 'colors' ? 'solid' : 'subtle'"
+                @click="selectTool('colors')"
+              >
+                Colors
+              </UButton>
+              <UButton
+                v-if="selectedQrColor"
+                :aria-pressed="activeTool === 'step'"
+                :color="activeTool === 'step' ? 'primary' : 'neutral'"
+                icon="i-lucide-lab-stairs"
+                :variant="activeTool === 'step' ? 'solid' : 'subtle'"
+                @click="selectTool('step')"
+              >
+                Steps
+              </UButton>
+              <UButton
+                v-if="selectedQrColor"
+                :aria-pressed="activeTool === 'gradient'"
+                :color="activeTool === 'gradient' ? 'primary' : 'neutral'"
+                icon="i-lucide-sparkles"
+                :variant="activeTool === 'gradient' ? 'solid' : 'subtle'"
+                @click="selectTool('gradient')"
+              >
+                Gradient
+              </UButton>
+            </UFieldGroup>
+            <UButton
+              :aria-pressed="activeTool === 'label'"
+              :color="activeTool === 'label' ? 'primary' : 'neutral'"
+              icon="i-lucide-type"
+              :variant="activeTool === 'label' ? 'solid' : 'subtle'"
+              @click="selectTool('label')"
+            >
+              Label
             </UButton>
             <UButton
-              v-if="selectedQrColor"
-              :aria-pressed="activeTool === 'step'"
-              :color="activeTool === 'step' ? 'primary' : 'neutral'"
-              icon="i-lucide-lab-stairs"
-              :variant="activeTool === 'step' ? 'solid' : 'subtle'"
-              @click="selectTool('step')"
+              :aria-pressed="activeTool === 'icon'"
+              :color="activeTool === 'icon' ? 'primary' : 'neutral'"
+              icon="i-lucide-image"
+              :variant="activeTool === 'icon' ? 'solid' : 'subtle'"
+              @click="selectTool('icon')"
             >
-              Steps
+              Icon
             </UButton>
             <UButton
-              v-if="selectedQrColor"
-              :aria-pressed="activeTool === 'gradient'"
-              :color="activeTool === 'gradient' ? 'primary' : 'neutral'"
-              icon="i-lucide-sparkles"
-              :variant="activeTool === 'gradient' ? 'solid' : 'subtle'"
-              @click="selectTool('gradient')"
+              :aria-pressed="activeTool === 'border'"
+              :color="activeTool === 'border' ? 'primary' : 'neutral'"
+              :icon="isCircleShape ? 'i-lucide-circle' : 'i-lucide-square'"
+              :variant="activeTool === 'border' ? 'solid' : 'subtle'"
+              @click="selectTool('border')"
             >
-              Gradient
+              Border
             </UButton>
-          </UFieldGroup>
-          <UButton
-            :aria-pressed="activeTool === 'label'"
-            :color="activeTool === 'label' ? 'primary' : 'neutral'"
-            icon="i-lucide-type"
-            :variant="activeTool === 'label' ? 'solid' : 'subtle'"
-            @click="selectTool('label')"
-          >
-            Label
-          </UButton>
-          <UButton
-            :aria-pressed="activeTool === 'icon'"
-            :color="activeTool === 'icon' ? 'primary' : 'neutral'"
-            icon="i-lucide-image"
-            :variant="activeTool === 'icon' ? 'solid' : 'subtle'"
-            @click="selectTool('icon')"
-          >
-            Icon
-          </UButton>
-          <UButton
-            :aria-pressed="activeTool === 'border'"
-            :color="activeTool === 'border' ? 'primary' : 'neutral'"
-            :icon="isCircleShape ? 'i-lucide-circle' : 'i-lucide-square'"
-            :variant="activeTool === 'border' ? 'solid' : 'subtle'"
-            @click="selectTool('border')"
-          >
-            Border
-          </UButton>
+          </div>
         </div>
-      </div>
 
-      <div
-        v-if="activeTool === 'shape'"
-        aria-label="QR code shape"
-        class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-        role="radiogroup"
-      >
-        <button
-          v-for="option in qrShapeOptions"
-          :key="option.value"
-          :aria-label="option.label"
-          :aria-checked="selectedQrShape === option.value"
-          class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-          :class="selectedQrShape === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-          role="radio"
-          type="button"
-          @click="selectQrShape(option.value)"
-        >
-          <UIcon
-            :name="option.icon"
-            class="size-4"
-          />
-          <span>{{ option.label }}</span>
-        </button>
-      </div>
-
-      <div
-        v-else-if="activeTool === 'colors'"
-        class="relative"
-      >
         <div
-          ref="colorScroller"
+          v-if="activeTool === 'shape'"
+          aria-label="QR code shape"
           class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-          @scroll="updateColorScrollState"
+          role="radiogroup"
         >
           <button
-            aria-label="Use Black for the QR code"
-            :aria-pressed="!selectedQrColor"
+            v-for="option in qrShapeOptions"
+            :key="option.value"
+            :aria-label="option.label"
+            :aria-checked="selectedQrShape === option.value"
             class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-            :class="!selectedQrColor ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+            :class="selectedQrShape === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+            role="radio"
             type="button"
-            @click="selectBlackColor"
+            @click="selectQrShape(option.value)"
           >
-            <span
-              aria-hidden="true"
-              class="size-4 rounded-full bg-black ring-1 ring-black/10"
+            <UIcon
+              :name="option.icon"
+              class="size-4"
             />
-            <span>Black</span>
-          </button>
-
-          <button
-            v-for="color in tailwindColors"
-            :key="color.name"
-            :aria-label="`Use ${color.name} for the QR code`"
-            :aria-pressed="selectedQrColor?.name === color.name"
-            class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-            :class="selectedQrColor?.name === color.name ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-            type="button"
-            @click="selectQrColor(color)"
-          >
-            <span
-              aria-hidden="true"
-              class="size-4 rounded-full ring-1 ring-black/10"
-              :class="getTailwindColorClass(color, 'bg')"
-            />
-            <span>{{ color.name }}</span>
+            <span>{{ option.label }}</span>
           </button>
         </div>
 
         <div
-          v-if="hasColorsBefore"
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
-        />
-        <div
-          v-if="hasColorsAfter"
-          aria-hidden="true"
-          class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
-        />
-      </div>
-
-      <div
-        v-else-if="activeTool === 'step'"
-        class="rounded-lg border border-default bg-default p-4"
-      >
-        <div class="flex items-center justify-between gap-3 text-sm">
-          <span class="font-medium text-highlighted">Color step</span>
-          <span class="text-muted">{{ selectedQrColor?.name }} {{ selectedColorStep }}</span>
-        </div>
-
-        <div class="mt-4 flex justify-between text-xs font-medium text-muted">
-          <span>Lighter</span>
-          <span>Darker</span>
-        </div>
-
-        <USlider
-          v-model="selectedColorStep"
-          class="mt-1"
-          :max="900"
-          :min="100"
-          :step="100"
-          :tooltip="true"
-        />
-
-        <div class="mt-2 flex justify-between text-xs text-muted">
-          <span
-            v-for="step in tailwindColorSteps"
-            :key="step"
+          v-else-if="activeTool === 'colors'"
+          class="relative"
+        >
+          <div
+            ref="colorScroller"
+            :class="mobileScrollDesktopWrapClasses"
+            data-testid="qr-color-selector"
+            @scroll="updateColorScrollState"
           >
-            {{ step }}
-          </span>
-        </div>
-      </div>
-
-      <div
-        v-else-if="activeTool === 'gradient'"
-        class="space-y-5 rounded-lg border border-default bg-default p-4"
-      >
-        <div class="space-y-2">
-          <span class="text-sm font-medium text-highlighted">Gradient</span>
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              v-for="option in gradientStyleOptions"
-              :key="option.value"
-              :aria-pressed="selectedGradientStyle === option.value"
-              :color="selectedGradientStyle === option.value ? 'primary' : 'neutral'"
-              :icon="option.icon"
-              size="sm"
-              :variant="selectedGradientStyle === option.value ? 'solid' : 'subtle'"
-              @click="selectGradientStyle(option.value)"
-            >
-              {{ option.label }}
-            </UButton>
-          </div>
-        </div>
-
-        <div
-          v-if="selectedGradientStyle === 'directional'"
-          class="space-y-2"
-        >
-          <span class="text-sm font-medium text-highlighted">Direction</span>
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              v-for="option in gradientDirectionOptions"
-              :key="option.value"
-              :aria-pressed="selectedGradientDirection === option.value"
-              :color="selectedGradientDirection === option.value ? 'primary' : 'neutral'"
-              :icon="option.icon"
-              size="sm"
-              :variant="selectedGradientDirection === option.value ? 'solid' : 'subtle'"
-              @click="selectGradientDirection(option.value)"
-            >
-              {{ option.label }}
-            </UButton>
-          </div>
-        </div>
-
-        <div
-          v-if="gradientNeedsColors"
-          class="space-y-2"
-        >
-          <span class="text-sm font-medium text-highlighted">2nd Color</span>
-          <div class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2">
             <button
-              :aria-label="`Use ${blackColorName} as the 2nd gradient color`"
-              :aria-pressed="isSelectedGradientColor(selectedGradientSecondColorName, blackColorName)"
+              aria-label="Use Black for the QR code"
+              :aria-pressed="!selectedQrColor"
               class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="isSelectedGradientColor(selectedGradientSecondColorName, blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              :class="!selectedQrColor ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
               type="button"
-              @click="selectGradientSecondColor(blackColorName)"
+              @click="selectBlackColor"
             >
               <span
                 aria-hidden="true"
                 class="size-4 rounded-full bg-black ring-1 ring-black/10"
               />
-              <span>{{ blackColorName }}</span>
+              <span>Black</span>
             </button>
 
             <button
               v-for="color in tailwindColors"
-              :key="`second-${color.name}`"
-              :aria-label="`Use ${color.name} as the 2nd gradient color`"
-              :aria-pressed="isSelectedGradientColor(selectedGradientSecondColorName, color.name)"
+              :key="color.name"
+              :aria-label="`Use ${color.name} for the QR code`"
+              :aria-pressed="selectedQrColor?.name === color.name"
               class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="isSelectedGradientColor(selectedGradientSecondColorName, color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+              :class="selectedQrColor?.name === color.name ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
               type="button"
-              @click="selectGradientSecondColor(color.name)"
+              @click="selectQrColor(color)"
             >
               <span
                 aria-hidden="true"
@@ -2351,103 +2266,314 @@ onUnmounted(() => {
               <span>{{ color.name }}</span>
             </button>
           </div>
+
+          <div
+            v-if="hasColorsBefore"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent md:hidden"
+          />
+          <div
+            v-if="hasColorsAfter"
+            aria-hidden="true"
+            class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
+          />
         </div>
 
         <div
-          v-if="gradientNeedsColors"
-          class="space-y-2"
+          v-else-if="activeTool === 'step'"
+          class="rounded-lg border border-default bg-default p-4"
         >
-          <span class="text-sm font-medium text-highlighted">3rd Color</span>
-          <div class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2">
-            <button
-              aria-label="Use no 3rd gradient color"
-              :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, null)"
-              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="isSelectedGradientColor(selectedGradientThirdColorName, null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectGradientThirdColor(null)"
-            >
-              <UIcon
-                aria-hidden="true"
-                class="size-4"
-                name="i-lucide-ban"
-              />
-              <span>No 3rd Color</span>
-            </button>
+          <div class="flex items-center justify-between gap-3 text-sm">
+            <span class="font-medium text-highlighted">Color step</span>
+            <span class="text-muted">{{ selectedQrColor?.name }} {{ selectedColorStep }}</span>
+          </div>
 
-            <button
-              :aria-label="`Use ${blackColorName} as the 3rd gradient color`"
-              :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, blackColorName)"
-              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="isSelectedGradientColor(selectedGradientThirdColorName, blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectGradientThirdColor(blackColorName)"
-            >
-              <span
-                aria-hidden="true"
-                class="size-4 rounded-full bg-black ring-1 ring-black/10"
-              />
-              <span>{{ blackColorName }}</span>
-            </button>
+          <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+            <span>Lighter</span>
+            <span>Darker</span>
+          </div>
 
-            <button
-              v-for="color in tailwindColors"
-              :key="`third-${color.name}`"
-              :aria-label="`Use ${color.name} as the 3rd gradient color`"
-              :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, color.name)"
-              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="isSelectedGradientColor(selectedGradientThirdColorName, color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectGradientThirdColor(color.name)"
+          <USlider
+            v-model="selectedColorStep"
+            class="mt-1"
+            :max="900"
+            :min="100"
+            :step="100"
+            :tooltip="true"
+          />
+
+          <div class="mt-2 flex justify-between text-xs text-muted">
+            <span
+              v-for="step in tailwindColorSteps"
+              :key="step"
             >
-              <span
-                aria-hidden="true"
-                class="size-4 rounded-full ring-1 ring-black/10"
-                :class="getTailwindColorClass(color, 'bg')"
-              />
-              <span>{{ color.name }}</span>
-            </button>
+              {{ step }}
+            </span>
           </div>
         </div>
-      </div>
 
-      <div
-        v-else-if="activeTool === 'label'"
-        class="space-y-3"
-      >
         <div
-          v-if="isCircleShape"
+          v-else-if="activeTool === 'gradient'"
+          class="space-y-5 rounded-lg border border-default bg-default p-4"
+        >
+          <div class="space-y-2">
+            <span class="text-sm font-medium text-highlighted">Gradient</span>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-for="option in gradientStyleOptions"
+                :key="option.value"
+                :aria-pressed="selectedGradientStyle === option.value"
+                :color="selectedGradientStyle === option.value ? 'primary' : 'neutral'"
+                :icon="option.icon"
+                size="sm"
+                :variant="selectedGradientStyle === option.value ? 'solid' : 'subtle'"
+                @click="selectGradientStyle(option.value)"
+              >
+                {{ option.label }}
+              </UButton>
+            </div>
+          </div>
+
+          <div
+            v-if="selectedGradientStyle === 'directional'"
+            class="space-y-2"
+          >
+            <span class="text-sm font-medium text-highlighted">Direction</span>
+            <div class="flex flex-wrap gap-2">
+              <UButton
+                v-for="option in gradientDirectionOptions"
+                :key="option.value"
+                :aria-pressed="selectedGradientDirection === option.value"
+                :color="selectedGradientDirection === option.value ? 'primary' : 'neutral'"
+                :icon="option.icon"
+                size="sm"
+                :variant="selectedGradientDirection === option.value ? 'solid' : 'subtle'"
+                @click="selectGradientDirection(option.value)"
+              >
+                {{ option.label }}
+              </UButton>
+            </div>
+          </div>
+
+          <div
+            v-if="gradientNeedsColors"
+            class="space-y-2"
+          >
+            <span class="text-sm font-medium text-highlighted">2nd Color</span>
+            <div
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="gradient-second-color-selector"
+            >
+              <button
+                :aria-label="`Use ${blackColorName} as the 2nd gradient color`"
+                :aria-pressed="isSelectedGradientColor(selectedGradientSecondColorName, blackColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedGradientColor(selectedGradientSecondColorName, blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectGradientSecondColor(blackColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full bg-black ring-1 ring-black/10"
+                />
+                <span>{{ blackColorName }}</span>
+              </button>
+
+              <button
+                v-for="color in tailwindColors"
+                :key="`second-${color.name}`"
+                :aria-label="`Use ${color.name} as the 2nd gradient color`"
+                :aria-pressed="isSelectedGradientColor(selectedGradientSecondColorName, color.name)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedGradientColor(selectedGradientSecondColorName, color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectGradientSecondColor(color.name)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getTailwindColorClass(color, 'bg')"
+                />
+                <span>{{ color.name }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="gradientNeedsColors"
+            class="space-y-2"
+          >
+            <span class="text-sm font-medium text-highlighted">3rd Color</span>
+            <div
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="gradient-third-color-selector"
+            >
+              <button
+                aria-label="Use no 3rd gradient color"
+                :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, null)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedGradientColor(selectedGradientThirdColorName, null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectGradientThirdColor(null)"
+              >
+                <UIcon
+                  aria-hidden="true"
+                  class="size-4"
+                  name="i-lucide-ban"
+                />
+                <span>No 3rd Color</span>
+              </button>
+
+              <button
+                :aria-label="`Use ${blackColorName} as the 3rd gradient color`"
+                :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, blackColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedGradientColor(selectedGradientThirdColorName, blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectGradientThirdColor(blackColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full bg-black ring-1 ring-black/10"
+                />
+                <span>{{ blackColorName }}</span>
+              </button>
+
+              <button
+                v-for="color in tailwindColors"
+                :key="`third-${color.name}`"
+                :aria-label="`Use ${color.name} as the 3rd gradient color`"
+                :aria-pressed="isSelectedGradientColor(selectedGradientThirdColorName, color.name)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedGradientColor(selectedGradientThirdColorName, color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectGradientThirdColor(color.name)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getTailwindColorClass(color, 'bg')"
+                />
+                <span>{{ color.name }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-else-if="activeTool === 'label'"
           class="space-y-3"
         >
           <div
-            v-for="control in circleLabelControls"
-            :key="control.value"
-            class="grid grid-cols-[minmax(0,1fr)_4rem] gap-3 min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem_4rem]"
+            v-if="isCircleShape"
+            class="space-y-3"
           >
-            <UFormField
-              :label="control.label"
-              class="col-span-2 min-[620px]:col-span-1"
+            <div
+              v-for="control in circleLabelControls"
+              :key="control.value"
+              class="grid grid-cols-[minmax(0,1fr)_4rem] gap-3 min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem_4rem]"
             >
+              <UFormField
+                :label="control.label"
+                class="col-span-2 min-[620px]:col-span-1"
+              >
+                <UInput
+                  :model-value="getCircleLabelText(control.value)"
+                  class="w-full"
+                  icon="i-lucide-type"
+                  :placeholder="control.placeholder"
+                  size="lg"
+                  @update:model-value="setCircleLabelText(control.value, String($event))"
+                />
+              </UFormField>
+
+              <UFormField
+                class="col-span-2 min-[620px]:col-span-1"
+                label="Font"
+              >
+                <USelect
+                  :model-value="getCircleLabelFontValue(control.value)"
+                  class="w-full"
+                  :items="labelFontItems"
+                  size="lg"
+                  @update:model-value="setCircleLabelFont(control.value, String($event))"
+                >
+                  <template #default="{ modelValue }">
+                    <span :class="getLabelFont(modelValue).class">
+                      {{ getLabelFont(modelValue).label }}
+                    </span>
+                  </template>
+
+                  <template #item-label="{ item }">
+                    <span :class="getLabelFontFromItem(item).class">
+                      {{ getLabelFontFromItem(item).label }}
+                    </span>
+                  </template>
+                </USelect>
+              </UFormField>
+
+              <UFormField label="Size">
+                <UFieldGroup
+                  class="w-full"
+                  size="lg"
+                >
+                  <UButton
+                    :aria-label="`Decrease ${control.label.toLowerCase()} circle label size`"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canDecreaseCircleLabelSize(control.value)"
+                    icon="i-lucide-minus"
+                    size="lg"
+                    variant="subtle"
+                    @click="decreaseCircleLabelSize(control.value)"
+                  />
+                  <UButton
+                    :aria-label="`Increase ${control.label.toLowerCase()} circle label size`"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canIncreaseCircleLabelSize(control.value)"
+                    icon="i-lucide-plus"
+                    size="lg"
+                    variant="subtle"
+                    @click="increaseCircleLabelSize(control.value)"
+                  />
+                </UFieldGroup>
+              </UFormField>
+
+              <UFormField label="Flip">
+                <UButton
+                  :aria-label="getCircleLabelFlipAriaLabel(control.value)"
+                  class="w-full justify-center"
+                  color="neutral"
+                  :icon="getCircleLabelFlipIcon(control.value)"
+                  size="lg"
+                  variant="subtle"
+                  @click="toggleCircleLabelOrientation(control.value)"
+                />
+              </UFormField>
+            </div>
+          </div>
+
+          <div
+            v-if="!isCircleShape"
+            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+          >
+            <UFormField label="Label">
               <UInput
-                :model-value="getCircleLabelText(control.value)"
+                v-model="qrLabel"
                 class="w-full"
                 icon="i-lucide-type"
-                :placeholder="control.placeholder"
+                placeholder="Add a word"
                 size="lg"
-                @update:model-value="setCircleLabelText(control.value, String($event))"
               />
             </UFormField>
 
-            <UFormField
-              class="col-span-2 min-[620px]:col-span-1"
-              label="Font"
-            >
+            <UFormField label="Font">
               <USelect
-                :model-value="getCircleLabelFontValue(control.value)"
+                v-model="selectedLabelFont"
                 class="w-full"
                 :items="labelFontItems"
                 size="lg"
-                @update:model-value="setCircleLabelFont(control.value, String($event))"
               >
                 <template #default="{ modelValue }">
                   <span :class="getLabelFont(modelValue).class">
@@ -2469,59 +2595,87 @@ onUnmounted(() => {
                 size="lg"
               >
                 <UButton
-                  :aria-label="`Decrease ${control.label.toLowerCase()} circle label size`"
+                  aria-label="Decrease label size"
                   class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
                   color="neutral"
-                  :disabled="!canDecreaseCircleLabelSize(control.value)"
+                  :disabled="!canDecreaseLabelSize"
                   icon="i-lucide-minus"
                   size="lg"
                   variant="subtle"
-                  @click="decreaseCircleLabelSize(control.value)"
+                  @click="decreaseLabelSize"
                 />
                 <UButton
-                  :aria-label="`Increase ${control.label.toLowerCase()} circle label size`"
+                  aria-label="Increase label size"
                   class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
                   color="neutral"
-                  :disabled="!canIncreaseCircleLabelSize(control.value)"
+                  :disabled="!canIncreaseLabelSize"
                   icon="i-lucide-plus"
                   size="lg"
                   variant="subtle"
-                  @click="increaseCircleLabelSize(control.value)"
+                  @click="increaseLabelSize"
                 />
               </UFieldGroup>
             </UFormField>
-
-            <UFormField label="Flip">
-              <UButton
-                :aria-label="getCircleLabelFlipAriaLabel(control.value)"
-                class="w-full justify-center"
-                color="neutral"
-                :icon="getCircleLabelFlipIcon(control.value)"
-                size="lg"
-                variant="subtle"
-                @click="toggleCircleLabelOrientation(control.value)"
-              />
-            </UFormField>
           </div>
-        </div>
 
-        <div
-          v-if="!isCircleShape"
-          class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
-        >
-          <UFormField label="Label">
+          <div
+            v-if="!isCircleShape"
+            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-x-3 gap-y-1.5 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+          >
+            <div class="flex h-6 items-center justify-between gap-3">
+              <label
+                class="text-sm font-medium text-highlighted"
+                for="qr-additional-text"
+              >
+                Additional Text
+              </label>
+              <UFieldGroup size="xs">
+                <UButton
+                  :aria-pressed="selectedAdditionalTextPlacement === 'above'"
+                  :color="selectedAdditionalTextPlacement === 'above' ? 'primary' : 'neutral'"
+                  :variant="selectedAdditionalTextPlacement === 'above' ? 'solid' : 'subtle'"
+                  @click="selectAdditionalTextPlacement('above')"
+                >
+                  Above
+                </UButton>
+                <UButton
+                  :aria-pressed="selectedAdditionalTextPlacement === 'below'"
+                  :color="selectedAdditionalTextPlacement === 'below' ? 'primary' : 'neutral'"
+                  :variant="selectedAdditionalTextPlacement === 'below' ? 'solid' : 'subtle'"
+                  @click="selectAdditionalTextPlacement('below')"
+                >
+                  Below
+                </UButton>
+              </UFieldGroup>
+            </div>
+
+            <span
+              id="qr-additional-font-label"
+              class="flex h-6 items-center text-sm font-medium text-highlighted"
+            >
+              Font
+            </span>
+
+            <span
+              id="qr-additional-size-label"
+              class="flex h-6 items-center text-sm font-medium text-highlighted"
+            >
+              Size
+            </span>
+
             <UInput
-              v-model="qrLabel"
+              id="qr-additional-text"
+              v-model="qrAdditionalText"
               class="w-full"
-              icon="i-lucide-type"
-              placeholder="Add a word"
+              icon="i-lucide-text-cursor-input"
+              :maxlength="maxAdditionalTextLength"
+              placeholder="Add smaller text"
               size="lg"
             />
-          </UFormField>
 
-          <UFormField label="Font">
             <USelect
-              v-model="selectedLabelFont"
+              v-model="selectedAdditionalTextFont"
+              aria-labelledby="qr-additional-font-label"
               class="w-full"
               :items="labelFontItems"
               size="lg"
@@ -2538,344 +2692,89 @@ onUnmounted(() => {
                 </span>
               </template>
             </USelect>
-          </UFormField>
 
-          <UFormField label="Size">
             <UFieldGroup
+              aria-labelledby="qr-additional-size-label"
               class="w-full"
               size="lg"
             >
               <UButton
-                aria-label="Decrease label size"
+                aria-label="Decrease additional text size"
                 class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
                 color="neutral"
-                :disabled="!canDecreaseLabelSize"
+                :disabled="!canDecreaseAdditionalTextSize"
                 icon="i-lucide-minus"
                 size="lg"
                 variant="subtle"
-                @click="decreaseLabelSize"
+                @click="decreaseAdditionalTextSize"
               />
               <UButton
-                aria-label="Increase label size"
+                aria-label="Increase additional text size"
                 class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
                 color="neutral"
-                :disabled="!canIncreaseLabelSize"
+                :disabled="!canIncreaseAdditionalTextSize"
                 icon="i-lucide-plus"
                 size="lg"
                 variant="subtle"
-                @click="increaseLabelSize"
+                @click="increaseAdditionalTextSize"
               />
             </UFieldGroup>
+          </div>
+
+          <UFormField
+            v-if="!isCircleShape"
+            label="Position"
+          >
+            <div
+              aria-label="Label position"
+              class="flex flex-wrap gap-2"
+              role="radiogroup"
+            >
+              <button
+                v-for="option in labelPositionOptions"
+                :key="option.value"
+                :aria-checked="selectedLabelPosition === option.value"
+                :aria-disabled="option.disabled"
+                class="rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45"
+                :class="selectedLabelPosition === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                :disabled="option.disabled"
+                role="radio"
+                type="button"
+                @click="selectLabelPosition(option)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
           </UFormField>
         </div>
 
         <div
-          v-if="!isCircleShape"
-          class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-x-3 gap-y-1.5 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
-        >
-          <div class="flex h-6 items-center justify-between gap-3">
-            <label
-              class="text-sm font-medium text-highlighted"
-              for="qr-additional-text"
-            >
-              Additional Text
-            </label>
-            <UFieldGroup size="xs">
-              <UButton
-                :aria-pressed="selectedAdditionalTextPlacement === 'above'"
-                :color="selectedAdditionalTextPlacement === 'above' ? 'primary' : 'neutral'"
-                :variant="selectedAdditionalTextPlacement === 'above' ? 'solid' : 'subtle'"
-                @click="selectAdditionalTextPlacement('above')"
-              >
-                Above
-              </UButton>
-              <UButton
-                :aria-pressed="selectedAdditionalTextPlacement === 'below'"
-                :color="selectedAdditionalTextPlacement === 'below' ? 'primary' : 'neutral'"
-                :variant="selectedAdditionalTextPlacement === 'below' ? 'solid' : 'subtle'"
-                @click="selectAdditionalTextPlacement('below')"
-              >
-                Below
-              </UButton>
-            </UFieldGroup>
-          </div>
-
-          <span
-            id="qr-additional-font-label"
-            class="flex h-6 items-center text-sm font-medium text-highlighted"
-          >
-            Font
-          </span>
-
-          <span
-            id="qr-additional-size-label"
-            class="flex h-6 items-center text-sm font-medium text-highlighted"
-          >
-            Size
-          </span>
-
-          <UInput
-            id="qr-additional-text"
-            v-model="qrAdditionalText"
-            class="w-full"
-            icon="i-lucide-text-cursor-input"
-            :maxlength="maxAdditionalTextLength"
-            placeholder="Add smaller text"
-            size="lg"
-          />
-
-          <USelect
-            v-model="selectedAdditionalTextFont"
-            aria-labelledby="qr-additional-font-label"
-            class="w-full"
-            :items="labelFontItems"
-            size="lg"
-          >
-            <template #default="{ modelValue }">
-              <span :class="getLabelFont(modelValue).class">
-                {{ getLabelFont(modelValue).label }}
-              </span>
-            </template>
-
-            <template #item-label="{ item }">
-              <span :class="getLabelFontFromItem(item).class">
-                {{ getLabelFontFromItem(item).label }}
-              </span>
-            </template>
-          </USelect>
-
-          <UFieldGroup
-            aria-labelledby="qr-additional-size-label"
-            class="w-full"
-            size="lg"
-          >
-            <UButton
-              aria-label="Decrease additional text size"
-              class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
-              color="neutral"
-              :disabled="!canDecreaseAdditionalTextSize"
-              icon="i-lucide-minus"
-              size="lg"
-              variant="subtle"
-              @click="decreaseAdditionalTextSize"
-            />
-            <UButton
-              aria-label="Increase additional text size"
-              class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
-              color="neutral"
-              :disabled="!canIncreaseAdditionalTextSize"
-              icon="i-lucide-plus"
-              size="lg"
-              variant="subtle"
-              @click="increaseAdditionalTextSize"
-            />
-          </UFieldGroup>
-        </div>
-
-        <UFormField
-          v-if="!isCircleShape"
-          label="Position"
-        >
-          <div
-            aria-label="Label position"
-            class="flex flex-wrap gap-2"
-            role="radiogroup"
-          >
-            <button
-              v-for="option in labelPositionOptions"
-              :key="option.value"
-              :aria-checked="selectedLabelPosition === option.value"
-              :aria-disabled="option.disabled"
-              class="rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45"
-              :class="selectedLabelPosition === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              :disabled="option.disabled"
-              role="radio"
-              type="button"
-              @click="selectLabelPosition(option)"
-            >
-              {{ option.label }}
-            </button>
-          </div>
-        </UFormField>
-      </div>
-
-      <div
-        v-else-if="activeTool === 'icon'"
-        aria-label="Center icon"
-        class="space-y-3"
-      >
-        <UInput
-          v-model="centerIconSearch"
-          class="max-w-sm"
-          icon="i-lucide-search"
-          placeholder="Search icons"
-          size="lg"
-        />
-
-        <div
-          v-if="hasCenterIconSearch"
-          class="relative"
-        >
-          <div
-            ref="iconScroller"
-            aria-label="Matching center icons"
-            class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-            role="radiogroup"
-            @scroll="updateIconScrollState"
-          >
-            <button
-              v-for="icon in filteredCenterIconOptions"
-              :key="icon.value"
-              :aria-label="`Use ${icon.label} as the center icon`"
-              :aria-checked="selectedCenterIcon === icon.value"
-              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-              :class="selectedCenterIcon === icon.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              role="radio"
-              type="button"
-              @click="selectCenterIcon(icon)"
-            >
-              <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
-                <img
-                  :src="icon.src"
-                  alt=""
-                  aria-hidden="true"
-                  class="size-full object-contain"
-                >
-              </span>
-              <span>{{ icon.label }}</span>
-            </button>
-
-            <p
-              v-if="filteredCenterIconOptions.length === 0"
-              class="py-2 text-sm text-muted"
-            >
-              No icons match your search.
-            </p>
-          </div>
-
-          <div
-            v-if="hasIconsBefore"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
-          />
-          <div
-            v-if="hasIconsAfter"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
-          />
-        </div>
-
-        <div
-          v-else-if="!activeCenterIconCategory"
-          class="relative"
-        >
-          <div
-            ref="iconScroller"
-            aria-label="Center icon folders"
-            class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-            @scroll="updateIconScrollState"
-          >
-            <button
-              :aria-checked="selectedCenterIcon === 'none'"
-              aria-label="Use no center icon"
-              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-              :class="selectedCenterIcon === 'none' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              role="radio"
-              type="button"
-              @click="selectCenterIcon(noCenterIconOption)"
-            >
-              <span
-                aria-hidden="true"
-                class="grid size-10 place-items-center rounded-full bg-white text-slate-400 ring-1 ring-black/10"
-              >
-                <UIcon
-                  name="i-lucide-ban"
-                  class="size-5"
-                />
-              </span>
-              <span>None</span>
-            </button>
-
-            <button
-              v-for="category in centerIconCategories"
-              :key="category.value"
-              :aria-label="`Open ${category.label} icons`"
-              class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-              :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectCenterIconCategory(category)"
-            >
-              <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
-                <img
-                  :src="category.src"
-                  alt=""
-                  aria-hidden="true"
-                  class="size-full object-contain"
-                >
-              </span>
-              <span>{{ category.label }}</span>
-            </button>
-          </div>
-
-          <div
-            v-if="hasIconsBefore"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
-          />
-          <div
-            v-if="hasIconsAfter"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
-          />
-        </div>
-
-        <div
-          v-else
+          v-else-if="activeTool === 'icon'"
+          aria-label="Center icon"
           class="space-y-3"
         >
-          <div class="flex items-center gap-3">
-            <UButton
-              color="neutral"
-              icon="i-lucide-arrow-left"
-              size="sm"
-              variant="subtle"
-              @click="showParentCenterIconCategory"
-            >
-              {{ activeCenterIconBackLabel }}
-            </UButton>
-            <span class="text-sm font-medium text-highlighted">{{ activeCenterIconCategoryDetails?.label }}</span>
-          </div>
+          <UInput
+            v-model="centerIconSearch"
+            class="max-w-sm"
+            icon="i-lucide-search"
+            placeholder="Search icons"
+            size="lg"
+          />
 
-          <div class="relative">
+          <div
+            v-if="hasCenterIconSearch"
+            class="relative"
+          >
             <div
               ref="iconScroller"
-              aria-label="Center icons in folder"
-              class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
+              aria-label="Matching center icons"
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="center-icon-selector"
               role="radiogroup"
               @scroll="updateIconScrollState"
             >
               <button
-                v-for="category in activeCenterIconSubcategories"
-                :key="category.value"
-                :aria-label="`Open ${category.label} icons`"
-                class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
-                :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectCenterIconCategory(category)"
-              >
-                <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
-                  <img
-                    :src="category.src"
-                    alt=""
-                    aria-hidden="true"
-                    class="size-full object-contain"
-                  >
-                </span>
-                <span>{{ category.label }}</span>
-              </button>
-
-              <button
-                v-for="icon in activeCenterIconCategoryIcons"
+                v-for="icon in filteredCenterIconOptions"
                 :key="icon.value"
                 :aria-label="`Use ${icon.label} as the center icon`"
                 :aria-checked="selectedCenterIcon === icon.value"
@@ -2895,418 +2794,591 @@ onUnmounted(() => {
                 </span>
                 <span>{{ icon.label }}</span>
               </button>
+
+              <p
+                v-if="filteredCenterIconOptions.length === 0"
+                class="py-2 text-sm text-muted"
+              >
+                No icons match your search.
+              </p>
             </div>
 
             <div
               v-if="hasIconsBefore"
               aria-hidden="true"
-              class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent"
+              class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent md:hidden"
             />
             <div
               v-if="hasIconsAfter"
               aria-hidden="true"
-              class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent"
+              class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
             />
           </div>
-        </div>
-      </div>
 
-      <div
-        v-else-if="activeTool === 'border'"
-        aria-label="Border style"
-        class="flex gap-2 overflow-x-auto overscroll-x-contain pb-2"
-        role="radiogroup"
-      >
-        <button
-          v-for="border in borderStyles"
-          :key="border.value"
-          :aria-label="border.label"
-          :aria-checked="selectedBorder === border.value"
-          class="grid size-14 shrink-0 place-items-center rounded-xl border transition"
-          :class="selectedBorder === border.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-          role="radio"
-          type="button"
-          @click="selectBorder(border)"
-        >
-          <svg
-            aria-hidden="true"
-            class="size-9"
-            fill="none"
-            viewBox="0 0 28 28"
-            xmlns="http://www.w3.org/2000/svg"
+          <div
+            v-else-if="!activeCenterIconCategory"
+            class="relative"
           >
-            <path
-              v-for="line in border.lines"
-              :key="`${border.value}-${line.inset}`"
-              :d="getPreviewPath(line)"
-              stroke="currentColor"
-              :stroke-linecap="getPreviewStrokeLineCap()"
-              stroke-linejoin="miter"
-              :stroke-width="getPreviewStrokeWidth(line)"
-            />
-          </svg>
-        </button>
-      </div>
-    </div>
+            <div
+              ref="iconScroller"
+              aria-label="Center icon folders"
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="center-icon-selector"
+              @scroll="updateIconScrollState"
+            >
+              <button
+                :aria-checked="selectedCenterIcon === 'none'"
+                aria-label="Use no center icon"
+                class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+                :class="selectedCenterIcon === 'none' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                role="radio"
+                type="button"
+                @click="selectCenterIcon(noCenterIconOption)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="grid size-10 place-items-center rounded-full bg-white text-slate-400 ring-1 ring-black/10"
+                >
+                  <UIcon
+                    name="i-lucide-ban"
+                    class="size-5"
+                  />
+                </span>
+                <span>None</span>
+              </button>
 
-    <UAlert
-      v-if="hasQrContent && generatedQr.error"
-      color="warning"
-      icon="i-lucide-triangle-alert"
-      :title="generatedQr.error"
-      variant="subtle"
-    />
-    <UAlert
-      v-if="printLabelError"
-      color="warning"
-      icon="i-lucide-triangle-alert"
-      :title="printLabelError"
-      variant="subtle"
-    />
+              <button
+                v-for="category in centerIconCategories"
+                :key="category.value"
+                :aria-label="`Open ${category.label} icons`"
+                class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+                :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectCenterIconCategory(category)"
+              >
+                <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                  <img
+                    :src="category.src"
+                    alt=""
+                    aria-hidden="true"
+                    class="size-full object-contain"
+                  >
+                </span>
+                <span>{{ category.label }}</span>
+              </button>
+            </div>
 
-    <section
-      v-if="hasQrContent"
-      class="flex justify-center"
-    >
-      <UCard class="w-full max-w-[min(86svw,68svh)]">
-        <div class="w-full rounded-lg bg-white">
-          <svg
-            v-if="generatedQr.code"
-            ref="outputSvgElement"
-            aria-label="Generated QR code"
-            class="h-auto w-full"
-            :data-error-correction-level="generatedQr.code.errorCorrectionLevel"
-            role="img"
-            :viewBox="outputViewBox"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <rect
-              class="fill-white"
-              :height="outputSvgHeight"
-              :width="outputSvgWidth"
+            <div
+              v-if="hasIconsBefore"
+              aria-hidden="true"
+              class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent md:hidden"
             />
-            <defs v-if="hasActiveGradient || hasCircleLabelText">
-              <template v-if="hasActiveGradient">
-                <linearGradient
-                  v-if="selectedGradientStyle === 'directional'"
-                  id="qr-border-gradient"
-                  gradientUnits="userSpaceOnUse"
-                  v-bind="borderLinearGradientCoordinates"
-                >
-                  <stop
-                    v-for="stop in gradientStops"
-                    :key="`border-${stop.key}`"
-                    :class="stop.textClass"
-                    :offset="stop.offset"
-                    stop-color="currentColor"
-                  />
-                </linearGradient>
-                <radialGradient
-                  v-else
-                  id="qr-border-gradient"
-                  gradientUnits="userSpaceOnUse"
-                  v-bind="borderRadialGradientCoordinates"
-                >
-                  <stop
-                    v-for="stop in gradientStops"
-                    :key="`border-${stop.key}`"
-                    :class="stop.textClass"
-                    :offset="stop.offset"
-                    stop-color="currentColor"
-                  />
-                </radialGradient>
-                <linearGradient
-                  v-if="selectedGradientStyle === 'directional'"
-                  id="qr-artwork-gradient"
-                  gradientUnits="userSpaceOnUse"
-                  v-bind="qrArtworkLinearGradientCoordinates"
-                >
-                  <stop
-                    v-for="stop in gradientStops"
-                    :key="`artwork-${stop.key}`"
-                    :class="stop.textClass"
-                    :offset="stop.offset"
-                    stop-color="currentColor"
-                  />
-                </linearGradient>
-                <radialGradient
-                  v-else
-                  id="qr-artwork-gradient"
-                  gradientUnits="userSpaceOnUse"
-                  v-bind="qrArtworkRadialGradientCoordinates"
-                >
-                  <stop
-                    v-for="stop in gradientStops"
-                    :key="`artwork-${stop.key}`"
-                    :class="stop.textClass"
-                    :offset="stop.offset"
-                    stop-color="currentColor"
-                  />
-                </radialGradient>
-                <linearGradient
-                  v-if="selectedGradientStyle === 'directional'"
-                  id="qr-text-gradient"
-                  gradientUnits="userSpaceOnUse"
-                  v-bind="textLinearGradientCoordinates"
-                >
-                  <stop
-                    v-for="stop in gradientStops"
-                    :key="`text-${stop.key}`"
-                    :class="stop.textClass"
-                    :offset="stop.offset"
-                    stop-color="currentColor"
-                  />
-                </linearGradient>
-                <radialGradient
-                  v-else
-                  id="qr-text-gradient"
-                  gradientUnits="userSpaceOnUse"
-                  v-bind="textRadialGradientCoordinates"
-                >
-                  <stop
-                    v-for="stop in gradientStops"
-                    :key="`text-${stop.key}`"
-                    :class="stop.textClass"
-                    :offset="stop.offset"
-                    stop-color="currentColor"
-                  />
-                </radialGradient>
-              </template>
-              <path
-                v-for="control in visibleCircleLabelControls"
-                :id="getCircleLabelPathId(control.value)"
-                :key="`circle-label-path-${control.value}`"
-                :d="getCircleLabelPath(control.value)"
-              />
-            </defs>
-            <g v-if="hasCircleBorder">
-              <circle
-                v-for="line in selectedCircleBorderLines"
-                :key="`circle-${selectedBorder}-${line.inset}`"
-                :data-testid="`qr-circle-border-${line.inset}`"
-                fill="none"
-                :cx="line.cx"
-                :cy="line.cy"
-                :r="line.radius"
-                :class="borderStrokePaint ? undefined : qrStrokeClass"
-                :stroke="borderStrokePaint ?? undefined"
-                :stroke-width="line.strokeWidth"
-              />
-              <rect
-                class="fill-white"
-                data-testid="qr-circle-border-buffer"
-                :height="circleBorderBufferRect.height"
-                :width="circleBorderBufferRect.width"
-                :x="circleBorderBufferRect.x"
-                :y="circleBorderBufferRect.y"
-              />
-            </g>
-            <g shape-rendering="crispEdges">
-              <svg
-                :height="qrOutputSize"
-                :viewBox="`0 0 ${qrSvgSize} ${qrSvgSize}`"
-                :width="qrOutputSize"
-                :x="qrOutputX"
-                :y="qrOutputY"
-              >
-                <defs v-if="hasActiveGradient">
-                  <linearGradient
-                    v-if="selectedGradientStyle === 'directional'"
-                    id="qr-path-gradient"
-                    gradientUnits="userSpaceOnUse"
-                    v-bind="qrPathLinearGradientCoordinates"
-                  >
-                    <stop
-                      v-for="stop in gradientStops"
-                      :key="`path-${stop.key}`"
-                      :class="stop.textClass"
-                      :offset="stop.offset"
-                      stop-color="currentColor"
-                    />
-                  </linearGradient>
-                  <radialGradient
-                    v-else
-                    id="qr-path-gradient"
-                    gradientUnits="userSpaceOnUse"
-                    v-bind="qrPathRadialGradientCoordinates"
-                  >
-                    <stop
-                      v-for="stop in gradientStops"
-                      :key="`path-${stop.key}`"
-                      :class="stop.textClass"
-                      :offset="stop.offset"
-                      stop-color="currentColor"
-                    />
-                  </radialGradient>
-                </defs>
-                <path
-                  :d="qrPath"
-                  :class="qrPathFillPaint ? undefined : qrFillClass"
-                  :fill="qrPathFillPaint ?? undefined"
-                />
-              </svg>
-            </g>
-            <template v-if="hasCenterIcon">
-              <circle
-                class="fill-white"
-                :cx="qrOutputX + qrOutputSize / 2"
-                :cy="qrOutputY + qrOutputSize / 2"
-                :r="centerIconCircleRadius"
-              />
-              <mask
-                id="center-icon-mask"
-                :height="centerIconSize"
-                mask-type="alpha"
-                maskUnits="userSpaceOnUse"
-                :width="centerIconSize"
-                :x="centerIconX"
-                :y="centerIconY"
-              >
-                <image
-                  :href="selectedCenterIconOption.src"
-                  :height="centerIconSize"
-                  preserveAspectRatio="xMidYMid meet"
-                  :width="centerIconSize"
-                  :x="centerIconX"
-                  :y="centerIconY"
-                />
-              </mask>
-              <rect
-                :class="qrArtworkFillPaint ? undefined : qrFillClass"
-                :fill="qrArtworkFillPaint ?? undefined"
-                :height="centerIconSize"
-                mask="url(#center-icon-mask)"
-                :width="centerIconSize"
-                :x="centerIconX"
-                :y="centerIconY"
-              />
-            </template>
-            <text
-              v-if="!isCircleShape && labelText"
-              ref="labelMeasureElement"
+            <div
+              v-if="hasIconsAfter"
               aria-hidden="true"
-              fill="currentColor"
-              :font-size="baseLabelFontSize"
-              opacity="0"
-              :class="[qrTextClass, selectedLabelFontClass]"
-            >
-              {{ labelText }}
-            </text>
-            <text
-              v-if="!isCircleShape && longestAdditionalTextLine"
-              ref="additionalTextMeasureElement"
-              aria-hidden="true"
-              fill="currentColor"
-              :font-size="baseAdditionalTextFontSize"
-              opacity="0"
-              :class="[qrTextClass, selectedAdditionalTextFontClass]"
-            >
-              {{ longestAdditionalTextLine }}
-            </text>
-            <text
-              v-if="!isCircleShape && labelText"
-              :fill="textFillPaint ?? 'currentColor'"
-              :font-size="labelFontSize"
-              :x="labelX"
-              :y="labelY"
-              dominant-baseline="central"
-              text-anchor="middle"
-              :class="textFillPaint ? selectedLabelFontClass : [qrTextClass, selectedLabelFontClass]"
-            >
-              {{ labelText }}
-            </text>
-            <text
-              v-for="(line, index) in isCircleShape ? [] : additionalTextLines"
-              :key="`additional-text-${index}`"
-              :fill="textFillPaint ?? 'currentColor'"
-              :font-size="additionalTextFontSize"
-              font-weight="300"
-              opacity="0.68"
-              :x="labelX"
-              :y="getAdditionalTextLineY(index)"
-              dominant-baseline="central"
-              text-anchor="middle"
-              :class="textFillPaint ? selectedAdditionalTextFontClass : [qrTextClass, selectedAdditionalTextFontClass]"
-            >
-              {{ line }}
-            </text>
-            <text
-              v-for="control in visibleCircleLabelControls"
-              :key="`circle-label-text-${control.value}`"
-              :data-testid="`qr-circle-label-${control.value}`"
-              :fill="textFillPaint ?? 'currentColor'"
-              :font-size="getCircleLabelFontSize(control.value)"
-              dominant-baseline="central"
-              text-anchor="middle"
-              :class="textFillPaint ? getCircleLabelFontClass(control.value) : [qrTextClass, getCircleLabelFontClass(control.value)]"
-            >
-              <textPath
-                :href="getCircleLabelPathHref(control.value)"
-                :side="getCircleLabelPathSide(control.value)"
-                startOffset="50%"
-              >
-                {{ getCircleLabelText(control.value) }}
-              </textPath>
-            </text>
-            <template v-if="!isCircleShape">
-              <rect
-                v-for="line in selectedBorderLines"
-                :key="`${selectedBorder}-${line.inset}`"
-                :data-testid="`qr-rectangle-border-${line.inset}`"
-                fill="none"
-                :height="line.height"
-                :width="line.width"
-                :x="line.inset"
-                :y="line.inset"
-                :class="borderStrokePaint ? undefined : qrStrokeClass"
-                :stroke="borderStrokePaint ?? undefined"
-                :stroke-width="line.strokeWidth"
-              />
-            </template>
-          </svg>
+              class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
+            />
+          </div>
 
           <div
             v-else
-            class="grid aspect-square w-full place-items-center rounded-lg border border-dashed border-default text-center text-sm text-muted"
+            class="space-y-3"
           >
-            Enter a URL to preview the QR code.
+            <div class="flex items-center gap-3">
+              <UButton
+                color="neutral"
+                icon="i-lucide-arrow-left"
+                size="sm"
+                variant="subtle"
+                @click="showParentCenterIconCategory"
+              >
+                {{ activeCenterIconBackLabel }}
+              </UButton>
+              <span class="text-sm font-medium text-highlighted">{{ activeCenterIconCategoryDetails?.label }}</span>
+            </div>
+
+            <div class="relative">
+              <div
+                ref="iconScroller"
+                aria-label="Center icons in folder"
+                :class="mobileScrollDesktopWrapClasses"
+                data-testid="center-icon-selector"
+                role="radiogroup"
+                @scroll="updateIconScrollState"
+              >
+                <button
+                  v-for="category in activeCenterIconSubcategories"
+                  :key="category.value"
+                  :aria-label="`Open ${category.label} icons`"
+                  class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+                  :class="isCenterIconCategorySelected(category) ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                  type="button"
+                  @click="selectCenterIconCategory(category)"
+                >
+                  <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                    <img
+                      :src="category.src"
+                      alt=""
+                      aria-hidden="true"
+                      class="size-full object-contain"
+                    >
+                  </span>
+                  <span>{{ category.label }}</span>
+                </button>
+
+                <button
+                  v-for="icon in activeCenterIconCategoryIcons"
+                  :key="icon.value"
+                  :aria-label="`Use ${icon.label} as the center icon`"
+                  :aria-checked="selectedCenterIcon === icon.value"
+                  class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
+                  :class="selectedCenterIcon === icon.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                  role="radio"
+                  type="button"
+                  @click="selectCenterIcon(icon)"
+                >
+                  <span class="grid size-10 place-items-center rounded-full bg-white p-1.5 ring-1 ring-black/10">
+                    <img
+                      :src="icon.src"
+                      alt=""
+                      aria-hidden="true"
+                      class="size-full object-contain"
+                    >
+                  </span>
+                  <span>{{ icon.label }}</span>
+                </button>
+              </div>
+
+              <div
+                v-if="hasIconsBefore"
+                aria-hidden="true"
+                class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent md:hidden"
+              />
+              <div
+                v-if="hasIconsAfter"
+                aria-hidden="true"
+                class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
+              />
+            </div>
           </div>
         </div>
-      </UCard>
-    </section>
 
-    <div
-      v-if="generatedQr.code"
-      class="flex flex-col items-center justify-center gap-3"
-    >
-      <div class="flex w-full max-w-[min(86svw,68svh)] items-center justify-between gap-3">
-        <UButton
-          color="neutral"
-          icon="i-lucide-save"
-          variant="subtle"
-          @click="handleSaveButtonClick"
+        <div
+          v-else-if="activeTool === 'border'"
+          aria-label="Border style"
+          :class="mobileScrollDesktopWrapClasses"
+          data-testid="border-style-selector"
+          role="radiogroup"
         >
-          {{ saveButtonLabel }}
-        </UButton>
+          <button
+            v-for="border in borderStyles"
+            :key="border.value"
+            :aria-label="border.label"
+            :aria-checked="selectedBorder === border.value"
+            class="grid size-14 shrink-0 place-items-center rounded-xl border transition"
+            :class="selectedBorder === border.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+            role="radio"
+            type="button"
+            @click="selectBorder(border)"
+          >
+            <svg
+              aria-hidden="true"
+              class="size-9"
+              fill="none"
+              viewBox="0 0 28 28"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                v-for="line in border.lines"
+                :key="`${border.value}-${line.inset}`"
+                :d="getPreviewPath(line)"
+                stroke="currentColor"
+                :stroke-linecap="getPreviewStrokeLineCap()"
+                stroke-linejoin="miter"
+                :stroke-width="getPreviewStrokeWidth(line)"
+              />
+            </svg>
+          </button>
+        </div>
 
-        <UButton
-          color="neutral"
-          :disabled="isPreparingLabelPrint"
-          :loading="isPreparingLabelPrint"
+        <UAlert
+          v-if="generatedQr.error"
+          color="warning"
+          icon="i-lucide-triangle-alert"
+          :title="generatedQr.error"
           variant="subtle"
-          @click="goToPrintLabels"
-        >
-          <span>Print to Labels</span>
-          <UIcon
-            name="i-lucide-arrow-right"
-            class="size-4"
-          />
-        </UButton>
+        />
+        <UAlert
+          v-if="printLabelError"
+          color="warning"
+          icon="i-lucide-triangle-alert"
+          :title="printLabelError"
+          variant="subtle"
+        />
       </div>
 
-      <div class="flex items-center gap-2 text-sm text-muted">
-        <UIcon name="i-lucide-scan-line" />
-        <span>Version {{ generatedQr.code.version }} · {{ generatedQr.code.size }}×{{ generatedQr.code.size }} modules</span>
+      <div
+        data-testid="qr-builder-preview-column"
+        class="min-w-0 space-y-4 xl:sticky xl:top-20"
+      >
+        <section class="flex justify-center">
+          <UCard
+            data-testid="qr-preview-card"
+            :class="qrPreviewCardClass"
+          >
+            <div
+              data-testid="qr-preview-surface"
+              :class="qrPreviewSurfaceClass"
+            >
+              <svg
+                v-if="generatedQr.code"
+                ref="outputSvgElement"
+                aria-label="Generated QR code"
+                class="h-auto w-full"
+                :data-error-correction-level="generatedQr.code.errorCorrectionLevel"
+                role="img"
+                :viewBox="outputViewBox"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <circle
+                  v-if="isCircleShape"
+                  class="fill-white"
+                  data-testid="qr-circle-background"
+                  :cx="outputSvgWidth / 2"
+                  :cy="outputSvgHeight / 2"
+                  :r="outputCircleRadius"
+                />
+                <rect
+                  v-else
+                  class="fill-white"
+                  data-testid="qr-rectangle-background"
+                  :height="outputSvgHeight"
+                  :width="outputSvgWidth"
+                />
+                <defs v-if="hasActiveGradient || hasCircleLabelText">
+                  <template v-if="hasActiveGradient">
+                    <linearGradient
+                      v-if="selectedGradientStyle === 'directional'"
+                      id="qr-border-gradient"
+                      gradientUnits="userSpaceOnUse"
+                      v-bind="borderLinearGradientCoordinates"
+                    >
+                      <stop
+                        v-for="stop in gradientStops"
+                        :key="`border-${stop.key}`"
+                        :class="stop.textClass"
+                        :offset="stop.offset"
+                        stop-color="currentColor"
+                      />
+                    </linearGradient>
+                    <radialGradient
+                      v-else
+                      id="qr-border-gradient"
+                      gradientUnits="userSpaceOnUse"
+                      v-bind="borderRadialGradientCoordinates"
+                    >
+                      <stop
+                        v-for="stop in gradientStops"
+                        :key="`border-${stop.key}`"
+                        :class="stop.textClass"
+                        :offset="stop.offset"
+                        stop-color="currentColor"
+                      />
+                    </radialGradient>
+                    <linearGradient
+                      v-if="selectedGradientStyle === 'directional'"
+                      id="qr-artwork-gradient"
+                      gradientUnits="userSpaceOnUse"
+                      v-bind="qrArtworkLinearGradientCoordinates"
+                    >
+                      <stop
+                        v-for="stop in gradientStops"
+                        :key="`artwork-${stop.key}`"
+                        :class="stop.textClass"
+                        :offset="stop.offset"
+                        stop-color="currentColor"
+                      />
+                    </linearGradient>
+                    <radialGradient
+                      v-else
+                      id="qr-artwork-gradient"
+                      gradientUnits="userSpaceOnUse"
+                      v-bind="qrArtworkRadialGradientCoordinates"
+                    >
+                      <stop
+                        v-for="stop in gradientStops"
+                        :key="`artwork-${stop.key}`"
+                        :class="stop.textClass"
+                        :offset="stop.offset"
+                        stop-color="currentColor"
+                      />
+                    </radialGradient>
+                    <linearGradient
+                      v-if="selectedGradientStyle === 'directional'"
+                      id="qr-text-gradient"
+                      gradientUnits="userSpaceOnUse"
+                      v-bind="textLinearGradientCoordinates"
+                    >
+                      <stop
+                        v-for="stop in gradientStops"
+                        :key="`text-${stop.key}`"
+                        :class="stop.textClass"
+                        :offset="stop.offset"
+                        stop-color="currentColor"
+                      />
+                    </linearGradient>
+                    <radialGradient
+                      v-else
+                      id="qr-text-gradient"
+                      gradientUnits="userSpaceOnUse"
+                      v-bind="textRadialGradientCoordinates"
+                    >
+                      <stop
+                        v-for="stop in gradientStops"
+                        :key="`text-${stop.key}`"
+                        :class="stop.textClass"
+                        :offset="stop.offset"
+                        stop-color="currentColor"
+                      />
+                    </radialGradient>
+                  </template>
+                  <path
+                    v-for="control in visibleCircleLabelControls"
+                    :id="getCircleLabelPathId(control.value)"
+                    :key="`circle-label-path-${control.value}`"
+                    :d="getCircleLabelPath(control.value)"
+                  />
+                </defs>
+                <g v-if="hasCircleBorder">
+                  <circle
+                    v-for="line in selectedCircleBorderLines"
+                    :key="`circle-${selectedBorder}-${line.inset}`"
+                    :data-testid="`qr-circle-border-${line.inset}`"
+                    fill="none"
+                    :cx="line.cx"
+                    :cy="line.cy"
+                    :r="line.radius"
+                    :class="borderStrokePaint ? undefined : qrStrokeClass"
+                    :stroke="borderStrokePaint ?? undefined"
+                    :stroke-width="line.strokeWidth"
+                  />
+                  <rect
+                    class="fill-white"
+                    data-testid="qr-circle-border-buffer"
+                    :height="circleBorderBufferRect.height"
+                    :width="circleBorderBufferRect.width"
+                    :x="circleBorderBufferRect.x"
+                    :y="circleBorderBufferRect.y"
+                  />
+                </g>
+                <g shape-rendering="crispEdges">
+                  <svg
+                    :height="qrOutputSize"
+                    :viewBox="`0 0 ${qrSvgSize} ${qrSvgSize}`"
+                    :width="qrOutputSize"
+                    :x="qrOutputX"
+                    :y="qrOutputY"
+                  >
+                    <defs v-if="hasActiveGradient">
+                      <linearGradient
+                        v-if="selectedGradientStyle === 'directional'"
+                        id="qr-path-gradient"
+                        gradientUnits="userSpaceOnUse"
+                        v-bind="qrPathLinearGradientCoordinates"
+                      >
+                        <stop
+                          v-for="stop in gradientStops"
+                          :key="`path-${stop.key}`"
+                          :class="stop.textClass"
+                          :offset="stop.offset"
+                          stop-color="currentColor"
+                        />
+                      </linearGradient>
+                      <radialGradient
+                        v-else
+                        id="qr-path-gradient"
+                        gradientUnits="userSpaceOnUse"
+                        v-bind="qrPathRadialGradientCoordinates"
+                      >
+                        <stop
+                          v-for="stop in gradientStops"
+                          :key="`path-${stop.key}`"
+                          :class="stop.textClass"
+                          :offset="stop.offset"
+                          stop-color="currentColor"
+                        />
+                      </radialGradient>
+                    </defs>
+                    <path
+                      :d="qrPath"
+                      :class="qrPathFillPaint ? undefined : qrFillClass"
+                      :fill="qrPathFillPaint ?? undefined"
+                    />
+                  </svg>
+                </g>
+                <template v-if="hasCenterIcon">
+                  <circle
+                    class="fill-white"
+                    :cx="qrOutputX + qrOutputSize / 2"
+                    :cy="qrOutputY + qrOutputSize / 2"
+                    :r="centerIconCircleRadius"
+                  />
+                  <mask
+                    id="center-icon-mask"
+                    :height="centerIconSize"
+                    mask-type="alpha"
+                    maskUnits="userSpaceOnUse"
+                    :width="centerIconSize"
+                    :x="centerIconX"
+                    :y="centerIconY"
+                  >
+                    <image
+                      :href="selectedCenterIconOption.src"
+                      :height="centerIconSize"
+                      preserveAspectRatio="xMidYMid meet"
+                      :width="centerIconSize"
+                      :x="centerIconX"
+                      :y="centerIconY"
+                    />
+                  </mask>
+                  <rect
+                    :class="qrArtworkFillPaint ? undefined : qrFillClass"
+                    :fill="qrArtworkFillPaint ?? undefined"
+                    :height="centerIconSize"
+                    mask="url(#center-icon-mask)"
+                    :width="centerIconSize"
+                    :x="centerIconX"
+                    :y="centerIconY"
+                  />
+                </template>
+                <text
+                  v-if="!isCircleShape && labelText"
+                  ref="labelMeasureElement"
+                  aria-hidden="true"
+                  fill="currentColor"
+                  :font-size="baseLabelFontSize"
+                  opacity="0"
+                  :class="[qrTextClass, selectedLabelFontClass]"
+                >
+                  {{ labelText }}
+                </text>
+                <text
+                  v-if="!isCircleShape && longestAdditionalTextLine"
+                  ref="additionalTextMeasureElement"
+                  aria-hidden="true"
+                  fill="currentColor"
+                  :font-size="baseAdditionalTextFontSize"
+                  opacity="0"
+                  :class="[qrTextClass, selectedAdditionalTextFontClass]"
+                >
+                  {{ longestAdditionalTextLine }}
+                </text>
+                <text
+                  v-if="!isCircleShape && labelText"
+                  :fill="textFillPaint ?? 'currentColor'"
+                  :font-size="labelFontSize"
+                  :x="labelX"
+                  :y="labelY"
+                  dominant-baseline="central"
+                  text-anchor="middle"
+                  :class="textFillPaint ? selectedLabelFontClass : [qrTextClass, selectedLabelFontClass]"
+                >
+                  {{ labelText }}
+                </text>
+                <text
+                  v-for="(line, index) in isCircleShape ? [] : additionalTextLines"
+                  :key="`additional-text-${index}`"
+                  :fill="textFillPaint ?? 'currentColor'"
+                  :font-size="additionalTextFontSize"
+                  font-weight="300"
+                  opacity="0.68"
+                  :x="labelX"
+                  :y="getAdditionalTextLineY(index)"
+                  dominant-baseline="central"
+                  text-anchor="middle"
+                  :class="textFillPaint ? selectedAdditionalTextFontClass : [qrTextClass, selectedAdditionalTextFontClass]"
+                >
+                  {{ line }}
+                </text>
+                <text
+                  v-for="control in visibleCircleLabelControls"
+                  :key="`circle-label-text-${control.value}`"
+                  :data-testid="`qr-circle-label-${control.value}`"
+                  :fill="textFillPaint ?? 'currentColor'"
+                  :font-size="getCircleLabelFontSize(control.value)"
+                  dominant-baseline="central"
+                  text-anchor="middle"
+                  :class="textFillPaint ? getCircleLabelFontClass(control.value) : [qrTextClass, getCircleLabelFontClass(control.value)]"
+                >
+                  <textPath
+                    :href="getCircleLabelPathHref(control.value)"
+                    :side="getCircleLabelPathSide(control.value)"
+                    startOffset="50%"
+                  >
+                    {{ getCircleLabelText(control.value) }}
+                  </textPath>
+                </text>
+                <template v-if="!isCircleShape">
+                  <rect
+                    v-for="line in selectedBorderLines"
+                    :key="`${selectedBorder}-${line.inset}`"
+                    :data-testid="`qr-rectangle-border-${line.inset}`"
+                    fill="none"
+                    :height="line.height"
+                    :width="line.width"
+                    :x="line.inset"
+                    :y="line.inset"
+                    :class="borderStrokePaint ? undefined : qrStrokeClass"
+                    :stroke="borderStrokePaint ?? undefined"
+                    :stroke-width="line.strokeWidth"
+                  />
+                </template>
+              </svg>
+
+              <div
+                v-else
+                class="grid aspect-square w-full place-items-center rounded-lg border border-dashed border-default text-center text-sm text-muted"
+              >
+                Enter a URL to preview the QR code.
+              </div>
+            </div>
+          </UCard>
+        </section>
+
+        <div
+          v-if="generatedQr.code"
+          class="flex flex-col items-center justify-center gap-3"
+        >
+          <div class="flex w-full max-w-[min(86svw,68svh)] items-center justify-between gap-3">
+            <UButton
+              color="neutral"
+              icon="i-lucide-save"
+              variant="subtle"
+              @click="handleSaveButtonClick"
+            >
+              {{ saveButtonLabel }}
+            </UButton>
+
+            <UButton
+              color="neutral"
+              :disabled="isPreparingLabelPrint"
+              :loading="isPreparingLabelPrint"
+              variant="subtle"
+              @click="goToPrintLabels"
+            >
+              <span>Print to Labels</span>
+              <UIcon
+                name="i-lucide-arrow-right"
+                class="size-4"
+              />
+            </UButton>
+          </div>
+
+          <div class="flex items-center gap-2 text-sm text-muted">
+            <UIcon name="i-lucide-scan-line" />
+            <span>Version {{ generatedQr.code.version }} · {{ generatedQr.code.size }}×{{ generatedQr.code.size }} modules</span>
+          </div>
+        </div>
       </div>
     </div>
 
