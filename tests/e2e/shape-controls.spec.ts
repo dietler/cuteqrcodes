@@ -151,6 +151,104 @@ test('draws circle borders with a buffered QR overlap', async ({ page }) => {
   expect(metrics.bufferHeight).toBeGreaterThan(metrics.qrSize)
 })
 
+test('draws wavy borders in rectangle and circle mode', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/wavy-border')
+
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await expect(page.getByRole('radio', { name: 'Wavy border' })).toBeVisible()
+  await page.getByRole('radio', { name: 'Wavy border' }).click()
+
+  const rectanglePreviewState = await getWavyBorderPreviewState(page)
+
+  expect(rectanglePreviewState).toEqual(expect.objectContaining({
+    arcCommandCount: 0,
+    isClosed: false
+  }))
+  expect(rectanglePreviewState.firstPoint.x).toBeLessThan(8)
+  expect(rectanglePreviewState.firstPoint.y).toBeGreaterThan(20)
+  expect(rectanglePreviewState.lastPoint.x).toBeGreaterThan(20)
+  expect(rectanglePreviewState.lastPoint.y).toBeLessThan(8)
+  expect(rectanglePreviewState.pathCommands).toBeGreaterThan(20)
+  expect(rectanglePreviewState.pathCommands).toBeLessThan(90)
+
+  const rectangleState = await getWavyRectangleBorderState(page)
+
+  expect(rectangleState).toEqual(expect.objectContaining({
+    arcCommandCount: 0,
+    circleBorderCount: 0,
+    rectBorderCount: 0,
+    strokeLineCap: 'round',
+    strokeLineJoin: 'round',
+    strokeWidth: 0.5,
+    tagName: 'path'
+  }))
+  expect(rectangleState.cornerPointCounts.every(count => count > 8)).toBe(true)
+  expect(rectangleState.pathCommands).toBeGreaterThan(80)
+
+  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Label' }).fill('Welcome to')
+
+  const labeledRectangleState = await getWavyRectangleBorderState(page)
+
+  expect(labeledRectangleState.arcCommandCount).toBe(0)
+  expect(labeledRectangleState.cornerPointCounts.every(count => count > 8)).toBe(true)
+  expect(labeledRectangleState.viewBoxHeight).toBeGreaterThan(rectangleState.viewBoxHeight)
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Circle' }).click()
+
+  const circleState = await page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const border = svg?.querySelector('[data-testid="qr-circle-border-0.75"]') as SVGPathElement | null
+    const buffer = svg?.querySelector('[data-testid="qr-circle-border-buffer"]') as SVGRectElement | null
+
+    if (!svg || !border || !buffer) {
+      throw new Error('Missing generated circle wavy border.')
+    }
+
+    return {
+      circleElementBorderCount: svg.querySelectorAll('circle[data-testid^="qr-circle-border-"]').length,
+      pathCommands: border.getAttribute('d')?.match(/L/g)?.length ?? 0,
+      rectangleBorderCount: svg.querySelectorAll('[data-testid^="qr-rectangle-border-"]').length,
+      strokeLineCap: border.getAttribute('stroke-linecap'),
+      strokeLineJoin: border.getAttribute('stroke-linejoin'),
+      strokeWidth: Number(border.getAttribute('stroke-width')),
+      tagName: border.tagName.toLowerCase()
+    }
+  })
+
+  expect(circleState).toEqual(expect.objectContaining({
+    circleElementBorderCount: 0,
+    rectangleBorderCount: 0,
+    strokeLineCap: 'round',
+    strokeLineJoin: 'round',
+    strokeWidth: 0.5,
+    tagName: 'path'
+  }))
+  expect(circleState.pathCommands).toBeGreaterThan(40)
+
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+
+  const circlePreviewState = await getWavyBorderPreviewState(page)
+
+  expect(circlePreviewState).toEqual(expect.objectContaining({
+    arcCommandCount: 0,
+    isClosed: false
+  }))
+  expect(circlePreviewState.firstPoint.x).toBeLessThan(8)
+  expect(circlePreviewState.firstPoint.y).toBeGreaterThan(20)
+  expect(circlePreviewState.lastPoint.x).toBeGreaterThan(20)
+  expect(circlePreviewState.lastPoint.y).toBeLessThan(8)
+  expect(circlePreviewState.pathCommands).toBeGreaterThan(20)
+  expect(circlePreviewState.pathCommands).toBeLessThan(90)
+})
+
 test('rounds the preview frame and background in circle mode', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => {
@@ -438,6 +536,73 @@ async function getSectionBoxStates(page: Page, testIds: string[]) {
       ]
     }))
   }, testIds)
+}
+
+async function getWavyBorderPreviewState(page: Page) {
+  return page.evaluate(() => {
+    const button = document.querySelector('[role="radio"][aria-label="Wavy border"]') as HTMLElement | null
+    const path = button?.querySelector('path') as SVGPathElement | null
+
+    if (!button || !path) {
+      throw new Error('Missing wavy border preview path.')
+    }
+
+    const d = path.getAttribute('d') ?? ''
+    const points = Array.from(d.matchAll(/[ML]([-+]?\d*\.?\d+) ([-+]?\d*\.?\d+)/g))
+      .map(match => ({ x: Number(match[1]), y: Number(match[2]) }))
+
+    if (!points.length) {
+      throw new Error(`Missing wavy border preview points: ${d}`)
+    }
+
+    return {
+      arcCommandCount: d.match(/A/g)?.length ?? 0,
+      firstPoint: points[0],
+      isClosed: d.endsWith('Z'),
+      lastPoint: points[points.length - 1],
+      pathCommands: d.match(/L/g)?.length ?? 0
+    }
+  })
+}
+
+async function getWavyRectangleBorderState(page: Page) {
+  return page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const border = svg?.querySelector('[data-testid="qr-rectangle-border-0.75"]') as SVGPathElement | null
+
+    if (!svg || !border) {
+      throw new Error('Missing generated rectangle wavy border.')
+    }
+
+    const d = border.getAttribute('d') ?? ''
+    const points = Array.from(d.matchAll(/[ML]([-+]?\d*\.?\d+) ([-+]?\d*\.?\d+)/g))
+      .map(match => ({ x: Number(match[1]), y: Number(match[2]) }))
+    const minX = Math.min(...points.map(point => point.x))
+    const maxX = Math.max(...points.map(point => point.x))
+    const minY = Math.min(...points.map(point => point.y))
+    const maxY = Math.max(...points.map(point => point.y))
+    const cornerWindow = 4
+    const cornerPointCounts = [
+      points.filter(point => point.x <= minX + cornerWindow && point.y <= minY + cornerWindow).length,
+      points.filter(point => point.x >= maxX - cornerWindow && point.y <= minY + cornerWindow).length,
+      points.filter(point => point.x >= maxX - cornerWindow && point.y >= maxY - cornerWindow).length,
+      points.filter(point => point.x <= minX + cornerWindow && point.y >= maxY - cornerWindow).length
+    ]
+
+    return {
+      arcCommandCount: d.match(/A/g)?.length ?? 0,
+      circleBorderCount: svg.querySelectorAll('[data-testid^="qr-circle-border-"]').length,
+      cornerPointCounts,
+      pathCommands: d.match(/L/g)?.length ?? 0,
+      rectBorderCount: svg.querySelectorAll('rect[data-testid^="qr-rectangle-border-"]').length,
+      strokeLineCap: border.getAttribute('stroke-linecap'),
+      strokeLineJoin: border.getAttribute('stroke-linejoin'),
+      strokeWidth: Number(border.getAttribute('stroke-width')),
+      tagName: border.tagName.toLowerCase(),
+      viewBoxHeight: svg.viewBox.baseVal.height,
+      viewBoxWidth: svg.viewBox.baseVal.width
+    }
+  })
 }
 
 async function getSectionTopPositions(page: Page, testIds: string[]) {

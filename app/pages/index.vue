@@ -10,7 +10,7 @@ import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from 
 
 type QrTool = 'shape' | 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
 type QrShape = 'rectangle' | 'circle'
-type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double'
+type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double' | 'wavy'
 type CenterIconValue = string
 type AdditionalTextPlacement = 'above' | 'below'
 type LabelPosition = 'top' | 'left' | 'right' | 'bottom'
@@ -88,6 +88,13 @@ type CenterIconCategory = {
 type BorderLine = {
   inset: number
   strokeWidth: number
+  wave?: BorderWave
+}
+
+type BorderWave = {
+  amplitude: number
+  cornerRadius: number
+  length: number
 }
 
 type BorderStyle = {
@@ -464,6 +471,12 @@ const borderStyles: BorderStyle[] = [
       { inset: 2.5, strokeWidth: 1 }
     ],
     contentGap: 1
+  },
+  {
+    label: 'Wavy border',
+    value: 'wavy',
+    lines: [{ inset: 0.75, strokeWidth: 0.5, wave: { amplitude: 0.425, cornerRadius: 2.4, length: 4 } }],
+    contentGap: 1.25
   }
 ]
 const selectedBorder = ref<BorderValue>('none')
@@ -613,7 +626,7 @@ const hasCircleLabelText = computed(() => isCircleShape.value && Object.values(c
 const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0))
 const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value)
 const hasCircleInset = computed(() => isCircleShape.value)
-const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(line => line.inset + line.strokeWidth / 2)) : 0)
+const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(getBorderLineInnerEdge)) : 0)
 const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
 const labelIsTop = computed(() => hasLabelText.value && selectedLabelPosition.value === 'top')
 const labelIsBottom = computed(() => hasLabelText.value && selectedLabelPosition.value === 'bottom')
@@ -747,7 +760,7 @@ const selectedCircleBorderLines = computed(() => selectedBorderStyle.value.lines
   ...line,
   cx: qrOutputX.value + qrOutputSize.value / 2,
   cy: qrOutputY.value + qrOutputSize.value / 2,
-  radius: qrOutputSize.value / 2 + borderContentInset.value - line.inset
+  radius: getCircleBorderRadius(line)
 })))
 const circleBorderBuffer = computed(() => hasCircleInset.value ? Math.max(0.33, qrOutputSize.value * 0.012) : 0)
 const circleBorderBufferRect = computed(() => ({
@@ -1465,7 +1478,31 @@ function getLabelFontFromItem(item: unknown) {
   return getLabelFont(item)
 }
 
+function isWavyBorderLine(line: BorderLine): line is BorderLine & { wave: BorderWave } {
+  return Boolean(line.wave)
+}
+
+function getBorderLineInnerEdge(line: BorderLine) {
+  return line.inset + line.strokeWidth / 2 + (line.wave?.amplitude ?? 0) * 2
+}
+
+function getCircleBorderRadius(line: BorderLine) {
+  const waveAmplitude = line.wave?.amplitude ?? 0
+
+  return outputCircleRadius.value - line.inset - waveAmplitude
+}
+
 function getPreviewPath(line: BorderLine) {
+  if (isWavyBorderLine(line)) {
+    const amplitude = line.wave.amplitude * 1.5
+
+    if (isCircleShape.value) {
+      return createWavyCirclePreviewPath(line, amplitude)
+    }
+
+    return createWavyRectanglePreviewPath(line, amplitude)
+  }
+
   if (isCircleShape.value) {
     const start = 4 + line.inset * 2
     const radius = 24 - start
@@ -1478,12 +1515,177 @@ function getPreviewPath(line: BorderLine) {
   return `M${start} 24V${start}H24`
 }
 
+function createWavyRectanglePreviewPath(line: BorderLine & { wave: BorderWave }, amplitude: number) {
+  const start = 4 + line.inset * 2
+  const radius = 4
+  const waveLength = line.wave.length * 1.2
+  const points = [
+    ...createWavyLinePoints(start, 24, start, start + radius, -1, 0, amplitude, waveLength),
+    ...createWavyCornerPoints(start + radius, start + radius, radius, Math.PI, Math.PI * 1.5, amplitude, waveLength).slice(1),
+    ...createWavyLinePoints(start + radius, start, 24, start, 0, -1, amplitude, waveLength).slice(1)
+  ]
+
+  return createOpenPath(points)
+}
+
+function createWavyCirclePreviewPath(line: BorderLine & { wave: BorderWave }, amplitude: number) {
+  const start = 4 + line.inset * 2
+  const radius = 24 - start
+
+  return createOpenPath(createWavyCornerPoints(24, 24, radius, Math.PI, Math.PI * 1.5, amplitude, line.wave.length * 1.4))
+}
+
 function getPreviewStrokeWidth(line: BorderLine) {
   return line.strokeWidth * 2
 }
 
-function getPreviewStrokeLineCap() {
-  return isCircleShape.value ? 'round' : 'square'
+function getPreviewStrokeLineCap(line: BorderLine) {
+  return isWavyBorderLine(line) || isCircleShape.value ? 'round' : 'square'
+}
+
+function getBorderStrokeLineCap(line: BorderLine) {
+  return isWavyBorderLine(line) ? 'round' : undefined
+}
+
+function getBorderStrokeLineJoin(line: BorderLine) {
+  return isWavyBorderLine(line) ? 'round' : undefined
+}
+
+function getRectangleBorderPath(line: BorderLine & { height: number, width: number }) {
+  if (!isWavyBorderLine(line)) {
+    return ''
+  }
+
+  const offset = line.inset + line.wave.amplitude
+  const width = Math.max(1, line.width - line.wave.amplitude * 2)
+  const height = Math.max(1, line.height - line.wave.amplitude * 2)
+
+  return createWavyRoundedRectanglePath(offset, offset, width, height, line.wave.cornerRadius, line.wave.amplitude, line.wave.length)
+}
+
+function getCircleBorderPath(line: BorderLine & { cx: number, cy: number, radius: number }) {
+  if (!isWavyBorderLine(line)) {
+    return ''
+  }
+
+  return createWavyCirclePath(line.cx, line.cy, line.radius, line.wave.amplitude, line.wave.length)
+}
+
+function createWavyCirclePath(cx: number, cy: number, radius: number, amplitude: number, waveLength: number) {
+  const safeRadius = Math.max(1, radius)
+  const safeWaveLength = Math.max(0.5, waveLength)
+  const circumference = Math.PI * 2 * safeRadius
+  const waveCount = Math.max(3, Math.round(circumference / safeWaveLength))
+  const pointCount = Math.max(72, waveCount * 12)
+  const points = Array.from({ length: pointCount }, (_, index) => {
+    const angle = -Math.PI / 2 + Math.PI * 2 * index / pointCount
+    const radiusOffset = Math.sin(index / pointCount * waveCount * Math.PI * 2) * amplitude
+    const currentRadius = safeRadius + radiusOffset
+
+    return {
+      x: cx + Math.cos(angle) * currentRadius,
+      y: cy + Math.sin(angle) * currentRadius
+    }
+  })
+
+  return createClosedPath(points)
+}
+
+function createWavyRoundedRectanglePath(x: number, y: number, width: number, height: number, radius: number, amplitude: number, waveLength: number) {
+  const safeWidth = Math.max(1, width)
+  const safeHeight = Math.max(1, height)
+  const safeRadius = Math.max(0, Math.min(radius, safeWidth / 2, safeHeight / 2))
+  const safeWaveLength = Math.max(0.5, waveLength)
+  const right = x + safeWidth
+  const bottom = y + safeHeight
+  const points = [
+    ...createWavyLinePoints(x + safeRadius, y, right - safeRadius, y, 0, -1, amplitude, safeWaveLength),
+    ...createWavyCornerPoints(right - safeRadius, y + safeRadius, safeRadius, -Math.PI / 2, 0, amplitude, safeWaveLength).slice(1),
+    ...createWavyLinePoints(right, y + safeRadius, right, bottom - safeRadius, 1, 0, amplitude, safeWaveLength).slice(1),
+    ...createWavyCornerPoints(right - safeRadius, bottom - safeRadius, safeRadius, 0, Math.PI / 2, amplitude, safeWaveLength).slice(1),
+    ...createWavyLinePoints(right - safeRadius, bottom, x + safeRadius, bottom, 0, 1, amplitude, safeWaveLength).slice(1),
+    ...createWavyCornerPoints(x + safeRadius, bottom - safeRadius, safeRadius, Math.PI / 2, Math.PI, amplitude, safeWaveLength).slice(1),
+    ...createWavyLinePoints(x, bottom - safeRadius, x, y + safeRadius, -1, 0, amplitude, safeWaveLength).slice(1),
+    ...createWavyCornerPoints(x + safeRadius, y + safeRadius, safeRadius, Math.PI, Math.PI * 1.5, amplitude, safeWaveLength).slice(1)
+  ]
+
+  return createClosedPath(points)
+}
+
+function createWavyLinePoints(startX: number, startY: number, endX: number, endY: number, normalX: number, normalY: number, amplitude: number, waveLength: number) {
+  const distanceX = endX - startX
+  const distanceY = endY - startY
+  const length = Math.hypot(distanceX, distanceY)
+
+  if (length <= 0.001) {
+    return [{ x: endX, y: endY }]
+  }
+
+  const waveCount = Math.max(1, Math.round(length / waveLength))
+  const steps = Math.max(waveCount * 10, Math.ceil(length / Math.max(waveLength / 5, 0.3)))
+
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    const progress = index / steps
+    const offset = Math.sin(progress * waveCount * Math.PI * 2) * amplitude
+    const x = startX + distanceX * progress + normalX * offset
+    const y = startY + distanceY * progress + normalY * offset
+
+    return { x, y }
+  })
+}
+
+function createWavyCornerPoints(centerX: number, centerY: number, radius: number, startAngle: number, endAngle: number, amplitude: number, waveLength: number) {
+  if (radius <= 0.001) {
+    return []
+  }
+
+  const angleDistance = endAngle - startAngle
+  const arcLength = Math.abs(angleDistance) * radius
+  const waveCount = Math.max(1, Math.round(arcLength / waveLength))
+  const steps = Math.max(waveCount * 10, Math.ceil(arcLength / Math.max(waveLength / 5, 0.3)))
+
+  return Array.from({ length: steps + 1 }, (_, index) => {
+    const progress = index / steps
+    const angle = startAngle + angleDistance * progress
+    const offset = Math.sin(progress * waveCount * Math.PI * 2) * amplitude
+    const currentRadius = radius + offset
+
+    return {
+      x: centerX + Math.cos(angle) * currentRadius,
+      y: centerY + Math.sin(angle) * currentRadius
+    }
+  })
+}
+
+function createClosedPath(points: Array<{ x: number, y: number }>) {
+  if (!points.length) {
+    return ''
+  }
+
+  const [firstPoint, ...remainingPoints] = points
+
+  return [
+    `M${formatSvgNumber(firstPoint!.x)} ${formatSvgNumber(firstPoint!.y)}`,
+    ...remainingPoints.map(point => `L${formatSvgNumber(point.x)} ${formatSvgNumber(point.y)}`),
+    'Z'
+  ].join('')
+}
+
+function createOpenPath(points: Array<{ x: number, y: number }>) {
+  if (!points.length) {
+    return ''
+  }
+
+  const [firstPoint, ...remainingPoints] = points
+
+  return [
+    `M${formatSvgNumber(firstPoint!.x)} ${formatSvgNumber(firstPoint!.y)}`,
+    ...remainingPoints.map(point => `L${formatSvgNumber(point.x)} ${formatSvgNumber(point.y)}`)
+  ].join('')
+}
+
+function formatSvgNumber(value: number) {
+  return Number(value.toFixed(3))
 }
 
 async function goToPrintLabels() {
@@ -3437,8 +3639,8 @@ onUnmounted(() => {
                 :key="`${border.value}-${line.inset}`"
                 :d="getPreviewPath(line)"
                 stroke="currentColor"
-                :stroke-linecap="getPreviewStrokeLineCap()"
-                stroke-linejoin="miter"
+                :stroke-linecap="getPreviewStrokeLineCap(line)"
+                :stroke-linejoin="getBorderStrokeLineJoin(line) ?? 'miter'"
                 :stroke-width="getPreviewStrokeWidth(line)"
               />
             </svg>
@@ -3594,18 +3796,33 @@ onUnmounted(() => {
                   />
                 </defs>
                 <g v-if="hasCircleBorder">
-                  <circle
+                  <template
                     v-for="line in selectedCircleBorderLines"
                     :key="`circle-${selectedBorder}-${line.inset}`"
-                    :data-testid="`qr-circle-border-${line.inset}`"
-                    fill="none"
-                    :cx="line.cx"
-                    :cy="line.cy"
-                    :r="line.radius"
-                    :class="borderStrokePaint ? undefined : qrStrokeClass"
-                    :stroke="borderStrokePaint ?? undefined"
-                    :stroke-width="line.strokeWidth"
-                  />
+                  >
+                    <path
+                      v-if="isWavyBorderLine(line)"
+                      :data-testid="`qr-circle-border-${line.inset}`"
+                      :d="getCircleBorderPath(line)"
+                      fill="none"
+                      :class="borderStrokePaint ? undefined : qrStrokeClass"
+                      :stroke="borderStrokePaint ?? undefined"
+                      :stroke-linecap="getBorderStrokeLineCap(line)"
+                      :stroke-linejoin="getBorderStrokeLineJoin(line)"
+                      :stroke-width="line.strokeWidth"
+                    />
+                    <circle
+                      v-else
+                      :data-testid="`qr-circle-border-${line.inset}`"
+                      fill="none"
+                      :cx="line.cx"
+                      :cy="line.cy"
+                      :r="line.radius"
+                      :class="borderStrokePaint ? undefined : qrStrokeClass"
+                      :stroke="borderStrokePaint ?? undefined"
+                      :stroke-width="line.strokeWidth"
+                    />
+                  </template>
                   <rect
                     class="fill-white"
                     data-testid="qr-circle-border-buffer"
@@ -3763,19 +3980,34 @@ onUnmounted(() => {
                   </textPath>
                 </text>
                 <template v-if="!isCircleShape">
-                  <rect
+                  <template
                     v-for="line in selectedBorderLines"
                     :key="`${selectedBorder}-${line.inset}`"
-                    :data-testid="`qr-rectangle-border-${line.inset}`"
-                    fill="none"
-                    :height="line.height"
-                    :width="line.width"
-                    :x="line.inset"
-                    :y="line.inset"
-                    :class="borderStrokePaint ? undefined : qrStrokeClass"
-                    :stroke="borderStrokePaint ?? undefined"
-                    :stroke-width="line.strokeWidth"
-                  />
+                  >
+                    <path
+                      v-if="isWavyBorderLine(line)"
+                      :data-testid="`qr-rectangle-border-${line.inset}`"
+                      :d="getRectangleBorderPath(line)"
+                      fill="none"
+                      :class="borderStrokePaint ? undefined : qrStrokeClass"
+                      :stroke="borderStrokePaint ?? undefined"
+                      :stroke-linecap="getBorderStrokeLineCap(line)"
+                      :stroke-linejoin="getBorderStrokeLineJoin(line)"
+                      :stroke-width="line.strokeWidth"
+                    />
+                    <rect
+                      v-else
+                      :data-testid="`qr-rectangle-border-${line.inset}`"
+                      fill="none"
+                      :height="line.height"
+                      :width="line.width"
+                      :x="line.inset"
+                      :y="line.inset"
+                      :class="borderStrokePaint ? undefined : qrStrokeClass"
+                      :stroke="borderStrokePaint ?? undefined"
+                      :stroke-width="line.strokeWidth"
+                    />
+                  </template>
                 </template>
               </svg>
 
