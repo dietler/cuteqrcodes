@@ -66,7 +66,7 @@ export async function ensureCreditTables(sql: NeonSql) {
       create table if not exists credit_transactions (
         id text primary key,
         user_id text not null references "user"(id) on delete cascade,
-        type text not null check (type in ('credit_purchase', 'pdf_purchase')),
+        type text not null check (type in ('credit_purchase', 'pdf_purchase', 'qr_feature_purchase')),
         credits integer not null check (credits <> 0),
         balance_after integer not null check (balance_after >= 0),
         description text not null,
@@ -76,6 +76,25 @@ export async function ensureCreditTables(sql: NeonSql) {
         metadata jsonb not null default '{}'::jsonb,
         created_at timestamptz not null default now()
       )
+    `
+    await sql`
+      do $$
+      begin
+        if exists (
+          select 1
+          from pg_constraint
+          where conname = 'credit_transactions_type_check'
+            and conrelid = 'credit_transactions'::regclass
+        ) then
+          alter table credit_transactions drop constraint credit_transactions_type_check;
+        end if;
+
+        alter table credit_transactions
+          add constraint credit_transactions_type_check
+          check (type in ('credit_purchase', 'pdf_purchase', 'qr_feature_purchase'));
+      exception
+        when duplicate_object then null;
+      end $$;
     `
     await sql`create index if not exists credit_transactions_user_id_idx on credit_transactions(user_id, created_at desc)`
   })()

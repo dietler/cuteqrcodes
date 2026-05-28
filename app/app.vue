@@ -52,12 +52,12 @@ const navigationItems = computed(() => {
 
   return [
     {
-      label: 'Login',
-      icon: 'i-lucide-log-in',
+      label: 'Login to Save',
+      icon: 'i-lucide-save',
       to: '/login'
     },
     {
-      label: 'Register',
+      label: 'Create an Account',
       icon: 'i-lucide-user-plus',
       to: '/register'
     }
@@ -163,8 +163,9 @@ async function handleLogout() {
       </template>
 
       <template #right>
-        <div class="hidden lg:block">
+        <div class="hidden items-center gap-2 lg:flex">
           <UDropdownMenu
+            v-if="isLoggedIn"
             :content="{ align: 'end' }"
             :items="navigationItems"
           >
@@ -178,6 +179,22 @@ async function handleLogout() {
               variant="ghost"
             />
           </UDropdownMenu>
+          <template v-else>
+            <UButton
+              color="neutral"
+              icon="i-lucide-save"
+              to="/login"
+              variant="subtle"
+            >
+              Login to Save
+            </UButton>
+            <UButton
+              icon="i-lucide-user-plus"
+              to="/register"
+            >
+              Create an Account
+            </UButton>
+          </template>
         </div>
       </template>
 

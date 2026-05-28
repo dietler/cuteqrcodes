@@ -1,3 +1,5 @@
+import type { DynamicQrLinkPayload } from './dynamic-qr'
+
 export type CircleLabelPlacement = 'top' | 'bottom' | 'left' | 'right'
 export type CircleLabelOrientation = 'up' | 'down'
 
@@ -29,6 +31,7 @@ export type SavedQrPayload = {
   gradientDirection?: 'left-to-right' | 'top-to-bottom' | 'diagonal'
   gradientSecondColorName?: string | null
   gradientThirdColorName?: string | null
+  dynamicLink?: DynamicQrLinkPayload
 }
 
 export type SavedQrFolder = {

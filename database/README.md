@@ -12,3 +12,4 @@ App-owned tables are also created lazily by the server API. The SQL snapshots ar
 
 - `saved-qr-schema.sql`
 - `credits-schema.sql`
+- `dynamic-qr-schema.sql`

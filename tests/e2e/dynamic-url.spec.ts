@@ -1,0 +1,272 @@
+import { expect, type Locator, type Page, test } from '@playwright/test'
+
+const labelPrintPayloadStorageKey = 'cuteqrcodes.labelPrintPayload'
+const destinationUrl = 'https://example.com/menu'
+const dynamicRedirectUrl = 'https://qrcodesonlabels.com/redirect/menu-special'
+const trackStatsOnlyDescription = 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus IP-based location.'
+
+type DynamicLinkRequest = {
+  destinationUrl?: string
+  existingLinkId?: string
+  slug?: string
+  trackStatistics?: boolean
+  useDynamicUrl?: boolean
+}
+
+type SavedQrRequest = {
+  folderId?: string
+  name?: string
+  payload?: {
+    dynamicLink?: {
+      destinationUrl: string
+      id: string
+      redirectUrl: string
+      slug: string
+      trackStatistics: boolean
+      useDynamicUrl: boolean
+    }
+    url?: string
+  }
+}
+
+test('creates a paid dynamic tracking link before printing labels', async ({ page }) => {
+  let dynamicRequest: DynamicLinkRequest | null = null
+
+  await routeLoggedInSession(page)
+  await routeCreditsSummary(page)
+  await page.route('**/api/qr/dynamic-links', async (route) => {
+    dynamicRequest = route.request().postDataJSON() as DynamicLinkRequest
+
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        balance: 8,
+        link: createDynamicLinkResponse()
+      })
+    })
+  })
+
+  await page.goto('/')
+  await waitForBuilder(page)
+  await configureDynamicQr(page)
+
+  await page.getByRole('button', { name: 'Print to Labels', exact: true }).click()
+  await page.waitForURL('**/print-labels')
+
+  expect(dynamicRequest).toEqual({
+    destinationUrl,
+    slug: 'menu-special',
+    trackStatistics: true,
+    useDynamicUrl: true
+  })
+
+  const printPayload = await page.evaluate((storageKey) => {
+    const rawPayload = sessionStorage.getItem(storageKey)
+
+    return rawPayload ? JSON.parse(rawPayload) as { title?: string, url?: string } : null
+  }, labelPrintPayloadStorageKey)
+
+  expect(printPayload).toEqual(expect.objectContaining({
+    title: dynamicRedirectUrl,
+    url: dynamicRedirectUrl
+  }))
+})
+
+test('hides dynamic options until a URL is entered without clearing selected settings', async ({ page }) => {
+  await routeLoggedInSession(page)
+  await routeCreditsSummary(page)
+
+  await page.goto('/')
+  await waitForBuilder(page)
+
+  const editableToggle = page.getByRole('checkbox', { name: 'Editable' })
+  const statsToggle = page.getByRole('checkbox', { name: 'Track Stats' })
+
+  await expect(editableToggle).toHaveCount(0)
+  await expect(statsToggle).toHaveCount(0)
+
+  await page.locator('input[type="url"]').fill(destinationUrl)
+  await expect(editableToggle).toBeVisible()
+  await expect(statsToggle).toBeVisible()
+  await expect(page.getByText('Use a Dynamic URL that I can update later')).toHaveCount(0)
+  await expect(page.getByText('Track Statistics on when and where the QR Code is scanned')).toHaveCount(0)
+  await expectSameVisualRow(editableToggle, statsToggle)
+
+  await statsToggle.click()
+  await expect(statsToggle).toHaveAttribute('aria-checked', 'true')
+  await expectDifferentVisualRows(editableToggle, statsToggle)
+  await expect(page.getByText(trackStatsOnlyDescription)).toBeVisible()
+
+  await editableToggle.click()
+  await expect(editableToggle).toHaveAttribute('aria-checked', 'true')
+  await expect(statsToggle).toHaveAttribute('aria-checked', 'true')
+  await expectDifferentVisualRows(editableToggle, statsToggle)
+  await expect(page.getByText('Use a Dynamic URL that I can update later')).toBeVisible()
+  await expect(page.getByText('Track Statistics on when and where the QR Code is scanned')).toBeVisible()
+  await page.getByRole('button', { name: 'Customize Link.' }).click()
+  await page.getByPlaceholder('custom-slug').fill('menu-special')
+  await expect(page.getByText(dynamicRedirectUrl)).toBeVisible()
+
+  await page.locator('input[type="url"]').fill('')
+  await expect(editableToggle).toHaveCount(0)
+  await expect(statsToggle).toHaveCount(0)
+  await expect(page.getByText(dynamicRedirectUrl)).toHaveCount(0)
+
+  await page.locator('input[type="url"]').fill('https://example.com/changed')
+  await expect(editableToggle).toHaveAttribute('aria-checked', 'true')
+  await expect(statsToggle).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByPlaceholder('custom-slug')).toHaveValue('menu-special')
+  await expect(page.getByText(dynamicRedirectUrl)).toBeVisible()
+})
+
+test('saves dynamic link metadata with the saved QR payload', async ({ page }) => {
+  let savedRequest: SavedQrRequest | null = null
+
+  await routeLoggedInSession(page)
+  await routeSaveFolders(page)
+  await page.route('**/api/qr/dynamic-links', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        balance: 8,
+        link: createDynamicLinkResponse()
+      })
+    })
+  )
+  await page.route('**/api/qr/saved', async (route) => {
+    savedRequest = route.request().postDataJSON() as SavedQrRequest
+
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ qrCode: { id: 'saved-dynamic' } })
+    })
+  })
+
+  await page.goto('/')
+  await waitForBuilder(page)
+  await configureDynamicQr(page)
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Save QR Code' })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click()
+  await expect.poll(() => savedRequest).not.toBeNull()
+
+  expect(savedRequest).toEqual(expect.objectContaining({
+    folderId: 'folder-dynamic'
+  }))
+  expect(savedRequest?.payload).toEqual(expect.objectContaining({
+    url: destinationUrl,
+    dynamicLink: createDynamicLinkResponse()
+  }))
+})
+
+async function configureDynamicQr(page: Page) {
+  await page.locator('input[type="url"]').fill(destinationUrl)
+  await page.getByRole('checkbox', { name: 'Editable' }).click()
+  await page.getByRole('checkbox', { name: 'Track Stats' }).click()
+  await expect(page.getByRole('checkbox', { name: 'Editable' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('checkbox', { name: 'Track Stats' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByText('This costs 2 credits when the link is created.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Customize Link.' }).click()
+  await page.getByPlaceholder('custom-slug').fill('menu-special')
+  await expect(page.getByText(dynamicRedirectUrl)).toBeVisible()
+  await expect(page.getByText(/Version \d+ · \d+×\d+ modules/)).toBeVisible()
+}
+
+async function expectSameVisualRow(first: Locator, second: Locator) {
+  const [firstBox, secondBox] = await Promise.all([
+    first.boundingBox(),
+    second.boundingBox()
+  ])
+
+  expect(firstBox).not.toBeNull()
+  expect(secondBox).not.toBeNull()
+  expect(Math.abs(firstBox!.y - secondBox!.y)).toBeLessThanOrEqual(2)
+}
+
+async function expectDifferentVisualRows(first: Locator, second: Locator) {
+  const [firstBox, secondBox] = await Promise.all([
+    first.boundingBox(),
+    second.boundingBox()
+  ])
+
+  expect(firstBox).not.toBeNull()
+  expect(secondBox).not.toBeNull()
+  expect(Math.abs(firstBox!.y - secondBox!.y)).toBeGreaterThan(2)
+}
+
+async function waitForBuilder(page: Page) {
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+}
+
+async function routeLoggedInSession(page: Page) {
+  await page.route('**/api/auth/get-session', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        session: {
+          createdAt: '2026-05-28T00:00:00.000Z',
+          expiresAt: '2026-06-28T00:00:00.000Z',
+          id: 'session-dynamic',
+          token: 'session-dynamic',
+          updatedAt: '2026-05-28T00:00:00.000Z',
+          userId: 'user-dynamic'
+        },
+        user: {
+          createdAt: '2026-05-28T00:00:00.000Z',
+          email: 'dynamic@example.com',
+          emailVerified: true,
+          id: 'user-dynamic',
+          name: 'dynamic@example.com',
+          updatedAt: '2026-05-28T00:00:00.000Z'
+        }
+      })
+    })
+  )
+}
+
+async function routeCreditsSummary(page: Page) {
+  await page.route('**/api/credits/summary', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        balance: 8,
+        packs: [],
+        pdfs: [],
+        transactions: []
+      })
+    })
+  )
+}
+
+async function routeSaveFolders(page: Page) {
+  await page.route('**/api/qr/folders', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        folders: [{
+          createdAt: '2026-05-28T00:00:00.000Z',
+          id: 'folder-dynamic',
+          name: 'Dynamic QR Codes',
+          updatedAt: '2026-05-28T00:00:00.000Z'
+        }]
+      })
+    })
+  )
+}
+
+function createDynamicLinkResponse() {
+  return {
+    destinationUrl,
+    id: 'dynamic-link-1',
+    redirectUrl: dynamicRedirectUrl,
+    slug: 'menu-special',
+    trackStatistics: true,
+    useDynamicUrl: true
+  }
+}

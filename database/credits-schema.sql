@@ -20,7 +20,7 @@ create index if not exists purchased_pdfs_user_id_idx on purchased_pdfs(user_id,
 create table if not exists credit_transactions (
   id text primary key,
   user_id text not null references "user"(id) on delete cascade,
-  type text not null check (type in ('credit_purchase', 'pdf_purchase')),
+  type text not null check (type in ('credit_purchase', 'pdf_purchase', 'qr_feature_purchase')),
   credits integer not null check (credits <> 0),
   balance_after integer not null check (balance_after >= 0),
   description text not null,
@@ -32,4 +32,3 @@ create table if not exists credit_transactions (
 );
 
 create index if not exists credit_transactions_user_id_idx on credit_transactions(user_id, created_at desc);
-

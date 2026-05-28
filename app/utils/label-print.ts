@@ -61,7 +61,11 @@ export function createLabelPrintPayloadFromSavedQr(
     svg: qrCode.previewSvg,
     title: qrCode.name,
     url:
-      typeof qrCode.payload?.url === "string" ? qrCode.payload.url : undefined,
+      typeof qrCode.payload?.dynamicLink?.redirectUrl === "string"
+        ? qrCode.payload.dynamicLink.redirectUrl
+        : typeof qrCode.payload?.url === "string"
+          ? qrCode.payload.url
+          : undefined,
     width: qrCode.previewWidth,
   };
 }

@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useSession } from '~~/lib/auth-client'
+import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, isValidDynamicQrSlug, normalizeDynamicQrSlug, type DynamicQrLinkPayload, type DynamicQrLinkResponse } from '~/utils/dynamic-qr'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
@@ -125,6 +126,12 @@ type CurrentQrDraftPayload = SavedQrPayload & {
 const qrStore = useQrStore()
 const session = useSession()
 
+const useDynamicUrl = ref(false)
+const trackScanStatistics = ref(false)
+const dynamicLinkSlug = ref('')
+const isCustomizingDynamicLink = ref(false)
+const dynamicLinkError = ref('')
+const activeDynamicLink = ref<DynamicQrLinkPayload | null>(null)
 const activeTool = ref<QrTool | null>(null)
 const selectedQrColor = ref<TailwindColor | null>(null)
 const colorScroller = ref<HTMLElement | null>(null)
@@ -488,11 +495,32 @@ const tailwindColors: TailwindColor[] = [
 const hasQrContent = computed(() => qrStore.content.length > 0)
 const shouldShowHomepageDescription = computed(() => homepageDescriptionDismissedCookie.value !== '1')
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
-const saveButtonLabel = computed(() => isLoggedIn.value ? 'Save' : 'Login to Save')
 const savedFolderItems = computed(() => savedQrFolders.value.map(folder => ({
   label: folder.name,
   value: folder.id
 })))
+const hasDynamicQrFeature = computed(() => useDynamicUrl.value || trackScanStatistics.value)
+const shouldShowDynamicQrControls = computed(() => hasQrContent.value)
+const dynamicLinkCreditCost = computed(() => Number(useDynamicUrl.value) + Number(trackScanStatistics.value))
+const normalizedDynamicLinkSlug = computed(() => normalizeDynamicQrSlug(dynamicLinkSlug.value))
+const dynamicLinkRedirectUrl = computed(() => createDynamicQrRedirectUrl(normalizedDynamicLinkSlug.value || 'guid'))
+const qrContent = computed(() => hasDynamicQrFeature.value ? dynamicLinkRedirectUrl.value : qrStore.content)
+const dynamicLinkFeatureDescription = computed(() => {
+  if (useDynamicUrl.value && trackScanStatistics.value) {
+    return 'Your QR code will scan to this redirect link. We will send visitors to the URL above, let you update that destination later, and record scan time plus IP-based location.'
+  }
+
+  if (useDynamicUrl.value) {
+    return 'Your QR code will scan to this redirect link. We will send visitors to the URL above, and you will be able to update that destination later.'
+  }
+
+  return 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus IP-based location.'
+})
+const dynamicLinkCreditMessage = computed(() => {
+  const credits = dynamicLinkCreditCost.value
+
+  return credits === 1 ? 'This costs 1 credit when the link is created.' : `This costs ${credits} credits when the link is created.`
+})
 const generatedQr = computed(() => {
   if (!hasQrContent.value) {
     return {
@@ -502,7 +530,7 @@ const generatedQr = computed(() => {
   }
 
   try {
-    const code = createQrCode(qrStore.content, {
+    const code = createQrCode(qrContent.value, {
       errorCorrectionLevel: hasCenterIcon.value ? 'high' : 'medium',
       minVersion: hasCenterIcon.value ? 3 : 1
     })
@@ -1467,6 +1495,8 @@ async function goToPrintLabels() {
   printLabelError.value = ''
 
   try {
+    await ensureDynamicQrLink()
+
     const payload = await createLabelPrintPayload()
 
     sessionStorage.setItem(labelPrintPayloadStorageKey, JSON.stringify(payload))
@@ -1479,11 +1509,6 @@ async function goToPrintLabels() {
 }
 
 async function handleSaveButtonClick() {
-  if (!isLoggedIn.value) {
-    await navigateTo('/login?redirect=/')
-    return
-  }
-
   await openSaveDialog()
 }
 
@@ -1560,6 +1585,8 @@ async function saveCurrentQr() {
   saveQrError.value = ''
 
   try {
+    await ensureDynamicQrLink()
+
     const printPayload = await createLabelPrintPayload()
 
     await $fetch('/api/qr/saved', {
@@ -1604,7 +1631,96 @@ function createSavedQrPayload(): SavedQrPayload {
     labelSizeStep: labelSizeStep.value,
     shape: selectedQrShape.value,
     url: qrStore.url,
-    version: 1
+    version: 1,
+    ...(hasDynamicQrFeature.value ? { dynamicLink: createDynamicQrLinkPayload() } : {})
+  }
+}
+
+function createDynamicQrLinkPayload(): DynamicQrLinkPayload {
+  const slug = normalizedDynamicLinkSlug.value
+
+  return activeDynamicLink.value ?? {
+    destinationUrl: getDynamicDestinationUrl(),
+    id: '',
+    redirectUrl: createDynamicQrRedirectUrl(slug || 'guid'),
+    slug,
+    trackStatistics: trackScanStatistics.value,
+    useDynamicUrl: useDynamicUrl.value
+  }
+}
+
+async function ensureDynamicQrLink() {
+  if (!hasDynamicQrFeature.value) {
+    activeDynamicLink.value = null
+    return null
+  }
+
+  if (!isLoggedIn.value) {
+    await navigateTo('/login?redirect=/')
+    throw new Error('Login is required to create a dynamic QR link.')
+  }
+
+  if (isActiveDynamicLinkCurrent()) {
+    return activeDynamicLink.value
+  }
+
+  const slug = getValidDynamicLinkSlug()
+
+  let response: DynamicQrLinkResponse
+
+  try {
+    response = await $fetch<DynamicQrLinkResponse>('/api/qr/dynamic-links', {
+      body: {
+        destinationUrl: getDynamicDestinationUrl(),
+        existingLinkId: activeDynamicLink.value?.id || undefined,
+        slug,
+        trackStatistics: trackScanStatistics.value,
+        useDynamicUrl: useDynamicUrl.value
+      },
+      method: 'POST'
+    })
+  } catch (error) {
+    dynamicLinkError.value = getErrorMessage(error, 'Unable to create this dynamic QR link.')
+    throw error
+  }
+
+  activeDynamicLink.value = response.link
+  dynamicLinkSlug.value = response.link.slug
+  dynamicLinkError.value = ''
+
+  return response.link
+}
+
+function isActiveDynamicLinkCurrent() {
+  const link = activeDynamicLink.value
+
+  return Boolean(link
+    && link.slug === normalizedDynamicLinkSlug.value
+    && link.destinationUrl === getDynamicDestinationUrl()
+    && link.trackStatistics === trackScanStatistics.value
+    && link.useDynamicUrl === useDynamicUrl.value)
+}
+
+function getValidDynamicLinkSlug() {
+  const slug = normalizedDynamicLinkSlug.value
+
+  if (!slug || !isValidDynamicQrSlug(slug)) {
+    dynamicLinkError.value = 'Use lowercase letters, numbers, and hyphens for the custom link.'
+    throw new Error(dynamicLinkError.value)
+  }
+
+  return slug
+}
+
+function updateDynamicLinkSlug(value: string | number) {
+  dynamicLinkSlug.value = normalizeDynamicQrSlug(String(value))
+}
+
+function getDynamicDestinationUrl() {
+  try {
+    return new URL(qrStore.content).toString()
+  } catch {
+    return qrStore.content
   }
 }
 
@@ -1713,6 +1829,7 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   }
 
   qrStore.url = typeof payload.url === 'string' ? payload.url : ''
+  applyDynamicLinkPayload(payload.dynamicLink)
   selectedQrColor.value = payload.colorName ? tailwindColors.find(color => color.name === payload.colorName) ?? null : null
   selectedColorStep.value = tailwindColorSteps.includes(payload.colorStep) ? payload.colorStep : 500
   selectedGradientStyle.value = isGradientStyle(payload.gradientStyle) && selectedQrColor.value ? payload.gradientStyle : 'none'
@@ -1743,6 +1860,36 @@ function applyCircleLabelsPayload(payload: SavedQrPayload['circleLabels']) {
     setCircleLabelSizeStep(placement, label?.sizeStep)
     setCircleLabelOrientation(placement, label?.orientation)
   }
+}
+
+function applyDynamicLinkPayload(payload: SavedQrPayload['dynamicLink']) {
+  if (!payload || typeof payload !== 'object') {
+    useDynamicUrl.value = false
+    trackScanStatistics.value = false
+    dynamicLinkSlug.value = ''
+    isCustomizingDynamicLink.value = false
+    dynamicLinkError.value = ''
+    activeDynamicLink.value = null
+    return
+  }
+
+  const slug = normalizeDynamicQrSlug(payload.slug)
+
+  useDynamicUrl.value = payload.useDynamicUrl === true
+  trackScanStatistics.value = payload.trackStatistics === true
+  dynamicLinkSlug.value = slug
+  isCustomizingDynamicLink.value = false
+  dynamicLinkError.value = ''
+  activeDynamicLink.value = typeof payload.id === 'string' && payload.id
+    ? {
+        destinationUrl: typeof payload.destinationUrl === 'string' ? payload.destinationUrl : qrStore.url,
+        id: payload.id,
+        redirectUrl: typeof payload.redirectUrl === 'string' ? payload.redirectUrl : createDynamicQrRedirectUrl(slug || 'guid'),
+        slug,
+        trackStatistics: payload.trackStatistics === true,
+        useDynamicUrl: payload.useDynamicUrl === true
+      }
+    : null
 }
 
 function clearCurrentQr() {
@@ -1792,6 +1939,12 @@ function resetCurrentQrState() {
   newSaveFolderName.value = ''
   selectedSaveFolderId.value = ''
   saveQrError.value = ''
+  useDynamicUrl.value = false
+  trackScanStatistics.value = false
+  dynamicLinkSlug.value = ''
+  isCustomizingDynamicLink.value = false
+  dynamicLinkError.value = ''
+  activeDynamicLink.value = null
 }
 
 function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
@@ -1817,6 +1970,7 @@ function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
     && !payload.activeTool
     && !payload.activeCenterIconCategory
     && !payload.centerIconSearch
+    && !payload.dynamicLink
 }
 
 function isDefaultCircleLabels(payload: SavedQrPayload['circleLabels']) {
@@ -1908,8 +2062,8 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
     name: getDefaultQrName(),
     qrShape: selectedQrShape.value,
     svg: new XMLSerializer().serializeToString(clonedSvg),
-    title: qrStore.content,
-    url: qrStore.content,
+    title: qrContent.value,
+    url: qrContent.value,
     width: outputSvgWidth.value
   }
 }
@@ -1998,8 +2152,26 @@ watch(hasQrContent, (hasContent) => {
     activeTool.value = null
   }
 })
+watch(hasDynamicQrFeature, (enabled) => {
+  if (enabled && !normalizedDynamicLinkSlug.value) {
+    dynamicLinkSlug.value = createRandomDynamicQrSlug()
+  }
+
+  if (!enabled) {
+    isCustomizingDynamicLink.value = false
+  }
+
+  dynamicLinkError.value = ''
+})
+watch([() => qrStore.url, useDynamicUrl, trackScanStatistics, dynamicLinkSlug], () => {
+  dynamicLinkError.value = ''
+})
 watch([
   () => qrStore.url,
+  useDynamicUrl,
+  trackScanStatistics,
+  dynamicLinkSlug,
+  activeDynamicLink,
   selectedQrColor,
   selectedColorStep,
   selectedGradientStyle,
@@ -2115,6 +2287,103 @@ onUnmounted(() => {
           {{ generatedQr.error }}
         </p>
       </UFormField>
+
+      <div
+        v-if="shouldShowDynamicQrControls"
+        class="mt-3"
+        :class="hasDynamicQrFeature ? 'space-y-2' : 'flex flex-wrap gap-2'"
+      >
+        <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+          <UButton
+            :aria-checked="useDynamicUrl"
+            :aria-describedby="useDynamicUrl ? 'dynamic-url-editable-description' : undefined"
+            :color="useDynamicUrl ? 'primary' : 'neutral'"
+            :icon="useDynamicUrl ? 'i-lucide-square-check' : 'i-lucide-square'"
+            role="checkbox"
+            size="sm"
+            :variant="useDynamicUrl ? 'solid' : 'subtle'"
+            @click="useDynamicUrl = !useDynamicUrl"
+          >
+            Editable
+          </UButton>
+          <p
+            v-if="useDynamicUrl"
+            id="dynamic-url-editable-description"
+            class="text-xs leading-5 text-muted"
+          >
+            Use a Dynamic URL that I can update later
+          </p>
+        </div>
+        <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
+          <UButton
+            :aria-checked="trackScanStatistics"
+            :aria-describedby="trackScanStatistics ? 'dynamic-url-stats-description' : undefined"
+            :color="trackScanStatistics ? 'primary' : 'neutral'"
+            :icon="trackScanStatistics ? 'i-lucide-square-check' : 'i-lucide-square'"
+            role="checkbox"
+            size="sm"
+            :variant="trackScanStatistics ? 'solid' : 'subtle'"
+            @click="trackScanStatistics = !trackScanStatistics"
+          >
+            Track Stats
+          </UButton>
+          <p
+            v-if="trackScanStatistics"
+            id="dynamic-url-stats-description"
+            class="text-xs leading-5 text-muted"
+          >
+            Track Statistics on when and where the QR Code is scanned
+          </p>
+        </div>
+      </div>
+      <div
+        v-if="shouldShowDynamicQrControls && hasDynamicQrFeature"
+        class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-muted dark:border-slate-800 dark:bg-slate-900/40"
+      >
+        <p>{{ dynamicLinkFeatureDescription }}</p>
+        <p class="mt-1 font-medium text-highlighted">
+          {{ dynamicLinkCreditMessage }}
+        </p>
+
+        <div class="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div class="min-w-0 flex-1 rounded-md bg-white px-3 py-2 font-mono text-xs text-slate-700 ring-1 ring-slate-200 break-all dark:bg-slate-950 dark:text-slate-200 dark:ring-slate-800">
+            {{ dynamicLinkRedirectUrl }}
+          </div>
+          <UButton
+            class="justify-center"
+            color="neutral"
+            icon="i-lucide-pencil"
+            size="sm"
+            variant="subtle"
+            @click="isCustomizingDynamicLink = !isCustomizingDynamicLink"
+          >
+            Customize Link.
+          </UButton>
+        </div>
+
+        <div
+          v-if="isCustomizingDynamicLink"
+          class="mt-3 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center"
+        >
+          <span class="font-mono text-xs text-muted">qrcodesonlabels.com/redirect/</span>
+          <UInput
+            :model-value="dynamicLinkSlug"
+            autocomplete="off"
+            class="w-full"
+            icon="i-lucide-link-2"
+            placeholder="custom-slug"
+            size="sm"
+            @update:model-value="updateDynamicLinkSlug"
+          />
+        </div>
+
+        <p
+          v-if="dynamicLinkError"
+          class="mt-2 text-xs font-medium text-error"
+        >
+          {{ dynamicLinkError }}
+        </p>
+      </div>
     </UCard>
 
     <div
@@ -2921,7 +3190,6 @@ onUnmounted(() => {
               />
             </UFieldGroup>
           </div>
-
         </div>
 
         <div
@@ -3525,14 +3793,18 @@ onUnmounted(() => {
           v-if="generatedQr.code"
           class="flex flex-col items-center justify-center gap-3"
         >
-          <div class="flex w-full max-w-[min(86svw,68svh)] items-center justify-between gap-3">
+          <div
+            class="flex w-full max-w-[min(86svw,68svh)] items-center gap-3"
+            :class="isLoggedIn ? 'justify-between' : 'justify-end'"
+          >
             <UButton
+              v-if="isLoggedIn"
               color="neutral"
               icon="i-lucide-save"
               variant="subtle"
               @click="handleSaveButtonClick"
             >
-              {{ saveButtonLabel }}
+              Save
             </UButton>
 
             <UButton

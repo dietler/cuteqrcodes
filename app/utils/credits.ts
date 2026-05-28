@@ -10,7 +10,7 @@ export type CreditPack = {
 
 export type CreditTransaction = {
   id: string
-  type: 'credit_purchase' | 'pdf_purchase'
+  type: 'credit_purchase' | 'pdf_purchase' | 'qr_feature_purchase'
   credits: number
   balanceAfter: number
   description: string
