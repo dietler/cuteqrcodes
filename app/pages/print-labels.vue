@@ -1200,10 +1200,14 @@ function getErrorStatusCode(error: unknown) {
                           >1 Credit</span
                         >
                         <template v-if="dynamicLinkPurchaseLabel">
-                          <span class="min-w-0 border-t border-white/20 pt-1 text-xs font-medium opacity-90"
+                          <span
+                            aria-hidden="true"
+                            class="col-span-2 mt-0.5 h-px bg-white/20"
+                          />
+                          <span class="min-w-0 text-xs font-medium opacity-90"
                             >{{ dynamicLinkPurchaseLabel }}</span
                           >
-                          <span class="shrink-0 border-t border-white/20 pt-1">
+                          <span class="shrink-0">
                             <span class="inline-flex rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold leading-none ring-1 ring-white/20"
                               >{{ dynamicLinkPurchaseCost }} Credit</span
                             >
