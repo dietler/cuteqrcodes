@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { getCreditPack, getCreditPackByVariantId, grantCreditsForOrder } from '~~/server/utils/credits'
+import { getRuntimeEnv, populateProcessEnvFromRuntime } from '~~/server/utils/runtime-env'
 
 type LemonSqueezyWebhookPayload = {
   meta?: {
@@ -25,9 +26,11 @@ type LemonSqueezyWebhookPayload = {
 }
 
 export default defineEventHandler(async (event) => {
+  populateProcessEnvFromRuntime(event)
+
   const rawBody = await readRawBody(event)
   const signature = getHeader(event, 'x-signature') || ''
-  const signingSecret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET || ''
+  const signingSecret = getRuntimeEnv(event, 'LEMON_SQUEEZY_WEBHOOK_SECRET')
 
   if (!rawBody || !signingSecret) {
     throw createError({
@@ -54,7 +57,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const configuredStoreId = process.env.LEMON_SQUEEZY_STORE_ID || ''
+  const configuredStoreId = getRuntimeEnv(event, 'LEMON_SQUEEZY_STORE_ID')
 
   if (configuredStoreId && String(attributes.store_id || '') !== configuredStoreId) {
     throw createError({

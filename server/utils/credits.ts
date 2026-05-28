@@ -1,6 +1,7 @@
 import type { CreditPack, CreditPackId, CreditTransaction, PurchasedPdf } from '~~/app/utils/credits'
 import { creditPacks } from '~~/app/utils/credits'
 import type { H3Event } from 'h3'
+import { getCloudflareEnv } from '~~/server/utils/runtime-env'
 
 type NeonSql = ReturnType<typeof useNeon>
 
@@ -150,11 +151,7 @@ export function getLemonSqueezyConfig() {
 }
 
 export function getPdfBucket(event: H3Event) {
-  const bucket = (event.context as {
-    cloudflare?: {
-      env?: Record<string, unknown>
-    }
-  }).cloudflare?.env?.PDF_BUCKET as R2BucketLike | undefined
+  const bucket = getCloudflareEnv(event)?.PDF_BUCKET as R2BucketLike | undefined
 
   if (!bucket) {
     throw createError({

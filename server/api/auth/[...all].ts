@@ -1,25 +1,15 @@
-import { createAuth, parseTrustedOrigins } from '~~/lib/auth'
+import { createAuth } from '~~/lib/auth'
+import { getRuntimeAuthOptions } from '~~/server/utils/auth-config'
 
-export default defineEventHandler((event) => {
-  const databaseUrl = process.env.DATABASE_URL
+export default defineEventHandler(async (event) => {
+  const authOptions = getRuntimeAuthOptions(event)
+  const authPath = event.path?.split('?')[0] || ''
+  const enableDash = authPath.startsWith('/api/auth/dash')
+    || authPath.startsWith('/api/auth/events')
 
-  if (!databaseUrl) {
-    throw createError({
-      statusCode: 500,
-      statusMessage: 'DATABASE_URL is required for Better Auth.'
-    })
-  }
-
-  const auth = createAuth({
-    baseURL: process.env.BETTER_AUTH_URL,
-    databaseUrl,
-    resendApiKey: process.env.RESEND_API_KEY,
-    resendFromEmail: process.env.RESEND_FROM_EMAIL,
-    secret: process.env.BETTER_AUTH_SECRET,
-    trustedOrigins: parseTrustedOrigins(
-      process.env.BETTER_AUTH_TRUSTED_ORIGINS
-    )
-  })
+  const auth = enableDash
+    ? (await import('~~/lib/auth-dash')).createDashAuth(authOptions)
+    : createAuth(authOptions)
 
   return auth.handler(toWebRequest(event))
 })

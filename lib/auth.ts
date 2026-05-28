@@ -2,10 +2,14 @@ import { neon } from '@neondatabase/serverless'
 import { betterAuth } from 'better-auth'
 import { Kysely } from 'kysely'
 import { NeonDialect } from 'kysely-neon'
+import { hashPassword, verifyPassword } from './auth-password'
 
-type AuthOptions = {
+type BetterAuthOptions = Parameters<typeof betterAuth>[0]
+
+export type AuthOptions = {
   baseURL?: string
   databaseUrl?: string
+  plugins?: BetterAuthOptions['plugins']
   resendApiKey?: string
   resendFromEmail?: string
   secret?: string
@@ -134,7 +138,6 @@ export function createAuth(options: AuthOptions = {}) {
       neon: neon(options.databaseUrl || placeholderDatabaseUrl)
     })
   })
-
   return betterAuth({
     baseURL: options.baseURL,
     database: {
@@ -143,6 +146,10 @@ export function createAuth(options: AuthOptions = {}) {
     },
     emailAndPassword: {
       enabled: true,
+      password: {
+        hash: hashPassword,
+        verify: verifyPassword
+      },
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: async ({ user, url }) => {
         await sendPasswordResetEmail({
@@ -153,6 +160,7 @@ export function createAuth(options: AuthOptions = {}) {
         })
       }
     },
+    plugins: options.plugins || [],
     secret: options.secret,
     trustedOrigins: options.trustedOrigins
   })

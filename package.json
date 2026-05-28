@@ -23,6 +23,7 @@
     "test:e2e": "node ./node_modules/@playwright/test/cli.js test"
   },
   "dependencies": {
+    "@better-auth/infra": "^0.2.10",
     "@iconify-json/lucide": "^1.2.108",
     "@iconify-json/lucide-lab": "^1.2.3",
     "@neondatabase/serverless": "^1.1.0",
