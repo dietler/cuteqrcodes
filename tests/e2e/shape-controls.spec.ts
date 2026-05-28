@@ -199,7 +199,7 @@ test('moves top and bottom label text when switching shapes', async ({ page }) =
   await page.locator('input[type="url"]').fill('https://example.com/shape-label-transfer')
 
   await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await page.locator('input[placeholder="Add a word"]').fill('Rectangle label')
+  await page.getByRole('textbox', { name: 'Label' }).fill('Rectangle label')
   await page.locator('#qr-additional-text').fill('Rectangle additional')
 
   await page.getByRole('button', { name: 'Shape' }).click()
@@ -220,7 +220,7 @@ test('moves top and bottom label text when switching shapes', async ({ page }) =
   await page.getByRole('radio', { name: 'Rectangle/Square' }).click()
   await page.getByRole('button', { name: 'Label', exact: true }).click()
 
-  await expect(page.locator('input[placeholder="Add a word"]')).toHaveValue('Circle top')
+  await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('Circle top')
   await expect(page.locator('#qr-additional-text')).toHaveValue('Circle bottom')
 
   await page.getByRole('button', { name: 'Shape' }).click()
@@ -231,6 +231,107 @@ test('moves top and bottom label text when switching shapes', async ({ page }) =
   await expect(page.locator('input[placeholder="Bottom text"]')).toHaveValue('Circle bottom')
   await expect(page.locator('input[placeholder="Left text"]')).toHaveValue('')
   await expect(page.locator('input[placeholder="Right text"]')).toHaveValue('')
+})
+
+test('uses sectioned mobile label controls for rectangle and circle labels', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/mobile-label-controls')
+
+  await page.getByRole('button', { name: 'Label', exact: true }).click()
+
+  const rectangleMobileControls = page.getByTestId('rectangle-label-mobile-controls')
+
+  await expect(rectangleMobileControls).toBeVisible()
+  await expect(rectangleMobileControls.getByText('Flip', { exact: true })).toHaveCount(0)
+
+  const mobileRectangleOrder = await getSectionTopPositions(page, [
+    'rectangle-label-position-controls',
+    'rectangle-label-mobile-section-label',
+    'rectangle-label-mobile-section-additional'
+  ])
+
+  expect(mobileRectangleOrder['rectangle-label-position-controls']).toBeLessThan(mobileRectangleOrder['rectangle-label-mobile-section-label'])
+  expect(mobileRectangleOrder['rectangle-label-mobile-section-label']).toBeLessThan(mobileRectangleOrder['rectangle-label-mobile-section-additional'])
+
+  const rectangleLayout = await rectangleMobileControls.evaluate((element) => {
+    const containerBox = element.getBoundingClientRect()
+    const labelInput = element.querySelector('input[placeholder="Add a word"]') as HTMLInputElement | null
+    const additionalInput = element.querySelector('input[placeholder="Add smaller text"]') as HTMLInputElement | null
+
+    if (!labelInput || !additionalInput) {
+      throw new Error('Missing mobile rectangle label inputs.')
+    }
+
+    return {
+      additionalInputWidth: additionalInput.getBoundingClientRect().width,
+      containerWidth: containerBox.width,
+      labelInputWidth: labelInput.getBoundingClientRect().width
+    }
+  })
+
+  expect(rectangleLayout.labelInputWidth).toBeGreaterThan(rectangleLayout.containerWidth * 0.9)
+  expect(rectangleLayout.additionalInputWidth).toBeGreaterThan(rectangleLayout.containerWidth * 0.9)
+  const rectangleSectionStates = await getSectionBoxStates(page, [
+    'rectangle-label-mobile-section-label',
+    'rectangle-label-mobile-section-additional'
+  ])
+
+  for (const state of Object.values(rectangleSectionStates)) {
+    expect(state.borderTopWidth).toBeGreaterThanOrEqual(1)
+    expect(state.fontSize).toBeGreaterThan(14)
+    expect(state.fontWeight).toBe(700)
+    expect(state.paddingTop).toBeGreaterThanOrEqual(12)
+    expect(state.textDecorationLine).toBe('none')
+  }
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Circle' }).click()
+  await page.getByRole('button', { name: 'Label', exact: true }).click()
+
+  await expect(page.getByTestId('circle-label-controls')).toBeVisible()
+  const circleSectionStates = await getSectionBoxStates(page, [
+    'circle-label-mobile-section-top',
+    'circle-label-mobile-section-bottom',
+    'circle-label-mobile-section-left',
+    'circle-label-mobile-section-right'
+  ])
+
+  for (const state of Object.values(circleSectionStates)) {
+    expect(state.borderTopWidth).toBeGreaterThanOrEqual(1)
+    expect(state.fontSize).toBeGreaterThan(14)
+    expect(state.fontWeight).toBe(700)
+    expect(state.paddingTop).toBeGreaterThanOrEqual(12)
+    expect(state.textDecorationLine).toBe('none')
+  }
+
+  await page.setViewportSize({ width: 900, height: 844 })
+
+  const desktopCircleSectionState = await getSectionBoxStates(page, ['circle-label-mobile-section-top'])
+
+  expect(desktopCircleSectionState['circle-label-mobile-section-top'].borderTopWidth).toBe(0)
+  expect(desktopCircleSectionState['circle-label-mobile-section-top'].fontSize).toBeLessThanOrEqual(14)
+  expect(desktopCircleSectionState['circle-label-mobile-section-top'].paddingTop).toBe(0)
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Rectangle/Square' }).click()
+  await page.getByRole('button', { name: 'Label', exact: true }).click()
+
+  await expect(page.getByTestId('rectangle-label-mobile-controls')).toBeHidden()
+
+  const desktopRectangleOrder = await getSectionTopPositions(page, [
+    'rectangle-label-position-controls',
+    'rectangle-label-desktop-primary-controls',
+    'rectangle-label-desktop-additional-controls'
+  ])
+
+  expect(desktopRectangleOrder['rectangle-label-position-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-desktop-primary-controls'])
+  expect(desktopRectangleOrder['rectangle-label-desktop-primary-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-desktop-additional-controls'])
 })
 
 test('renders circle label text on curved paths', async ({ page }) => {
@@ -311,6 +412,47 @@ test('renders circle label text on curved paths', async ({ page }) => {
     expect(afterArc.sweep).toBe(beforeArc.sweep === 1 ? 0 : 1)
   }
 })
+
+async function getSectionBoxStates(page: Page, testIds: string[]) {
+  return page.evaluate((ids) => {
+    return Object.fromEntries(ids.map((testId) => {
+      const element = document.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null
+      const label = element?.querySelector('label') as HTMLLabelElement | null
+
+      if (!element || !label) {
+        throw new Error(`Missing label section: ${testId}`)
+      }
+
+      const elementStyle = getComputedStyle(element)
+      const labelStyle = getComputedStyle(label)
+
+      return [
+        testId,
+        {
+          borderTopWidth: Number.parseFloat(elementStyle.borderTopWidth),
+          fontSize: Number.parseFloat(labelStyle.fontSize),
+          fontWeight: Number(labelStyle.fontWeight),
+          paddingTop: Number.parseFloat(elementStyle.paddingTop),
+          textDecorationLine: labelStyle.textDecorationLine
+        }
+      ]
+    }))
+  }, testIds)
+}
+
+async function getSectionTopPositions(page: Page, testIds: string[]) {
+  return page.evaluate((ids) => {
+    return Object.fromEntries(ids.map((testId) => {
+      const element = document.querySelector(`[data-testid="${testId}"]`) as HTMLElement | null
+
+      if (!element) {
+        throw new Error(`Missing section: ${testId}`)
+      }
+
+      return [testId, element.getBoundingClientRect().top]
+    }))
+  }, testIds)
+}
 
 function parseCircleLabelPath(d: string) {
   const match = d.match(/^M([-+\d.eE]+) ([-+\d.eE]+)A([-+\d.eE]+) ([-+\d.eE]+) 0 0 ([01]) ([-+\d.eE]+) ([-+\d.eE]+)$/)

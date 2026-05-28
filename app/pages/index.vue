@@ -139,6 +139,10 @@ const hasColorsAfter = ref(false)
 const hasIconsBefore = ref(false)
 const hasIconsAfter = ref(false)
 const mobileScrollDesktopWrapClasses = 'flex flex-nowrap gap-2 overflow-x-auto overscroll-x-contain pb-2 md:flex-wrap md:overflow-x-visible md:pb-0'
+const mobileLabelSectionUi = {
+  label: 'text-base font-bold min-[620px]:text-sm min-[620px]:font-medium'
+}
+const mobileLabelSectionBoxClasses = 'rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 min-[620px]:rounded-none min-[620px]:border-0 min-[620px]:bg-transparent min-[620px]:p-0 min-[620px]:shadow-none'
 const selectedColorStep = ref(500)
 const selectedGradientStyle = ref<GradientStyle>('none')
 const selectedGradientDirection = ref<GradientDirection>('left-to-right')
@@ -2465,17 +2469,48 @@ onUnmounted(() => {
           class="space-y-3"
         >
           <div
+            v-if="!isCircleShape"
+            data-testid="rectangle-label-position-controls"
+          >
+            <UFormField label="Position">
+              <div
+                aria-label="Label position"
+                class="flex flex-wrap gap-2"
+                role="radiogroup"
+              >
+                <button
+                  v-for="option in labelPositionOptions"
+                  :key="option.value"
+                  :aria-checked="selectedLabelPosition === option.value"
+                  :aria-disabled="option.disabled"
+                  class="rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45"
+                  :class="selectedLabelPosition === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                  :disabled="option.disabled"
+                  role="radio"
+                  type="button"
+                  @click="selectLabelPosition(option)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+            </UFormField>
+          </div>
+
+          <div
             v-if="isCircleShape"
             class="space-y-3"
+            data-testid="circle-label-controls"
           >
             <div
               v-for="control in circleLabelControls"
               :key="control.value"
-              class="grid grid-cols-[minmax(0,1fr)_4rem] gap-3 min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem_4rem]"
+              :class="[mobileLabelSectionBoxClasses, 'grid grid-cols-[minmax(0,1fr)_4rem] gap-3 min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem_4rem]']"
+              :data-testid="`circle-label-mobile-section-${control.value}`"
             >
               <UFormField
                 :label="control.label"
                 class="col-span-2 min-[620px]:col-span-1"
+                :ui="mobileLabelSectionUi"
               >
                 <UInput
                   :model-value="getCircleLabelText(control.value)"
@@ -2556,7 +2591,172 @@ onUnmounted(() => {
 
           <div
             v-if="!isCircleShape"
-            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-3 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+            class="space-y-4 min-[620px]:hidden"
+            data-testid="rectangle-label-mobile-controls"
+          >
+            <div
+              :class="[mobileLabelSectionBoxClasses, 'grid gap-3']"
+              data-testid="rectangle-label-mobile-section-label"
+            >
+              <UFormField
+                label="Label"
+                :ui="mobileLabelSectionUi"
+              >
+                <UInput
+                  v-model="qrLabel"
+                  class="w-full"
+                  icon="i-lucide-type"
+                  placeholder="Add a word"
+                  size="lg"
+                />
+              </UFormField>
+
+              <UFormField label="Font">
+                <USelect
+                  v-model="selectedLabelFont"
+                  class="w-full"
+                  :items="labelFontItems"
+                  size="lg"
+                >
+                  <template #default="{ modelValue }">
+                    <span :class="getLabelFont(modelValue).class">
+                      {{ getLabelFont(modelValue).label }}
+                    </span>
+                  </template>
+
+                  <template #item-label="{ item }">
+                    <span :class="getLabelFontFromItem(item).class">
+                      {{ getLabelFontFromItem(item).label }}
+                    </span>
+                  </template>
+                </USelect>
+              </UFormField>
+
+              <UFormField label="Size">
+                <UFieldGroup
+                  class="w-full"
+                  size="lg"
+                >
+                  <UButton
+                    aria-label="Decrease label size"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canDecreaseLabelSize"
+                    icon="i-lucide-minus"
+                    size="lg"
+                    variant="subtle"
+                    @click="decreaseLabelSize"
+                  />
+                  <UButton
+                    aria-label="Increase label size"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canIncreaseLabelSize"
+                    icon="i-lucide-plus"
+                    size="lg"
+                    variant="subtle"
+                    @click="increaseLabelSize"
+                  />
+                </UFieldGroup>
+              </UFormField>
+            </div>
+
+            <div
+              :class="[mobileLabelSectionBoxClasses, 'grid gap-3']"
+              data-testid="rectangle-label-mobile-section-additional"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <label
+                  class="text-base font-bold text-highlighted"
+                  for="qr-additional-text-mobile"
+                >
+                  Additional Text
+                </label>
+                <UFieldGroup size="xs">
+                  <UButton
+                    :aria-pressed="selectedAdditionalTextPlacement === 'above'"
+                    :color="selectedAdditionalTextPlacement === 'above' ? 'primary' : 'neutral'"
+                    :variant="selectedAdditionalTextPlacement === 'above' ? 'solid' : 'subtle'"
+                    @click="selectAdditionalTextPlacement('above')"
+                  >
+                    Above
+                  </UButton>
+                  <UButton
+                    :aria-pressed="selectedAdditionalTextPlacement === 'below'"
+                    :color="selectedAdditionalTextPlacement === 'below' ? 'primary' : 'neutral'"
+                    :variant="selectedAdditionalTextPlacement === 'below' ? 'solid' : 'subtle'"
+                    @click="selectAdditionalTextPlacement('below')"
+                  >
+                    Below
+                  </UButton>
+                </UFieldGroup>
+              </div>
+
+              <UInput
+                id="qr-additional-text-mobile"
+                v-model="qrAdditionalText"
+                class="w-full"
+                icon="i-lucide-text-cursor-input"
+                :maxlength="maxAdditionalTextLength"
+                placeholder="Add smaller text"
+                size="lg"
+              />
+
+              <UFormField label="Font">
+                <USelect
+                  v-model="selectedAdditionalTextFont"
+                  class="w-full"
+                  :items="labelFontItems"
+                  size="lg"
+                >
+                  <template #default="{ modelValue }">
+                    <span :class="getLabelFont(modelValue).class">
+                      {{ getLabelFont(modelValue).label }}
+                    </span>
+                  </template>
+
+                  <template #item-label="{ item }">
+                    <span :class="getLabelFontFromItem(item).class">
+                      {{ getLabelFontFromItem(item).label }}
+                    </span>
+                  </template>
+                </USelect>
+              </UFormField>
+
+              <UFormField label="Size">
+                <UFieldGroup
+                  class="w-full"
+                  size="lg"
+                >
+                  <UButton
+                    aria-label="Decrease additional text size"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canDecreaseAdditionalTextSize"
+                    icon="i-lucide-minus"
+                    size="lg"
+                    variant="subtle"
+                    @click="decreaseAdditionalTextSize"
+                  />
+                  <UButton
+                    aria-label="Increase additional text size"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canIncreaseAdditionalTextSize"
+                    icon="i-lucide-plus"
+                    size="lg"
+                    variant="subtle"
+                    @click="increaseAdditionalTextSize"
+                  />
+                </UFieldGroup>
+              </UFormField>
+            </div>
+          </div>
+
+          <div
+            v-if="!isCircleShape"
+            class="hidden gap-3 min-[620px]:grid min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+            data-testid="rectangle-label-desktop-primary-controls"
           >
             <UFormField label="Label">
               <UInput
@@ -2620,7 +2820,8 @@ onUnmounted(() => {
 
           <div
             v-if="!isCircleShape"
-            class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem] gap-x-3 gap-y-1.5 min-[520px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+            class="hidden gap-x-3 gap-y-1.5 min-[620px]:grid min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+            data-testid="rectangle-label-desktop-additional-controls"
           >
             <div class="flex h-6 items-center justify-between gap-3">
               <label
@@ -2721,31 +2922,6 @@ onUnmounted(() => {
             </UFieldGroup>
           </div>
 
-          <UFormField
-            v-if="!isCircleShape"
-            label="Position"
-          >
-            <div
-              aria-label="Label position"
-              class="flex flex-wrap gap-2"
-              role="radiogroup"
-            >
-              <button
-                v-for="option in labelPositionOptions"
-                :key="option.value"
-                :aria-checked="selectedLabelPosition === option.value"
-                :aria-disabled="option.disabled"
-                class="rounded-lg border px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-45"
-                :class="selectedLabelPosition === option.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                :disabled="option.disabled"
-                role="radio"
-                type="button"
-                @click="selectLabelPosition(option)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-          </UFormField>
         </div>
 
         <div
