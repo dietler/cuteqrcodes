@@ -18,7 +18,7 @@ type DynamicQrScanSource = {
   userAgent: string | null
 }
 
-type DynamicQrLinkInput = {
+export type DynamicQrLinkInput = {
   destinationUrl: string
   existingLinkId?: string
   slug: string
@@ -370,7 +370,7 @@ async function getEditableDynamicQrLink(sql: NeonSql, userId: string, linkId: st
   return rows.length ? mapDynamicQrLinkRow(rows[0]!) : null
 }
 
-function getDynamicQrFeatureCost(input: DynamicQrLinkInput, existingLink: DynamicQrLinkPayload | null) {
+export function getDynamicQrFeatureCost(input: DynamicQrLinkInput, existingLink: DynamicQrLinkPayload | null) {
   if (!existingLink) {
     return Number(input.useDynamicUrl) + Number(input.trackStatistics)
   }
@@ -387,7 +387,7 @@ function getDynamicQrFeatureDescription(input: Pick<DynamicQrLinkInput, 'trackSt
   return input.useDynamicUrl ? 'Dynamic URL' : 'Scan statistics'
 }
 
-function mapDynamicQrLinkRow(row: DbRow): DynamicQrLinkPayload {
+export function mapDynamicQrLinkRow(row: DbRow): DynamicQrLinkPayload {
   const slug = getStringField(row, 'slug')
 
   return {

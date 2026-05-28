@@ -532,7 +532,9 @@ const dynamicLinkFeatureDescription = computed(() => {
 const dynamicLinkCreditMessage = computed(() => {
   const credits = dynamicLinkCreditCost.value
 
-  return credits === 1 ? 'This costs 1 credit when the link is created.' : `This costs ${credits} credits when the link is created.`
+  return credits === 1
+    ? 'This costs 1 credit when the link is created. Printable PDFs include this cost at purchase.'
+    : `This costs ${credits} credits when the link is created. Printable PDFs include this cost at purchase.`
 })
 const generatedQr = computed(() => {
   if (!hasQrContent.value) {
@@ -1378,7 +1380,8 @@ function getCircleLabelPathHref(placement: CircleLabelPlacement) {
 }
 
 function getCircleLabelPath(placement: CircleLabelPlacement) {
-  const radius = Math.max(qrOutputSize.value / 2 + circleBorderBuffer.value, circleLabelPathMaxRadius.value - getCircleLabelFontSize(placement) / 2)
+  const fontSize = getCircleLabelFontSize(placement)
+  const radius = Math.max(qrOutputSize.value / 2 + circleBorderBuffer.value, circleLabelPathMaxRadius.value - fontSize / 2)
   const centerX = qrOutputX.value + qrOutputSize.value / 2
   const centerY = qrOutputY.value + qrOutputSize.value / 2
   const arc = getCircleLabelArc(placement)
@@ -1482,6 +1485,10 @@ function isWavyBorderLine(line: BorderLine): line is BorderLine & { wave: Border
   return Boolean(line.wave)
 }
 
+function isPathBorderLine(line: BorderLine) {
+  return isWavyBorderLine(line)
+}
+
 function getBorderLineInnerEdge(line: BorderLine) {
   return line.inset + line.strokeWidth / 2 + (line.wave?.amplitude ?? 0) * 2
 }
@@ -1540,35 +1547,33 @@ function getPreviewStrokeWidth(line: BorderLine) {
 }
 
 function getPreviewStrokeLineCap(line: BorderLine) {
-  return isWavyBorderLine(line) || isCircleShape.value ? 'round' : 'square'
+  return isPathBorderLine(line) || isCircleShape.value ? 'round' : 'square'
 }
 
 function getBorderStrokeLineCap(line: BorderLine) {
-  return isWavyBorderLine(line) ? 'round' : undefined
+  return isPathBorderLine(line) ? 'round' : undefined
 }
 
 function getBorderStrokeLineJoin(line: BorderLine) {
-  return isWavyBorderLine(line) ? 'round' : undefined
+  return isPathBorderLine(line) ? 'round' : undefined
 }
 
 function getRectangleBorderPath(line: BorderLine & { height: number, width: number }) {
-  if (!isWavyBorderLine(line)) {
-    return ''
+  if (isWavyBorderLine(line)) {
+    const offset = line.inset + line.wave.amplitude
+    const width = Math.max(1, line.width - line.wave.amplitude * 2)
+    const height = Math.max(1, line.height - line.wave.amplitude * 2)
+
+    return createWavyRoundedRectanglePath(offset, offset, width, height, line.wave.cornerRadius, line.wave.amplitude, line.wave.length)
   }
-
-  const offset = line.inset + line.wave.amplitude
-  const width = Math.max(1, line.width - line.wave.amplitude * 2)
-  const height = Math.max(1, line.height - line.wave.amplitude * 2)
-
-  return createWavyRoundedRectanglePath(offset, offset, width, height, line.wave.cornerRadius, line.wave.amplitude, line.wave.length)
+  return ''
 }
 
 function getCircleBorderPath(line: BorderLine & { cx: number, cy: number, radius: number }) {
-  if (!isWavyBorderLine(line)) {
-    return ''
+  if (isWavyBorderLine(line)) {
+    return createWavyCirclePath(line.cx, line.cy, line.radius, line.wave.amplitude, line.wave.length)
   }
-
-  return createWavyCirclePath(line.cx, line.cy, line.radius, line.wave.amplitude, line.wave.length)
+  return ''
 }
 
 function createWavyCirclePath(cx: number, cy: number, radius: number, amplitude: number, waveLength: number) {
@@ -1697,8 +1702,6 @@ async function goToPrintLabels() {
   printLabelError.value = ''
 
   try {
-    await ensureDynamicQrLink()
-
     const payload = await createLabelPrintPayload()
 
     sessionStorage.setItem(labelPrintPayloadStorageKey, JSON.stringify(payload))
@@ -1841,14 +1844,16 @@ function createSavedQrPayload(): SavedQrPayload {
 function createDynamicQrLinkPayload(): DynamicQrLinkPayload {
   const slug = normalizedDynamicLinkSlug.value
 
-  return activeDynamicLink.value ?? {
-    destinationUrl: getDynamicDestinationUrl(),
-    id: '',
-    redirectUrl: createDynamicQrRedirectUrl(slug || 'guid'),
-    slug,
-    trackStatistics: trackScanStatistics.value,
-    useDynamicUrl: useDynamicUrl.value
-  }
+  return isActiveDynamicLinkCurrent() && activeDynamicLink.value
+    ? activeDynamicLink.value
+    : {
+        destinationUrl: getDynamicDestinationUrl(),
+        id: '',
+        redirectUrl: createDynamicQrRedirectUrl(slug || 'guid'),
+        slug,
+        trackStatistics: trackScanStatistics.value,
+        useDynamicUrl: useDynamicUrl.value
+      }
 }
 
 async function ensureDynamicQrLink() {
@@ -2266,7 +2271,8 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
     svg: new XMLSerializer().serializeToString(clonedSvg),
     title: qrContent.value,
     url: qrContent.value,
-    width: outputSvgWidth.value
+    width: outputSvgWidth.value,
+    ...(hasDynamicQrFeature.value ? { dynamicLink: createDynamicQrLinkPayload() } : {})
   }
 }
 
@@ -3801,7 +3807,7 @@ onUnmounted(() => {
                     :key="`circle-${selectedBorder}-${line.inset}`"
                   >
                     <path
-                      v-if="isWavyBorderLine(line)"
+                      v-if="isPathBorderLine(line)"
                       :data-testid="`qr-circle-border-${line.inset}`"
                       :d="getCircleBorderPath(line)"
                       fill="none"
@@ -3985,7 +3991,7 @@ onUnmounted(() => {
                     :key="`${selectedBorder}-${line.inset}`"
                   >
                     <path
-                      v-if="isWavyBorderLine(line)"
+                      v-if="isPathBorderLine(line)"
                       :data-testid="`qr-rectangle-border-${line.inset}`"
                       :d="getRectangleBorderPath(line)"
                       fill="none"

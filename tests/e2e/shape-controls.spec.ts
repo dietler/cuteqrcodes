@@ -539,12 +539,18 @@ async function getSectionBoxStates(page: Page, testIds: string[]) {
 }
 
 async function getWavyBorderPreviewState(page: Page) {
-  return page.evaluate(() => {
-    const button = document.querySelector('[role="radio"][aria-label="Wavy border"]') as HTMLElement | null
-    const path = button?.querySelector('path') as SVGPathElement | null
+  return getBorderPreviewState(page, 'Wavy border')
+}
+
+async function getBorderPreviewState(page: Page, label: string) {
+  return page.evaluate((borderLabel) => {
+    const button = Array.from(document.querySelectorAll('[role="radio"]'))
+      .find(element => element.getAttribute('aria-label') === borderLabel) as HTMLElement | undefined
+    const paths = Array.from(button?.querySelectorAll('path') ?? []) as SVGPathElement[]
+    const path = paths[0]
 
     if (!button || !path) {
-      throw new Error('Missing wavy border preview path.')
+      throw new Error(`Missing ${borderLabel} preview path.`)
     }
 
     const d = path.getAttribute('d') ?? ''
@@ -560,9 +566,10 @@ async function getWavyBorderPreviewState(page: Page) {
       firstPoint: points[0],
       isClosed: d.endsWith('Z'),
       lastPoint: points[points.length - 1],
-      pathCommands: d.match(/L/g)?.length ?? 0
+      pathCommands: d.match(/[LCQ]/g)?.length ?? 0,
+      pathCount: paths.length
     }
-  })
+  }, label)
 }
 
 async function getWavyRectangleBorderState(page: Page) {

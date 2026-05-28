@@ -1,10 +1,12 @@
 import type { SavedQrCode } from "./saved-qr";
+import type { DynamicQrLinkPayload } from "./dynamic-qr";
 
 export type LabelPrintPayload = {
   createdAt: number;
   height: number;
   name?: string;
   qrShape?: "rectangle" | "circle";
+  dynamicLink?: DynamicQrLinkPayload;
   svg: string;
   title: string;
   url?: string;
@@ -67,6 +69,9 @@ export function createLabelPrintPayloadFromSavedQr(
           ? qrCode.payload.url
           : undefined,
     width: qrCode.previewWidth,
+    ...(qrCode.payload?.dynamicLink
+      ? { dynamicLink: qrCode.payload.dynamicLink }
+      : {}),
   };
 }
 

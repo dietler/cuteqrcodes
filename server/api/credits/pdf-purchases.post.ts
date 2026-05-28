@@ -1,7 +1,15 @@
 import { labelTemplates } from '~~/app/utils/label-print'
 import { savePurchasedPdf } from '~~/server/utils/credits'
+import { normalizeDestinationUrl, normalizeDynamicQrSlugForServer, type DynamicQrLinkInput } from '~~/server/utils/dynamic-qr'
 
 type PdfPurchaseBody = {
+  dynamicLink?: {
+    destinationUrl?: unknown
+    id?: unknown
+    slug?: unknown
+    trackStatistics?: unknown
+    useDynamicUrl?: unknown
+  }
   pdfBase64?: unknown
   qrTitle?: unknown
   templateId?: unknown
@@ -14,6 +22,7 @@ export default defineEventHandler(async (event) => {
   const template = labelTemplates.find(item => item.id === templateId)
   const qrTitle = normalizeQrTitle(body?.qrTitle)
   const pdfBase64 = typeof body?.pdfBase64 === 'string' ? body.pdfBase64 : ''
+  const dynamicLink = normalizePurchaseDynamicLink(body?.dynamicLink, session.user.id)
 
   if (!template) {
     throw createError({
@@ -24,6 +33,7 @@ export default defineEventHandler(async (event) => {
 
   const pdfBytes = decodePdfBase64(pdfBase64)
   const result = await savePurchasedPdf(event, {
+    ...(dynamicLink ? { dynamicLink } : {}),
     pdfBytes,
     qrTitle,
     templateId: template.id,
@@ -33,6 +43,23 @@ export default defineEventHandler(async (event) => {
 
   return result
 })
+
+function normalizePurchaseDynamicLink(value: PdfPurchaseBody['dynamicLink'], userId: string): DynamicQrLinkInput | undefined {
+  if (!value || (value.useDynamicUrl !== true && value.trackStatistics !== true)) {
+    return undefined
+  }
+
+  const existingLinkId = typeof value.id === 'string' && value.id ? value.id : undefined
+
+  return {
+    destinationUrl: normalizeDestinationUrl(value.destinationUrl),
+    ...(existingLinkId ? { existingLinkId } : {}),
+    slug: normalizeDynamicQrSlugForServer(value.slug),
+    trackStatistics: value.trackStatistics === true,
+    useDynamicUrl: value.useDynamicUrl === true,
+    userId
+  }
+}
 
 function normalizeQrTitle(value: unknown) {
   const title = typeof value === 'string' ? value.trim() : ''

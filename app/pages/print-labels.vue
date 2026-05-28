@@ -10,6 +10,7 @@ import {
 } from "pdf-lib";
 import { computed, onMounted, ref } from "vue";
 import type { CreditsSummary, PurchasedPdf } from "~/utils/credits";
+import type { DynamicQrLinkPayload } from "~/utils/dynamic-qr";
 import {
   createLabelPrintPayloadFromSavedQr,
   getLabelArtworkPlacement,
@@ -56,6 +57,15 @@ const labelSortOrderOptions: { label: string; value: LabelSortOrder }[] = [
 
 const hasPrintPayload = computed(() => Boolean(printPayload.value));
 const isCreatingPdf = computed(() => Boolean(activePdfAction.value));
+const dynamicLinkPurchaseCost = computed(() =>
+  getDynamicLinkPurchaseCost(printPayload.value?.dynamicLink),
+);
+const printablePdfPurchaseCost = computed(
+  () => 1 + dynamicLinkPurchaseCost.value,
+);
+const dynamicLinkPurchaseLabel = computed(() =>
+  getDynamicLinkPurchaseLabel(printPayload.value?.dynamicLink),
+);
 const activeLabelTemplates = computed(() =>
   labelTemplates
     .filter((template) => template.type === selectedLabelType.value)
@@ -132,6 +142,30 @@ function isTemplateActionLoading(
   template: LabelTemplate,
 ) {
   return activePdfAction.value === getActionId(action, template);
+}
+
+function getDynamicLinkPurchaseCost(dynamicLink: DynamicQrLinkPayload | undefined) {
+  if (!dynamicLink || dynamicLink.id) {
+    return 0;
+  }
+
+  return Number(dynamicLink.useDynamicUrl) + Number(dynamicLink.trackStatistics);
+}
+
+function getDynamicLinkPurchaseLabel(dynamicLink: DynamicQrLinkPayload | undefined) {
+  if (!dynamicLink || dynamicLink.id) {
+    return "";
+  }
+
+  if (dynamicLink.useDynamicUrl && dynamicLink.trackStatistics) {
+    return "Create Editable Link & Track Stats";
+  }
+
+  return dynamicLink.useDynamicUrl ? "Create Editable Link" : "Track Stats";
+}
+
+function getPurchaseCreditsQueryValue() {
+  return String(printablePdfPurchaseCost.value);
 }
 
 function isSuggestedLabelTemplate(template: LabelTemplate) {
@@ -305,10 +339,31 @@ function readPrintPayload() {
       delete payload.url;
     }
 
+    if (!isDynamicLinkPayload(payload.dynamicLink)) {
+      delete payload.dynamicLink;
+    }
+
     return payload as LabelPrintPayload;
   } catch {
     return null;
   }
+}
+
+function isDynamicLinkPayload(value: unknown): value is DynamicQrLinkPayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as Partial<DynamicQrLinkPayload>;
+
+  return (
+    typeof payload.destinationUrl === "string" &&
+    typeof payload.id === "string" &&
+    typeof payload.redirectUrl === "string" &&
+    typeof payload.slug === "string" &&
+    typeof payload.trackStatistics === "boolean" &&
+    typeof payload.useDynamicUrl === "boolean"
+  );
 }
 
 async function loadPrintPayload() {
@@ -435,7 +490,7 @@ async function purchaseLabelPdf(template: LabelTemplate) {
     await navigateTo({
       path: "/credits",
       query: {
-        needCredits: "1",
+        needCredits: getPurchaseCreditsQueryValue(),
         returnTo: route.fullPath,
       },
     });
@@ -449,11 +504,11 @@ async function purchaseLabelPdf(template: LabelTemplate) {
     balance = creditBalance.value;
   }
 
-  if (balance === null || balance < 1) {
+  if (balance === null || balance < printablePdfPurchaseCost.value) {
     await navigateTo({
       path: "/credits",
       query: {
-        needCredits: "1",
+        needCredits: getPurchaseCreditsQueryValue(),
         returnTo: route.fullPath,
       },
     });
@@ -468,19 +523,33 @@ async function purchaseLabelPdf(template: LabelTemplate) {
 
   try {
     const pdfBytes = await createLabelPdfBytes(template, { watermark: false });
-    const response = await $fetch<{ balance: number; pdf: PurchasedPdf }>(
-      "/api/credits/pdf-purchases",
-      {
-        body: {
-          pdfBase64: uint8ArrayToBase64(pdfBytes),
-          qrTitle: payload.name || payload.title,
-          templateId: template.id,
-        },
-        method: "POST",
+    const response = await $fetch<{
+      balance: number;
+      dynamicLink?: DynamicQrLinkPayload;
+      pdf: PurchasedPdf;
+    }>("/api/credits/pdf-purchases", {
+      body: {
+        dynamicLink: payload.dynamicLink,
+        pdfBase64: uint8ArrayToBase64(pdfBytes),
+        qrTitle: payload.name || payload.title,
+        templateId: template.id,
       },
-    );
+      method: "POST",
+    });
 
     creditBalance.value = response.balance;
+    if (response.dynamicLink) {
+      printPayload.value = {
+        ...payload,
+        dynamicLink: response.dynamicLink,
+        title: response.dynamicLink.redirectUrl,
+        url: response.dynamicLink.redirectUrl,
+      };
+      sessionStorage.setItem(
+        labelPrintPayloadStorageKey,
+        JSON.stringify(printPayload.value),
+      );
+    }
     openPurchasedPdf(response.pdf.downloadUrl, pdfWindow);
   } catch (error) {
     pdfWindow?.close();
@@ -489,7 +558,7 @@ async function purchaseLabelPdf(template: LabelTemplate) {
       await navigateTo({
         path: "/credits",
         query: {
-          needCredits: "1",
+          needCredits: getPurchaseCreditsQueryValue(),
           returnTo: route.fullPath,
         },
       });
@@ -1085,41 +1154,62 @@ function getErrorStatusCode(error: unknown) {
                   </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-2">
+                <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <UButton
                     block
-                    class="min-h-16 justify-center whitespace-normal text-center"
+                    class="min-h-16 justify-start whitespace-normal px-3 py-2 text-left"
                     color="neutral"
                     :data-testid="`label-template-preview-button-${template.id}`"
-                    icon="i-lucide-eye"
                     :loading="isTemplateActionLoading('preview', template)"
                     variant="subtle"
                     @click="previewLabelPdf(template)"
                   >
-                    <span
-                      class="flex min-w-0 flex-col items-center leading-tight"
-                    >
-                      <span>Preview</span>
-                      <span class="text-xs font-normal opacity-75"
-                        >Watermarked</span
-                      >
+                    <span class="flex w-full min-w-0 items-center gap-3">
+                      <span class="flex size-10 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700">
+                        <UIcon class="size-5" name="i-lucide-eye" />
+                      </span>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1 leading-tight">
+                        <span class="min-w-0 text-sm font-semibold"
+                          >Preview</span
+                        >
+                        <span class="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[11px] font-semibold leading-none text-slate-600 ring-1 ring-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:ring-slate-700"
+                          >Watermarked</span
+                        >
+                      </span>
                     </span>
                   </UButton>
                   <UButton
                     block
-                    class="min-h-16 justify-center whitespace-normal text-center"
+                    class="min-h-16 justify-start whitespace-normal px-3 py-2 text-left"
                     :data-testid="`label-template-purchase-button-${template.id}`"
-                    icon="i-lucide-circle-dollar-sign"
                     :loading="isTemplateActionLoading('purchase', template)"
                     @click="purchaseLabelPdf(template)"
                   >
-                    <span
-                      class="flex min-w-0 flex-col items-center leading-tight"
-                    >
-                      <span>Purchase Printable PDF</span>
-                      <span class="text-xs font-normal opacity-75"
-                        >1 Credit</span
-                      >
+                    <span class="flex w-full min-w-0 items-center gap-3">
+                      <span class="flex size-10 shrink-0 items-center justify-center rounded-md bg-white/15 text-white ring-1 ring-white/25">
+                        <UIcon
+                          class="size-5"
+                          name="i-lucide-circle-dollar-sign"
+                        />
+                      </span>
+                      <span class="grid min-w-0 flex-1 grid-cols-[1fr_auto] items-center gap-x-2 gap-y-1 leading-tight">
+                        <span class="min-w-0 text-sm font-semibold"
+                          >Purchase Printable PDF</span
+                        >
+                        <span class="shrink-0 rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold leading-none ring-1 ring-white/20"
+                          >1 Credit</span
+                        >
+                        <template v-if="dynamicLinkPurchaseLabel">
+                          <span class="min-w-0 border-t border-white/20 pt-1 text-xs font-medium opacity-90"
+                            >{{ dynamicLinkPurchaseLabel }}</span
+                          >
+                          <span class="shrink-0 border-t border-white/20 pt-1">
+                            <span class="inline-flex rounded-full bg-white/15 px-2 py-0.5 text-[11px] font-semibold leading-none ring-1 ring-white/20"
+                              >{{ dynamicLinkPurchaseCost }} Credit</span
+                            >
+                          </span>
+                        </template>
+                      </span>
                     </span>
                   </UButton>
                 </div>

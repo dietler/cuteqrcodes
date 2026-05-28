@@ -29,19 +29,62 @@ type SavedQrRequest = {
   }
 }
 
-test('creates a paid dynamic tracking link before printing labels', async ({ page }) => {
-  let dynamicRequest: DynamicLinkRequest | null = null
+type SavedDynamicLinkPayload = NonNullable<SavedQrRequest['payload']>['dynamicLink']
 
+type PdfPurchaseRequest = {
+  dynamicLink?: DynamicLinkRequest & {
+    id?: string
+    redirectUrl?: string
+  }
+  pdfBase64?: string
+  qrTitle?: string
+  templateId?: string
+}
+
+type PrintStoragePayload = {
+  dynamicLink?: SavedDynamicLinkPayload
+  title?: string
+  url?: string
+}
+
+test('creates a paid dynamic tracking link when purchasing a printable PDF', async ({ page }) => {
+  let dynamicRequest: DynamicLinkRequest | null = null
+  let pdfPurchaseRequest: PdfPurchaseRequest | null = null
+
+  await page.addInitScript(() => {
+    window.open = () =>
+      ({
+        close() {},
+        location: { href: '' }
+      }) as Window
+  })
   await routeLoggedInSession(page)
   await routeCreditsSummary(page)
   await page.route('**/api/qr/dynamic-links', async (route) => {
     dynamicRequest = route.request().postDataJSON() as DynamicLinkRequest
 
     await route.fulfill({
+      body: 'Dynamic links should not be created before the PDF purchase.',
+      status: 500
+    })
+  })
+  await page.route('**/api/credits/pdf-purchases', async (route) => {
+    pdfPurchaseRequest = route.request().postDataJSON() as PdfPurchaseRequest
+
+    await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
-        balance: 8,
-        link: createDynamicLinkResponse()
+        balance: 5,
+        dynamicLink: createDynamicLinkResponse(),
+        pdf: {
+          createdAt: '2026-05-28T00:00:00.000Z',
+          downloadUrl: '/api/credits/pdfs/pdf-dynamic',
+          id: 'pdf-dynamic',
+          qrTitle: pdfPurchaseRequest.qrTitle ?? 'Dynamic QR Code',
+          sizeBytes: 1234,
+          templateId: pdfPurchaseRequest.templateId ?? 'avery-presta-94100',
+          templateLabel: 'Printable labels'
+        }
       })
     })
   })
@@ -53,20 +96,65 @@ test('creates a paid dynamic tracking link before printing labels', async ({ pag
   await page.getByRole('button', { name: 'Print to Labels', exact: true }).click()
   await page.waitForURL('**/print-labels')
 
-  expect(dynamicRequest).toEqual({
-    destinationUrl,
-    slug: 'menu-special',
-    trackStatistics: true,
-    useDynamicUrl: true
-  })
+  expect(dynamicRequest).toBeNull()
 
   const printPayload = await page.evaluate((storageKey) => {
     const rawPayload = sessionStorage.getItem(storageKey)
 
-    return rawPayload ? JSON.parse(rawPayload) as { title?: string, url?: string } : null
+    return rawPayload
+      ? JSON.parse(rawPayload) as PrintStoragePayload
+      : null
   }, labelPrintPayloadStorageKey)
 
   expect(printPayload).toEqual(expect.objectContaining({
+    dynamicLink: {
+      destinationUrl,
+      id: '',
+      redirectUrl: dynamicRedirectUrl,
+      slug: 'menu-special',
+      trackStatistics: true,
+      useDynamicUrl: true
+    },
+    title: dynamicRedirectUrl,
+    url: dynamicRedirectUrl
+  }))
+
+  const previewButton = page.locator('[data-testid^="label-template-preview-button-"]').first()
+  await expect(previewButton).toContainText('Preview')
+  await expect(previewButton).toContainText('Watermarked')
+
+  const purchaseButton = page.locator('[data-testid^="label-template-purchase-button-"]').first()
+  await expect(purchaseButton).toContainText('Purchase Printable PDF')
+  await expect(purchaseButton).toContainText('1 Credit')
+  await expect(purchaseButton).toContainText('Create Editable Link & Track Stats')
+  await expect(purchaseButton).toContainText('2 Credit')
+
+  await purchaseButton.click()
+  await expect.poll(() => pdfPurchaseRequest).not.toBeNull()
+
+  expect(pdfPurchaseRequest).toEqual(expect.objectContaining({
+    dynamicLink: {
+      destinationUrl,
+      id: '',
+      redirectUrl: dynamicRedirectUrl,
+      slug: 'menu-special',
+      trackStatistics: true,
+      useDynamicUrl: true
+    },
+    pdfBase64: expect.any(String),
+    templateId: expect.any(String)
+  }))
+
+  const purchasedPrintPayload = await page.evaluate((storageKey) => {
+    const rawPayload = sessionStorage.getItem(storageKey)
+
+    return rawPayload
+      ? JSON.parse(rawPayload) as PrintStoragePayload
+      : null
+  }, labelPrintPayloadStorageKey)
+
+  expect(purchasedPrintPayload).toEqual(expect.objectContaining({
+    dynamicLink: createDynamicLinkResponse(),
     title: dynamicRedirectUrl,
     url: dynamicRedirectUrl
   }))
@@ -166,7 +254,7 @@ async function configureDynamicQr(page: Page) {
   await page.getByRole('checkbox', { name: 'Track Stats' }).click()
   await expect(page.getByRole('checkbox', { name: 'Editable' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByRole('checkbox', { name: 'Track Stats' })).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByText('This costs 2 credits when the link is created.')).toBeVisible()
+  await expect(page.getByText('This costs 2 credits when the link is created. Printable PDFs include this cost at purchase.')).toBeVisible()
 
   await page.getByRole('button', { name: 'Customize Link.' }).click()
   await page.getByPlaceholder('custom-slug').fill('menu-special')
