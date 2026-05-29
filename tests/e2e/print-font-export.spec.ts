@@ -62,7 +62,7 @@ test('embeds selected web fonts in the print-label SVG payload', async ({ page }
 
   expect(missingFontFamilies).toEqual([])
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByTestId('rectangle-label-desktop-primary-controls').getByPlaceholder('Add a word').fill(labelText)
   await page.getByTestId('rectangle-label-desktop-primary-controls').getByRole('combobox').click()
   await page.getByRole('option', { name: 'Roboto Condensed' }).click()

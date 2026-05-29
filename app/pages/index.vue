@@ -8,7 +8,7 @@ import { createQrCode, createQrSvgPath } from '~/utils/qr'
 import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type LabelLogoPayload, type LabelLogoPosition, type SavedQrPayload } from '~/utils/saved-qr'
 import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
-type QrTool = 'shape' | 'colors' | 'step' | 'gradient' | 'label' | 'logo' | 'icon' | 'border'
+type QrTool = 'shape' | 'colors' | 'gradient' | 'label' | 'labelColors' | 'icon' | 'border'
 type QrShape = 'rectangle' | 'circle'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double' | 'wavy'
 type CenterIconValue = string
@@ -119,6 +119,27 @@ type GradientBox = {
   height: number
 }
 
+type ImageTrimBox = {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+type NormalizedLabelLogoImage = {
+  src: string
+  mimeType: string
+  width: number
+  height: number
+}
+
+type RgbaPixel = {
+  r: number
+  g: number
+  b: number
+  a: number
+}
+
 type LinearGradientCoordinates = {
   x1: number
   y1: number
@@ -183,6 +204,8 @@ const selectedGradientStyle = ref<GradientStyle>('none')
 const selectedGradientDirection = ref<GradientDirection>('left-to-right')
 const selectedGradientSecondColorName = ref<string | null>(null)
 const selectedGradientThirdColorName = ref<string | null>(null)
+const selectedGradientSecondColorStep = ref(500)
+const selectedGradientThirdColorStep = ref(500)
 const selectedLabelBackgroundColorName = ref<string | null>(null)
 const selectedLabelBackgroundColorStep = ref(500)
 const selectedLabelTextColorName = ref<string | null>(null)
@@ -190,6 +213,7 @@ const selectedLabelTextColorStep = ref(500)
 const selectedQrShape = ref<QrShape>('rectangle')
 const labelSizeStep = ref(0)
 const additionalTextSizeStep = ref(0)
+const labelLogoSizeStep = ref(0)
 const qrLabel = ref('')
 const qrAdditionalText = ref('')
 const labelLogoDataUrl = ref('')
@@ -250,15 +274,19 @@ const preferredAdditionalTextLineLength = 24
 const maxAdditionalTextLength = additionalTextLineLength * 3
 const minTextSizeStep = -2
 const maxAdditionalTextSizeStep = 4
+const minLabelLogoSizeStep = -4
+const maxLabelLogoSizeStep = 0
+const labelLogoSizeStepRatio = 0.9
 const versionOneQrSize = 21
 const versionOneCenterIconCircleDiameter = 7
 const circleBorderCornerInsetRatio = (Math.SQRT2 - 1) / 2
 const sideLabelTextInsetRatio = 0.04
 const stackedLabelAdditionalTextGapRatio = 0.12
 const sideLabelAdditionalTextGapRatio = 0.18
-const labelLogoMaxWidthRatio = 0.55
-const labelLogoMaxHeightRatio = 0.18
 const labelLogoTextGapRatio = 0.3
+const labelLogoRasterMaxDimension = 1024
+const labelLogoTrimAlphaThreshold = 8
+const labelLogoTrimColorTolerance = 18
 const acceptedLabelLogoExtensions = /\.(avif|gif|jpe?g|png|svg|webp)$/i
 
 const labelFonts: LabelFont[] = [
@@ -683,18 +711,29 @@ const gradientStops = computed(() => {
     return []
   }
 
-  const colorNames = [
-    selectedQrColor.value.name,
-    selectedGradientSecondColorName.value,
-    ...(selectedGradientThirdColorName.value ? [selectedGradientThirdColorName.value] : [])
+  const colors = [
+    {
+      colorName: selectedQrColor.value.name,
+      colorStep: selectedColorStep.value
+    },
+    {
+      colorName: selectedGradientSecondColorName.value,
+      colorStep: getGradientSecondColorRenderStep(selectedGradientSecondColorName.value)
+    },
+    ...(selectedGradientThirdColorName.value
+      ? [{
+          colorName: selectedGradientThirdColorName.value,
+          colorStep: getGradientThirdColorRenderStep(selectedGradientThirdColorName.value)
+        }]
+      : [])
   ]
-  const lastIndex = colorNames.length - 1
+  const lastIndex = colors.length - 1
 
-  return colorNames.map((colorName, index) => ({
-    colorName,
-    key: `${colorName}-${index}`,
+  return colors.map((color, index) => ({
+    colorName: color.colorName,
+    key: `${color.colorName}-${color.colorStep}-${index}`,
     offset: `${(index / lastIndex) * 100}%`,
-    textClass: getGradientColorTextClass(colorName)
+    textClass: getGradientColorTextClass(color.colorName, color.colorStep)
   }))
 })
 const centerIconSearchTerm = computed(() => centerIconSearch.value.trim().toLowerCase())
@@ -732,13 +771,16 @@ const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
 const hasCircleLabelText = computed(() => isCircleShape.value && Object.values(circleLabelTexts.value).some(text => text.length > 0))
 const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0 || hasLabelLogo.value))
 const hasRectangleLabelBackground = computed(() => hasLabelText.value && Boolean(selectedLabelBackgroundColorName.value))
-const hasLabelBackgroundStepControl = computed(() => isPaletteColorStepAdjustable(selectedLabelBackgroundColorName.value))
+const hasLabelBackgroundStepControl = computed(() => isLabelBackgroundColorStepAdjustable(selectedLabelBackgroundColorName.value))
 const hasLabelTextStepControl = computed(() => isPaletteColorStepAdjustable(selectedLabelTextColorName.value))
-const hasStepControls = computed(() => Boolean(selectedQrColor.value || hasLabelBackgroundStepControl.value || hasLabelTextStepControl.value))
+const hasGradientSecondColorStepControl = computed(() => isGradientColorStepAdjustable(selectedGradientSecondColorName.value))
+const hasGradientThirdColorStepControl = computed(() => isGradientColorStepAdjustable(selectedGradientThirdColorName.value))
 const qrColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedQrColor.value?.name ?? null, selectedColorStep.value))
 const labelBackgroundColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedLabelBackgroundColorName.value, selectedLabelBackgroundColorStep.value))
 const labelTextColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedLabelTextColorName.value, selectedLabelTextColorStep.value))
-const labelBackgroundFillClass = computed(() => selectedLabelBackgroundColorName.value ? getPaletteColorClass(selectedLabelBackgroundColorName.value, 'fill', selectedLabelBackgroundColorStep.value) : 'fill-transparent')
+const gradientSecondColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedGradientSecondColorName.value, selectedGradientSecondColorStep.value))
+const gradientThirdColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedGradientThirdColorName.value, selectedGradientThirdColorStep.value))
+const labelBackgroundFillClass = computed(() => selectedLabelBackgroundColorName.value ? getPaletteColorClass(selectedLabelBackgroundColorName.value, 'fill', getLabelBackgroundColorRenderStep(selectedLabelBackgroundColorName.value)) : 'fill-transparent')
 const rectangleLabelTextClass = computed(() => selectedLabelTextColorName.value ? getPaletteColorClass(selectedLabelTextColorName.value, 'text', selectedLabelTextColorStep.value) : qrTextClass.value)
 const rectangleLabelTextFillPaint = computed(() => selectedLabelTextColorName.value ? null : textFillPaint.value)
 const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value)
@@ -772,6 +814,8 @@ const labelFontSize = computed(() => baseLabelFontSize.value * labelFontScale.va
 const additionalTextFontSize = computed(() => baseAdditionalTextFontSize.value * additionalTextFontScale.value)
 const canIncreaseLabelSize = computed(() => labelText.value.length > 0 && labelTextWidth.value * labelFontScale.value < fittedLabelTextWidth.value - 0.01)
 const canDecreaseLabelSize = computed(() => labelText.value.length > 0 && labelSizeStep.value > minTextSizeStep)
+const canIncreaseLabelLogoSize = computed(() => hasLabelLogo.value && labelLogoSizeStep.value < maxLabelLogoSizeStep)
+const canDecreaseLabelLogoSize = computed(() => hasLabelLogo.value && labelLogoSizeStep.value > minLabelLogoSizeStep)
 const canIncreaseAdditionalTextSize = computed(() => {
   if (additionalTextLines.value.length === 0 || additionalTextSizeStep.value >= maxAdditionalTextSizeStep) {
     return false
@@ -809,8 +853,23 @@ const labelLogoAspectRatio = computed(() => {
 
   return 1
 })
-const labelLogoMaxWidth = computed(() => Math.max(1, fittedLabelTextWidth.value * labelLogoMaxWidthRatio))
-const labelLogoMaxHeight = computed(() => Math.max(1, qrOutputSize.value * labelLogoMaxHeightRatio))
+const labelLogoHorizontalPadding = computed(() => {
+  if (hasRectangleLabelBackground.value) {
+    return labelBackgroundPadding.value
+  }
+
+  return hasLabelTextGroup.value ? labelHorizontalPadding.value : 0
+})
+const labelLogoReservedTextHeight = computed(() => {
+  if (!hasLabelTextGroup.value) {
+    return 0
+  }
+
+  return labelTextGroupHeight.value + labelFontSize.value * labelLogoTextGapRatio
+})
+const labelLogoMaxWidth = computed(() => Math.max(1, qrOutputSize.value - labelLogoHorizontalPadding.value * 2))
+const labelLogoMaxHeight = computed(() => Math.max(1, qrOutputSize.value - labelBackgroundPadding.value * 2 - labelLogoReservedTextHeight.value))
+const labelLogoSizeMultiplier = computed(() => getLabelLogoSizeMultiplier(labelLogoSizeStep.value))
 const labelLogoSize = computed(() => {
   if (!hasLabelLogo.value) {
     return {
@@ -828,21 +887,26 @@ const labelLogoSize = computed(() => {
     width = height * aspectRatio
   }
 
+  const sizeMultiplier = labelLogoSizeMultiplier.value
+
   return {
-    height,
-    width
+    height: height * sizeMultiplier,
+    width: width * sizeMultiplier
   }
 })
 const labelLogoWidth = computed(() => labelLogoSize.value.width)
 const labelLogoHeight = computed(() => labelLogoSize.value.height)
 const labelLogoGap = computed(() => hasLabelLogo.value && hasLabelTextGroup.value ? labelFontSize.value * labelLogoTextGapRatio : 0)
 const labelGap = computed(() => hasLabelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
+const labelBackgroundPadding = computed(() => hasRectangleLabelBackground.value ? labelGap.value : 0)
 const labelBlockHeight = computed(() => {
   if (!hasLabelText.value) {
     return 0
   }
 
-  return stackedLabelGap.value * 2 + labelLogoHeight.value + labelLogoGap.value + labelTextGroupHeight.value
+  const verticalPadding = hasRectangleLabelBackground.value ? labelBackgroundPadding.value : stackedLabelGap.value
+
+  return verticalPadding * 2 + labelLogoHeight.value + labelLogoGap.value + labelTextGroupHeight.value
 })
 const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value : 0)
 const bottomLabelHeight = computed(() => labelIsBottom.value ? labelBlockHeight.value : 0)
@@ -851,7 +915,8 @@ const bottomLabelGap = computed(() => labelIsBottom.value && (!usesStackedLabelS
 const sideLabelWidth = computed(() => labelIsSide.value ? qrOutputSize.value : 0)
 const sideLabelGap = computed(() => labelIsSide.value ? labelGap.value : 0)
 const sideLabelTextInset = computed(() => labelIsSide.value ? qrOutputSize.value * sideLabelTextInsetRatio : 0)
-const fittedLabelTextWidth = computed(() => Math.max(1, qrOutputSize.value - sideLabelTextInset.value * 2))
+const labelHorizontalPadding = computed(() => hasRectangleLabelBackground.value ? Math.max(sideLabelTextInset.value, labelBackgroundPadding.value) : sideLabelTextInset.value)
+const fittedLabelTextWidth = computed(() => Math.max(1, qrOutputSize.value - labelHorizontalPadding.value * 2))
 const sideContentHeight = computed(() => labelIsSide.value ? Math.max(qrOutputSize.value, labelBlockHeight.value) : qrOutputSize.value)
 const labelBottomTrim = computed(() => {
   if (!labelIsBottom.value || !hasBorder.value || labelHasDescender.value) {
@@ -940,7 +1005,7 @@ const labelBackgroundRect = computed<GradientBox>(() => {
     y: labelBlockY.value
   }
 })
-const labelStackStartY = computed(() => labelBlockY.value + stackedLabelGap.value)
+const labelStackStartY = computed(() => labelBlockY.value + (hasRectangleLabelBackground.value ? labelBackgroundPadding.value : stackedLabelGap.value))
 const labelContentY = computed(() => {
   if (hasLabelLogo.value && selectedLabelLogoPosition.value === 'top') {
     return labelStackStartY.value + labelLogoHeight.value + labelLogoGap.value
@@ -1029,11 +1094,7 @@ const textLinearGradientCoordinates = computed(() => getLinearGradientCoordinate
 const textRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(textGradientBox.value))
 
 async function selectTool(tool: QrTool) {
-  if (tool === 'logo' && isCircleShape.value) {
-    return
-  }
-
-  if (tool === 'step' && !hasStepControls.value) {
+  if (tool === 'labelColors' && isCircleShape.value) {
     return
   }
 
@@ -1068,7 +1129,7 @@ function selectBlackColor() {
   selectedQrColor.value = null
   selectedColorStep.value = 500
 
-  if (activeTool.value === 'gradient' || (activeTool.value === 'step' && !hasStepControls.value)) {
+  if (activeTool.value === 'gradient') {
     activeTool.value = 'colors'
   }
 }
@@ -1088,17 +1149,11 @@ function getTailwindColorClass(color: TailwindColor, utility: TailwindColorUtili
 function selectLabelBackgroundColor(colorName: string | null) {
   const normalizedColorName = normalizePaletteColorName(colorName)
 
-  if (normalizedColorName && normalizedColorName !== selectedLabelBackgroundColorName.value) {
-    selectedLabelBackgroundColorStep.value = getDefaultPaletteColorStep(normalizedColorName)
-  }
-
   selectedLabelBackgroundColorName.value = normalizedColorName
 
-  if (!normalizedColorName) {
+  if (!normalizedColorName || normalizedColorName === blackColorName) {
     selectedLabelBackgroundColorStep.value = 500
   }
-
-  updateActiveToolAfterStepColorChange()
 }
 
 function selectLabelTextColor(colorName: string | null) {
@@ -1113,8 +1168,6 @@ function selectLabelTextColor(colorName: string | null) {
   if (!normalizedColorName) {
     selectedLabelTextColorStep.value = 500
   }
-
-  updateActiveToolAfterStepColorChange()
 }
 
 function isSelectedLabelBackgroundColor(colorName: string | null) {
@@ -1163,10 +1216,24 @@ function isPaletteColorStepAdjustable(colorName: string | null) {
   return Boolean(colorName && (colorName === blackColorName || colorName === whiteColorName || tailwindColors.some(color => color.name === colorName)))
 }
 
-function updateActiveToolAfterStepColorChange() {
-  if (activeTool.value === 'step' && !hasStepControls.value) {
-    activeTool.value = 'colors'
-  }
+function isLabelBackgroundColorStepAdjustable(colorName: string | null) {
+  return Boolean(colorName && colorName !== blackColorName && isPaletteColorStepAdjustable(colorName))
+}
+
+function isGradientColorStepAdjustable(colorName: string | null) {
+  return Boolean(colorName && colorName !== blackColorName && isPaletteColorStepAdjustable(colorName))
+}
+
+function getLabelBackgroundColorRenderStep(colorName: string | null) {
+  return colorName === blackColorName ? getDefaultPaletteColorStep(blackColorName) : selectedLabelBackgroundColorStep.value
+}
+
+function getGradientSecondColorRenderStep(colorName: string | null) {
+  return colorName === blackColorName ? getDefaultPaletteColorStep(blackColorName) : selectedGradientSecondColorStep.value
+}
+
+function getGradientThirdColorRenderStep(colorName: string | null) {
+  return colorName === blackColorName ? getDefaultPaletteColorStep(blackColorName) : selectedGradientThirdColorStep.value
 }
 
 function getDefaultPaletteColorStep(colorName: string | null) {
@@ -1198,29 +1265,35 @@ function selectGradientDirection(direction: GradientDirection) {
 }
 
 function selectGradientSecondColor(colorName: string) {
-  selectedGradientSecondColorName.value = colorName
+  const normalizedColorName = normalizeGradientColorName(colorName)
+
+  if (!normalizedColorName) {
+    return
+  }
+
+  selectedGradientSecondColorName.value = normalizedColorName
+
+  if (normalizedColorName === blackColorName) {
+    selectedGradientSecondColorStep.value = 500
+  }
 }
 
 function selectGradientThirdColor(colorName: string | null) {
-  selectedGradientThirdColorName.value = colorName
+  const normalizedColorName = normalizeGradientColorName(colorName)
+
+  selectedGradientThirdColorName.value = normalizedColorName
+
+  if (!normalizedColorName || normalizedColorName === blackColorName) {
+    selectedGradientThirdColorStep.value = 500
+  }
 }
 
 function isSelectedGradientColor(selectedColorName: string | null, colorName: string | null) {
   return selectedColorName === colorName
 }
 
-function getGradientColorTextClass(colorName: string) {
-  if (colorName === whiteColorName) {
-    return 'text-white'
-  }
-
-  if (colorName === blackColorName) {
-    return 'text-black'
-  }
-
-  const color = tailwindColors.find(item => item.name === colorName)
-
-  return color ? getTailwindColorClass(color, 'text') : 'text-black'
+function getGradientColorTextClass(colorName: string, colorStep: number) {
+  return getPaletteColorClass(colorName, 'text', colorStep)
 }
 
 function normalizeGradientColorName(colorName: unknown) {
@@ -1278,7 +1351,7 @@ function selectQrShape(shape: QrShape) {
   transferLabelTextForShape(shape)
   selectedQrShape.value = shape
 
-  if (shape === 'circle' && activeTool.value === 'logo') {
+  if (shape === 'circle' && activeTool.value === 'labelColors') {
     activeTool.value = 'label'
   }
 }
@@ -1357,13 +1430,14 @@ async function loadLabelLogoFile(file: File) {
 
   try {
     const src = await readFileAsDataUrl(file)
-    const dimensions = await getImageDimensions(src)
+    const normalizedLogo = await normalizeLabelLogoImage(src)
 
-    labelLogoDataUrl.value = src
+    labelLogoDataUrl.value = normalizedLogo.src
     labelLogoFileName.value = file.name || 'Logo image'
-    labelLogoMimeType.value = file.type || getImageMimeTypeFromDataUrl(src)
-    labelLogoNaturalWidth.value = dimensions.width
-    labelLogoNaturalHeight.value = dimensions.height
+    labelLogoMimeType.value = normalizedLogo.mimeType
+    labelLogoNaturalWidth.value = normalizedLogo.width
+    labelLogoNaturalHeight.value = normalizedLogo.height
+    labelLogoSizeStep.value = 0
   } catch (error) {
     labelLogoError.value = getErrorMessage(error, 'Unable to load this logo image.')
   }
@@ -1390,19 +1464,164 @@ function readFileAsDataUrl(file: File) {
   })
 }
 
-function getImageDimensions(src: string) {
-  return new Promise<{ height: number, width: number }>((resolve, reject) => {
+async function normalizeLabelLogoImage(src: string): Promise<NormalizedLabelLogoImage> {
+  const image = await loadImageElement(src)
+  const originalLogo = {
+    height: Math.max(1, image.naturalHeight || image.height || 1),
+    mimeType: getImageMimeTypeFromDataUrl(src),
+    src,
+    width: Math.max(1, image.naturalWidth || image.width || 1)
+  }
+  const trimmedLogo = trimLabelLogoImage(image)
+
+  return trimmedLogo ?? originalLogo
+}
+
+function loadImageElement(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
 
-    image.onload = () => {
-      resolve({
-        height: Math.max(1, image.naturalHeight || image.height || 1),
-        width: Math.max(1, image.naturalWidth || image.width || 1)
-      })
-    }
+    image.onload = () => resolve(image)
     image.onerror = () => reject(new Error('Unable to read this logo image.'))
     image.src = src
   })
+}
+
+function trimLabelLogoImage(image: HTMLImageElement): NormalizedLabelLogoImage | null {
+  const width = Math.max(1, image.naturalWidth || image.width || 1)
+  const height = Math.max(1, image.naturalHeight || image.height || 1)
+  const scale = Math.min(1, labelLogoRasterMaxDimension / Math.max(width, height))
+  const canvas = document.createElement('canvas')
+
+  canvas.width = Math.max(1, Math.round(width * scale))
+  canvas.height = Math.max(1, Math.round(height * scale))
+
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+
+  if (!context) {
+    return null
+  }
+
+  context.clearRect(0, 0, canvas.width, canvas.height)
+  context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+  let trimBox: ImageTrimBox | null
+
+  try {
+    trimBox = getImageTrimBox(context, canvas.width, canvas.height)
+  } catch {
+    return null
+  }
+
+  if (!trimBox || isFullImageTrimBox(trimBox, canvas.width, canvas.height)) {
+    return null
+  }
+
+  const croppedCanvas = document.createElement('canvas')
+
+  croppedCanvas.width = trimBox.width
+  croppedCanvas.height = trimBox.height
+
+  const croppedContext = croppedCanvas.getContext('2d')
+
+  if (!croppedContext) {
+    return null
+  }
+
+  croppedContext.drawImage(
+    canvas,
+    trimBox.x,
+    trimBox.y,
+    trimBox.width,
+    trimBox.height,
+    0,
+    0,
+    trimBox.width,
+    trimBox.height
+  )
+
+  try {
+    return {
+      height: croppedCanvas.height,
+      mimeType: 'image/png',
+      src: croppedCanvas.toDataURL('image/png'),
+      width: croppedCanvas.width
+    }
+  } catch {
+    return null
+  }
+}
+
+function getImageTrimBox(context: CanvasRenderingContext2D, width: number, height: number): ImageTrimBox | null {
+  const imageData = context.getImageData(0, 0, width, height)
+  const data = imageData.data
+  const background = getRgbaPixel(data, 0)
+  let top = height
+  let right = -1
+  let bottom = -1
+  let left = width
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = (y * width + x) * 4
+
+      if (isBlankLogoPixel(data, index, background)) {
+        continue
+      }
+
+      top = Math.min(top, y)
+      right = Math.max(right, x)
+      bottom = Math.max(bottom, y)
+      left = Math.min(left, x)
+    }
+  }
+
+  if (right < left || bottom < top) {
+    return null
+  }
+
+  return {
+    height: bottom - top + 1,
+    width: right - left + 1,
+    x: left,
+    y: top
+  }
+}
+
+function getRgbaPixel(data: Uint8ClampedArray, index: number): RgbaPixel {
+  return {
+    r: data[index] ?? 0,
+    g: data[index + 1] ?? 0,
+    b: data[index + 2] ?? 0,
+    a: data[index + 3] ?? 0
+  }
+}
+
+function isBlankLogoPixel(data: Uint8ClampedArray, index: number, background: RgbaPixel) {
+  const alpha = data[index + 3] ?? 0
+
+  if (alpha <= labelLogoTrimAlphaThreshold) {
+    return true
+  }
+
+  if (!isNearWhitePixel(background) || alpha < 240) {
+    return false
+  }
+
+  return Math.abs((data[index] ?? 0) - background.r) <= labelLogoTrimColorTolerance
+    && Math.abs((data[index + 1] ?? 0) - background.g) <= labelLogoTrimColorTolerance
+    && Math.abs((data[index + 2] ?? 0) - background.b) <= labelLogoTrimColorTolerance
+}
+
+function isNearWhitePixel(pixel: RgbaPixel) {
+  return pixel.a >= 240 && pixel.r >= 240 && pixel.g >= 240 && pixel.b >= 240
+}
+
+function isFullImageTrimBox(trimBox: ImageTrimBox, width: number, height: number) {
+  return trimBox.x === 0
+    && trimBox.y === 0
+    && trimBox.width === width
+    && trimBox.height === height
 }
 
 function getImageMimeTypeFromDataUrl(src: string) {
@@ -1417,6 +1636,7 @@ function removeLabelLogo() {
   labelLogoMimeType.value = ''
   labelLogoNaturalWidth.value = 0
   labelLogoNaturalHeight.value = 0
+  labelLogoSizeStep.value = 0
   labelLogoError.value = ''
 }
 
@@ -1489,6 +1709,18 @@ function increaseAdditionalTextSize() {
 function decreaseAdditionalTextSize() {
   if (canDecreaseAdditionalTextSize.value) {
     additionalTextSizeStep.value--
+  }
+}
+
+function increaseLabelLogoSize() {
+  if (canIncreaseLabelLogoSize.value) {
+    labelLogoSizeStep.value++
+  }
+}
+
+function decreaseLabelLogoSize() {
+  if (canDecreaseLabelLogoSize.value) {
+    labelLogoSizeStep.value--
   }
 }
 
@@ -2010,6 +2242,10 @@ function getAdditionalTextSizeMultiplier(step: number) {
   return getSizeMultiplier(step - 1)
 }
 
+function getLabelLogoSizeMultiplier(step: number) {
+  return step < 0 ? labelLogoSizeStepRatio ** Math.abs(step) : 1
+}
+
 function getFittedTextScale(textWidth: number, requestedScale: number) {
   if (textWidth <= 0) {
     return requestedScale
@@ -2369,8 +2605,10 @@ function createSavedQrPayload(): SavedQrPayload {
     colorStep: selectedColorStep.value,
     gradientDirection: selectedGradientDirection.value,
     gradientSecondColorName: selectedGradientSecondColorName.value,
+    gradientSecondColorStep: selectedGradientSecondColorStep.value,
     gradientStyle: selectedGradientStyle.value,
     gradientThirdColorName: selectedGradientThirdColorName.value,
+    gradientThirdColorStep: selectedGradientThirdColorStep.value,
     label: qrLabel.value,
     labelBackgroundColorName: selectedLabelBackgroundColorName.value,
     labelBackgroundColorStep: selectedLabelBackgroundColorStep.value,
@@ -2398,6 +2636,7 @@ function createLabelLogoPayload(): LabelLogoPayload | null {
     naturalHeight: labelLogoNaturalHeight.value,
     naturalWidth: labelLogoNaturalWidth.value,
     position: selectedLabelLogoPosition.value,
+    sizeStep: labelLogoSizeStep.value,
     src: labelLogoDataUrl.value
   }
 }
@@ -2663,9 +2902,11 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   selectedGradientStyle.value = isGradientStyle(payload.gradientStyle) && selectedQrColor.value ? payload.gradientStyle : 'none'
   selectedGradientDirection.value = isGradientDirection(payload.gradientDirection) ? payload.gradientDirection : 'left-to-right'
   selectedGradientSecondColorName.value = normalizeGradientColorName(payload.gradientSecondColorName)
+  selectedGradientSecondColorStep.value = normalizeGradientColorStep(payload.gradientSecondColorStep, selectedGradientSecondColorName.value)
   selectedGradientThirdColorName.value = normalizeGradientColorName(payload.gradientThirdColorName)
+  selectedGradientThirdColorStep.value = normalizeGradientColorStep(payload.gradientThirdColorStep, selectedGradientThirdColorName.value)
   selectedLabelBackgroundColorName.value = normalizePaletteColorName(payload.labelBackgroundColorName)
-  selectedLabelBackgroundColorStep.value = normalizeColorStep(payload.labelBackgroundColorStep, selectedLabelBackgroundColorName.value)
+  selectedLabelBackgroundColorStep.value = normalizeLabelBackgroundColorStep(payload.labelBackgroundColorStep, selectedLabelBackgroundColorName.value)
   selectedLabelTextColorName.value = normalizePaletteColorName(payload.labelTextColorName)
   selectedLabelTextColorStep.value = normalizeColorStep(payload.labelTextColorStep, selectedLabelTextColorName.value)
   qrLabel.value = typeof payload.label === 'string' ? payload.label : ''
@@ -2708,6 +2949,7 @@ function applyLabelLogoPayload(payload: SavedQrPayload['labelLogo']) {
   labelLogoNaturalWidth.value = typeof payload.naturalWidth === 'number' && payload.naturalWidth > 0 ? payload.naturalWidth : 1
   labelLogoNaturalHeight.value = typeof payload.naturalHeight === 'number' && payload.naturalHeight > 0 ? payload.naturalHeight : 1
   selectedLabelLogoPosition.value = payload.position === 'bottom' ? 'bottom' : 'top'
+  labelLogoSizeStep.value = clampLabelLogoSizeStep(payload.sizeStep)
   labelLogoError.value = ''
 }
 
@@ -2769,12 +3011,15 @@ function resetCurrentQrState() {
   selectedGradientDirection.value = 'left-to-right'
   selectedGradientSecondColorName.value = null
   selectedGradientThirdColorName.value = null
+  selectedGradientSecondColorStep.value = 500
+  selectedGradientThirdColorStep.value = 500
   selectedLabelBackgroundColorName.value = null
   selectedLabelBackgroundColorStep.value = 500
   selectedLabelTextColorName.value = null
   selectedLabelTextColorStep.value = 500
   labelSizeStep.value = 0
   additionalTextSizeStep.value = 0
+  labelLogoSizeStep.value = 0
   qrLabel.value = ''
   qrAdditionalText.value = ''
   removeLabelLogo()
@@ -2828,7 +3073,9 @@ function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
     && (!payload.gradientStyle || payload.gradientStyle === 'none')
     && (!payload.gradientDirection || payload.gradientDirection === 'left-to-right')
     && !payload.gradientSecondColorName
+    && (!payload.gradientSecondColorStep || payload.gradientSecondColorStep === 500)
     && !payload.gradientThirdColorName
+    && (!payload.gradientThirdColorStep || payload.gradientThirdColorStep === 500)
     && !payload.activeTool
     && !payload.activeCenterIconCategory
     && !payload.centerIconSearch
@@ -2852,19 +3099,23 @@ function isDefaultCircleLabels(payload: SavedQrPayload['circleLabels']) {
 }
 
 function normalizeActiveTool(value: unknown): QrTool | null {
-  if (!hasQrContent.value || !isQrTool(value)) {
-    return null
+  if (value === 'step') {
+    return hasQrContent.value ? 'colors' : null
   }
 
-  if (value === 'step' && !hasStepControls.value) {
-    return 'colors'
+  if (value === 'logo') {
+    return hasQrContent.value ? 'label' : null
+  }
+
+  if (!hasQrContent.value || !isQrTool(value)) {
+    return null
   }
 
   if (value === 'gradient' && !selectedQrColor.value) {
     return 'colors'
   }
 
-  if (value === 'logo' && isCircleShape.value) {
+  if (value === 'labelColors' && isCircleShape.value) {
     return 'label'
   }
 
@@ -2880,10 +3131,9 @@ function normalizeCenterIconCategory(value: unknown) {
 function isQrTool(value: unknown): value is QrTool {
   return value === 'shape'
     || value === 'colors'
-    || value === 'step'
     || value === 'gradient'
     || value === 'label'
-    || value === 'logo'
+    || value === 'labelColors'
     || value === 'icon'
     || value === 'border'
 }
@@ -2900,8 +3150,28 @@ function clampAdditionalTextSizeStep(value: unknown) {
   return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minTextSizeStep), maxAdditionalTextSizeStep) : 0
 }
 
+function clampLabelLogoSizeStep(value: unknown) {
+  return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minLabelLogoSizeStep), maxLabelLogoSizeStep) : 0
+}
+
 function normalizeColorStep(value: unknown, colorName: string | null = null) {
   return typeof value === 'number' && tailwindColorSteps.includes(value) ? value : getDefaultPaletteColorStep(colorName)
+}
+
+function normalizeLabelBackgroundColorStep(value: unknown, colorName: string | null) {
+  if (!colorName || colorName === blackColorName) {
+    return 500
+  }
+
+  return normalizeColorStep(value, colorName)
+}
+
+function normalizeGradientColorStep(value: unknown, colorName: string | null) {
+  if (!colorName || colorName === blackColorName) {
+    return 500
+  }
+
+  return normalizeColorStep(value, colorName)
 }
 
 function getDefaultQrName() {
@@ -3166,13 +3436,16 @@ watch([
   selectedGradientStyle,
   selectedGradientDirection,
   selectedGradientSecondColorName,
+  selectedGradientSecondColorStep,
   selectedGradientThirdColorName,
+  selectedGradientThirdColorStep,
   selectedLabelBackgroundColorName,
   selectedLabelBackgroundColorStep,
   selectedLabelTextColorName,
   selectedLabelTextColorStep,
   labelSizeStep,
   additionalTextSizeStep,
+  labelLogoSizeStep,
   circleLabelTopSizeStep,
   circleLabelBottomSizeStep,
   circleLabelLeftSizeStep,
@@ -3467,16 +3740,6 @@ onUnmounted(() => {
                 Colors
               </UButton>
               <UButton
-                v-if="hasStepControls"
-                :aria-pressed="activeTool === 'step'"
-                :color="activeTool === 'step' ? 'primary' : 'neutral'"
-                icon="i-lucide-lab-stairs"
-                :variant="activeTool === 'step' ? 'solid' : 'subtle'"
-                @click="selectTool('step')"
-              >
-                Steps
-              </UButton>
-              <UButton
                 v-if="selectedQrColor"
                 :aria-pressed="activeTool === 'gradient'"
                 :color="activeTool === 'gradient' ? 'primary' : 'neutral'"
@@ -3495,17 +3758,18 @@ onUnmounted(() => {
                 :variant="activeTool === 'label' ? 'solid' : 'subtle'"
                 @click="selectTool('label')"
               >
-                Label
+                {{ isCircleShape ? 'Label' : 'Label & Logo' }}
               </UButton>
               <UButton
                 v-if="!isCircleShape"
-                :aria-pressed="activeTool === 'logo'"
-                :color="activeTool === 'logo' ? 'primary' : 'neutral'"
-                icon="i-lucide-image-up"
-                :variant="activeTool === 'logo' ? 'solid' : 'subtle'"
-                @click="selectTool('logo')"
+                aria-label="Label color controls"
+                :aria-pressed="activeTool === 'labelColors'"
+                :color="activeTool === 'labelColors' ? 'primary' : 'neutral'"
+                icon="i-lucide-palette"
+                :variant="activeTool === 'labelColors' ? 'solid' : 'subtle'"
+                @click="selectTool('labelColors')"
               >
-                Logo
+                Colors
               </UButton>
             </UFieldGroup>
             <UButton
@@ -3614,263 +3878,43 @@ onUnmounted(() => {
                 class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
               />
             </div>
-          </section>
 
-          <section
-            v-if="!isCircleShape"
-            class="space-y-2"
-          >
-            <h3 class="text-sm font-medium text-highlighted">
-              Background Color
-            </h3>
             <div
-              :class="mobileScrollDesktopWrapClasses"
-              data-testid="label-background-color-selector"
+              v-if="selectedQrColor"
+              class="pt-1"
+              data-testid="qr-color-step-control"
             >
-              <button
-                aria-label="Use no label background color"
-                :aria-pressed="isSelectedLabelBackgroundColor(null)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelBackgroundColor(null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelBackgroundColor(null)"
-              >
-                <UIcon
-                  aria-hidden="true"
-                  name="i-lucide-ban"
-                  class="size-4"
-                />
-                <span>None</span>
-              </button>
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-highlighted">Color Step</span>
+                <span class="text-muted">{{ selectedQrColor.name }} {{ selectedColorStep }}</span>
+              </div>
 
-              <button
-                :aria-label="`Use ${blackColorName} as the label background color`"
-                :aria-pressed="isSelectedLabelBackgroundColor(blackColorName)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelBackgroundColor(blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelBackgroundColor(blackColorName)"
-              >
+              <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+                <span>Lighter</span>
+                <span>Darker</span>
+              </div>
+
+              <USlider
+                v-model="selectedColorStep"
+                aria-label="QR code color step"
+                class="mt-1"
+                data-testid="qr-color-step-slider"
+                :max="900"
+                :min="100"
+                :step="100"
+                :style="qrColorStepSliderStyle"
+                :tooltip="true"
+                :ui="colorStepSliderUi"
+              />
+
+              <div class="mt-2 flex justify-between text-xs text-muted">
                 <span
-                  aria-hidden="true"
-                  class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getPaletteColorClass(blackColorName, 'bg', isSelectedLabelBackgroundColor(blackColorName) ? selectedLabelBackgroundColorStep : getDefaultPaletteColorStep(blackColorName))"
-                />
-                <span>{{ blackColorName }}</span>
-              </button>
-
-              <button
-                v-for="color in tailwindColors"
-                :key="`label-background-${color.name}`"
-                :aria-label="`Use ${color.name} as the label background color`"
-                :aria-pressed="isSelectedLabelBackgroundColor(color.name)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelBackgroundColor(color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelBackgroundColor(color.name)"
-              >
-                <span
-                  aria-hidden="true"
-                  class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getTailwindColorClass(color, 'bg', selectedLabelBackgroundColorStep)"
-                />
-                <span>{{ color.name }}</span>
-              </button>
-            </div>
-          </section>
-
-          <section
-            v-if="!isCircleShape"
-            class="space-y-2"
-          >
-            <h3 class="text-sm font-medium text-highlighted">
-              Text Color
-            </h3>
-            <div
-              :class="mobileScrollDesktopWrapClasses"
-              data-testid="label-text-color-selector"
-            >
-              <button
-                :aria-label="`Use ${whiteColorName} as the label text color`"
-                :aria-pressed="isSelectedLabelTextColor(whiteColorName)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelTextColor(whiteColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelTextColor(whiteColorName)"
-              >
-                <span
-                  aria-hidden="true"
-                  class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getPaletteColorClass(whiteColorName, 'bg', isSelectedLabelTextColor(whiteColorName) ? selectedLabelTextColorStep : getDefaultPaletteColorStep(whiteColorName))"
-                />
-                <span>{{ whiteColorName }}</span>
-              </button>
-
-              <button
-                aria-label="Use default label text color"
-                :aria-pressed="isSelectedLabelTextColor(null)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelTextColor(null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelTextColor(null)"
-              >
-                <UIcon
-                  aria-hidden="true"
-                  name="i-lucide-type"
-                  class="size-4"
-                />
-                <span>Default</span>
-              </button>
-
-              <button
-                :aria-label="`Use ${blackColorName} as the label text color`"
-                :aria-pressed="isSelectedLabelTextColor(blackColorName)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelTextColor(blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelTextColor(blackColorName)"
-              >
-                <span
-                  aria-hidden="true"
-                  class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getPaletteColorClass(blackColorName, 'bg', isSelectedLabelTextColor(blackColorName) ? selectedLabelTextColorStep : getDefaultPaletteColorStep(blackColorName))"
-                />
-                <span>{{ blackColorName }}</span>
-              </button>
-
-              <button
-                v-for="color in tailwindColors"
-                :key="`label-text-${color.name}`"
-                :aria-label="`Use ${color.name} as the label text color`"
-                :aria-pressed="isSelectedLabelTextColor(color.name)"
-                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-                :class="isSelectedLabelTextColor(color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                type="button"
-                @click="selectLabelTextColor(color.name)"
-              >
-                <span
-                  aria-hidden="true"
-                  class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getTailwindColorClass(color, 'bg', selectedLabelTextColorStep)"
-                />
-                <span>{{ color.name }}</span>
-              </button>
-            </div>
-          </section>
-        </div>
-
-        <div
-          v-else-if="activeTool === 'step'"
-          class="space-y-5 rounded-lg border border-default bg-default p-4"
-        >
-          <section
-            v-if="selectedQrColor"
-            data-testid="qr-color-step-control"
-          >
-            <div class="flex items-center justify-between gap-3 text-sm">
-              <span class="font-medium text-highlighted">QR Code Color</span>
-              <span class="text-muted">{{ selectedQrColor.name }} {{ selectedColorStep }}</span>
-            </div>
-
-            <div class="mt-4 flex justify-between text-xs font-medium text-muted">
-              <span>Lighter</span>
-              <span>Darker</span>
-            </div>
-
-            <USlider
-              v-model="selectedColorStep"
-              aria-label="QR code color step"
-              class="mt-1"
-              data-testid="qr-color-step-slider"
-              :max="900"
-              :min="100"
-              :step="100"
-              :style="qrColorStepSliderStyle"
-              :tooltip="true"
-              :ui="colorStepSliderUi"
-            />
-
-            <div class="mt-2 flex justify-between text-xs text-muted">
-              <span
-                v-for="step in tailwindColorSteps"
-                :key="`qr-${step}`"
-              >
-                {{ step }}
-              </span>
-            </div>
-          </section>
-
-          <section
-            v-if="hasLabelBackgroundStepControl"
-            data-testid="label-background-color-step-control"
-          >
-            <div class="flex items-center justify-between gap-3 text-sm">
-              <span class="font-medium text-highlighted">Background Color</span>
-              <span class="text-muted">{{ selectedLabelBackgroundColorName }} {{ selectedLabelBackgroundColorStep }}</span>
-            </div>
-
-            <div class="mt-4 flex justify-between text-xs font-medium text-muted">
-              <span>Lighter</span>
-              <span>Darker</span>
-            </div>
-
-            <USlider
-              v-model="selectedLabelBackgroundColorStep"
-              aria-label="Background color step"
-              class="mt-1"
-              data-testid="label-background-color-step-slider"
-              :max="900"
-              :min="100"
-              :step="100"
-              :style="labelBackgroundColorStepSliderStyle"
-              :tooltip="true"
-              :ui="colorStepSliderUi"
-            />
-
-            <div class="mt-2 flex justify-between text-xs text-muted">
-              <span
-                v-for="step in tailwindColorSteps"
-                :key="`label-background-${step}`"
-              >
-                {{ step }}
-              </span>
-            </div>
-          </section>
-
-          <section
-            v-if="hasLabelTextStepControl"
-            data-testid="label-text-color-step-control"
-          >
-            <div class="flex items-center justify-between gap-3 text-sm">
-              <span class="font-medium text-highlighted">Text Color</span>
-              <span class="text-muted">{{ selectedLabelTextColorName }} {{ selectedLabelTextColorStep }}</span>
-            </div>
-
-            <div class="mt-4 flex justify-between text-xs font-medium text-muted">
-              <span>Lighter</span>
-              <span>Darker</span>
-            </div>
-
-            <USlider
-              v-model="selectedLabelTextColorStep"
-              aria-label="Text color step"
-              class="mt-1"
-              data-testid="label-text-color-step-slider"
-              :max="900"
-              :min="100"
-              :step="100"
-              :style="labelTextColorStepSliderStyle"
-              :tooltip="true"
-              :ui="colorStepSliderUi"
-            />
-
-            <div class="mt-2 flex justify-between text-xs text-muted">
-              <span
-                v-for="step in tailwindColorSteps"
-                :key="`label-text-${step}`"
-              >
-                {{ step }}
-              </span>
+                  v-for="step in tailwindColorSteps"
+                  :key="`qr-${step}`"
+                >
+                  {{ step }}
+                </span>
+              </div>
             </div>
           </section>
         </div>
@@ -3955,10 +3999,48 @@ onUnmounted(() => {
                 <span
                   aria-hidden="true"
                   class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getTailwindColorClass(color, 'bg')"
+                  :class="getTailwindColorClass(color, 'bg', selectedGradientSecondColorStep)"
                 />
                 <span>{{ color.name }}</span>
               </button>
+            </div>
+
+            <div
+              v-if="hasGradientSecondColorStepControl"
+              class="pt-1"
+              data-testid="gradient-second-color-step-control"
+            >
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-highlighted">Color Step</span>
+                <span class="text-muted">{{ selectedGradientSecondColorName }} {{ selectedGradientSecondColorStep }}</span>
+              </div>
+
+              <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+                <span>Lighter</span>
+                <span>Darker</span>
+              </div>
+
+              <USlider
+                v-model="selectedGradientSecondColorStep"
+                aria-label="2nd gradient color step"
+                class="mt-1"
+                data-testid="gradient-second-color-step-slider"
+                :max="900"
+                :min="100"
+                :step="100"
+                :style="gradientSecondColorStepSliderStyle"
+                :tooltip="true"
+                :ui="colorStepSliderUi"
+              />
+
+              <div class="mt-2 flex justify-between text-xs text-muted">
+                <span
+                  v-for="step in tailwindColorSteps"
+                  :key="`gradient-second-${step}`"
+                >
+                  {{ step }}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -4015,10 +4097,48 @@ onUnmounted(() => {
                 <span
                   aria-hidden="true"
                   class="size-4 rounded-full ring-1 ring-black/10"
-                  :class="getTailwindColorClass(color, 'bg')"
+                  :class="getTailwindColorClass(color, 'bg', selectedGradientThirdColorStep)"
                 />
                 <span>{{ color.name }}</span>
               </button>
+            </div>
+
+            <div
+              v-if="hasGradientThirdColorStepControl"
+              class="pt-1"
+              data-testid="gradient-third-color-step-control"
+            >
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-highlighted">Color Step</span>
+                <span class="text-muted">{{ selectedGradientThirdColorName }} {{ selectedGradientThirdColorStep }}</span>
+              </div>
+
+              <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+                <span>Lighter</span>
+                <span>Darker</span>
+              </div>
+
+              <USlider
+                v-model="selectedGradientThirdColorStep"
+                aria-label="3rd gradient color step"
+                class="mt-1"
+                data-testid="gradient-third-color-step-slider"
+                :max="900"
+                :min="100"
+                :step="100"
+                :style="gradientThirdColorStepSliderStyle"
+                :tooltip="true"
+                :ui="colorStepSliderUi"
+              />
+
+              <div class="mt-2 flex justify-between text-xs text-muted">
+                <span
+                  v-for="step in tailwindColorSteps"
+                  :key="`gradient-third-${step}`"
+                >
+                  {{ step }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -4219,7 +4339,78 @@ onUnmounted(() => {
                 </UFieldGroup>
               </UFormField>
             </div>
+          </div>
 
+          <div
+            v-if="!isCircleShape"
+            class="hidden gap-3 min-[620px]:grid min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
+            data-testid="rectangle-label-desktop-primary-controls"
+          >
+            <UFormField label="Label">
+              <UInput
+                v-model="qrLabel"
+                class="w-full"
+                icon="i-lucide-type"
+                placeholder="Add a word"
+                size="lg"
+              />
+            </UFormField>
+
+            <UFormField label="Font">
+              <USelect
+                v-model="selectedLabelFont"
+                class="w-full"
+                :items="labelFontItems"
+                size="lg"
+              >
+                <template #default="{ modelValue }">
+                  <span :class="getLabelFont(modelValue).class">
+                    {{ getLabelFont(modelValue).label }}
+                  </span>
+                </template>
+
+                <template #item-label="{ item }">
+                  <span :class="getLabelFontFromItem(item).class">
+                    {{ getLabelFontFromItem(item).label }}
+                  </span>
+                </template>
+              </USelect>
+            </UFormField>
+
+            <UFormField label="Size">
+              <UFieldGroup
+                class="w-full"
+                size="lg"
+              >
+                <UButton
+                  aria-label="Decrease label size"
+                  class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                  color="neutral"
+                  :disabled="!canDecreaseLabelSize"
+                  icon="i-lucide-minus"
+                  size="lg"
+                  variant="subtle"
+                  @click="decreaseLabelSize"
+                />
+                <UButton
+                  aria-label="Increase label size"
+                  class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                  color="neutral"
+                  :disabled="!canIncreaseLabelSize"
+                  icon="i-lucide-plus"
+                  size="lg"
+                  variant="subtle"
+                  @click="increaseLabelSize"
+                />
+              </UFieldGroup>
+            </UFormField>
+          </div>
+
+          <div
+            v-if="!isCircleShape"
+            class="space-y-4 min-[620px]:hidden"
+            data-testid="rectangle-label-mobile-additional-controls"
+          >
             <div
               :class="[mobileLabelSectionBoxClasses, 'grid gap-3']"
               data-testid="rectangle-label-mobile-section-additional"
@@ -4310,71 +4501,6 @@ onUnmounted(() => {
                 </UFieldGroup>
               </UFormField>
             </div>
-          </div>
-
-          <div
-            v-if="!isCircleShape"
-            class="hidden gap-3 min-[620px]:grid min-[620px]:grid-cols-[minmax(0,1fr)_10.5rem_6rem]"
-            data-testid="rectangle-label-desktop-primary-controls"
-          >
-            <UFormField label="Label">
-              <UInput
-                v-model="qrLabel"
-                class="w-full"
-                icon="i-lucide-type"
-                placeholder="Add a word"
-                size="lg"
-              />
-            </UFormField>
-
-            <UFormField label="Font">
-              <USelect
-                v-model="selectedLabelFont"
-                class="w-full"
-                :items="labelFontItems"
-                size="lg"
-              >
-                <template #default="{ modelValue }">
-                  <span :class="getLabelFont(modelValue).class">
-                    {{ getLabelFont(modelValue).label }}
-                  </span>
-                </template>
-
-                <template #item-label="{ item }">
-                  <span :class="getLabelFontFromItem(item).class">
-                    {{ getLabelFontFromItem(item).label }}
-                  </span>
-                </template>
-              </USelect>
-            </UFormField>
-
-            <UFormField label="Size">
-              <UFieldGroup
-                class="w-full"
-                size="lg"
-              >
-                <UButton
-                  aria-label="Decrease label size"
-                  class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
-                  color="neutral"
-                  :disabled="!canDecreaseLabelSize"
-                  icon="i-lucide-minus"
-                  size="lg"
-                  variant="subtle"
-                  @click="decreaseLabelSize"
-                />
-                <UButton
-                  aria-label="Increase label size"
-                  class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
-                  color="neutral"
-                  :disabled="!canIncreaseLabelSize"
-                  icon="i-lucide-plus"
-                  size="lg"
-                  variant="subtle"
-                  @click="increaseLabelSize"
-                />
-              </UFieldGroup>
-            </UFormField>
           </div>
 
           <div
@@ -4480,94 +4606,376 @@ onUnmounted(() => {
               />
             </UFieldGroup>
           </div>
+
+          <div
+            v-if="!isCircleShape"
+            :class="[mobileLabelSectionBoxClasses, 'space-y-3']"
+            data-testid="rectangle-label-logo-controls"
+          >
+            <div
+              :class="['grid gap-3', hasLabelLogo ? 'min-[620px]:grid-cols-[minmax(0,1fr)_8rem]' : '']"
+              data-testid="rectangle-label-logo-header"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="text-base font-bold text-highlighted min-[620px]:text-sm min-[620px]:font-medium">
+                  Logo
+                </span>
+                <UFieldGroup
+                  aria-label="Logo position"
+                  data-testid="rectangle-label-logo-position-controls"
+                  size="xs"
+                >
+                  <UButton
+                    :aria-pressed="selectedLabelLogoPosition === 'top'"
+                    :color="selectedLabelLogoPosition === 'top' ? 'primary' : 'neutral'"
+                    :variant="selectedLabelLogoPosition === 'top' ? 'solid' : 'subtle'"
+                    @click="selectLabelLogoPosition('top')"
+                  >
+                    Above
+                  </UButton>
+                  <UButton
+                    :aria-pressed="selectedLabelLogoPosition === 'bottom'"
+                    :color="selectedLabelLogoPosition === 'bottom' ? 'primary' : 'neutral'"
+                    :variant="selectedLabelLogoPosition === 'bottom' ? 'solid' : 'subtle'"
+                    @click="selectLabelLogoPosition('bottom')"
+                  >
+                    Below
+                  </UButton>
+                </UFieldGroup>
+              </div>
+            </div>
+
+            <div class="grid gap-3 min-[620px]:grid-cols-[minmax(0,1fr)_8rem] min-[620px]:items-stretch">
+              <button
+                class="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center transition min-[620px]:min-h-24 min-[620px]:flex-row min-[620px]:gap-3 min-[620px]:py-3"
+                :class="[
+                  isLabelLogoDragActive ? 'border-primary bg-primary/5 text-primary' : 'border-slate-300 bg-white text-slate-700 hover:border-primary hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-primary',
+                  hasLabelLogo ? '' : 'min-[620px]:col-span-2'
+                ]"
+                data-testid="rectangle-label-logo-dropzone"
+                type="button"
+                @click="openLabelLogoFileDialog"
+                @dragenter.prevent="isLabelLogoDragActive = true"
+                @dragover.prevent="isLabelLogoDragActive = true"
+                @dragleave.prevent="isLabelLogoDragActive = false"
+                @drop.prevent="handleLabelLogoDrop"
+              >
+                <UIcon
+                  aria-hidden="true"
+                  name="i-lucide-image-up"
+                  class="size-7 shrink-0"
+                />
+                <span class="grid min-w-0 gap-1">
+                  <span
+                    v-if="labelLogoFileName"
+                    class="truncate text-sm font-semibold"
+                  >
+                    {{ labelLogoFileName }}
+                  </span>
+                  <span
+                    v-else
+                    class="text-sm font-semibold"
+                  >
+                    <span
+                      class="hidden min-[620px]:inline"
+                      data-testid="rectangle-label-logo-desktop-prompt"
+                    >
+                      Drop or Click to Add Logo Image
+                    </span>
+                    <span
+                      class="min-[620px]:hidden"
+                      data-testid="rectangle-label-logo-mobile-prompt"
+                    >
+                      Click to Add Logo Image
+                    </span>
+                  </span>
+                  <span class="text-xs text-muted">SVG, PNG, JPG, WebP, GIF</span>
+                </span>
+              </button>
+              <input
+                ref="labelLogoFileInput"
+                accept="image/*"
+                class="sr-only"
+                data-testid="rectangle-label-logo-file-input"
+                type="file"
+                @change="handleLabelLogoFileInput"
+              >
+
+              <div
+                v-if="hasLabelLogo"
+                class="grid gap-2 min-[620px]:content-between min-[620px]:self-stretch"
+                data-testid="rectangle-label-logo-side-controls"
+              >
+                <UButton
+                  class="w-full justify-center whitespace-nowrap"
+                  color="neutral"
+                  data-testid="rectangle-label-logo-remove-button"
+                  icon="i-lucide-trash-2"
+                  size="sm"
+                  variant="subtle"
+                  @click="removeLabelLogo"
+                >
+                  Remove Logo
+                </UButton>
+
+                <UFormField
+                  data-testid="rectangle-label-logo-size-controls"
+                  label="Size"
+                >
+                  <UFieldGroup
+                    class="w-full"
+                    size="lg"
+                  >
+                    <UButton
+                      aria-label="Decrease logo size"
+                      class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                      color="neutral"
+                      :disabled="!canDecreaseLabelLogoSize"
+                      icon="i-lucide-minus"
+                      size="lg"
+                      variant="subtle"
+                      @click="decreaseLabelLogoSize"
+                    />
+                    <UButton
+                      aria-label="Increase logo size"
+                      class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                      color="neutral"
+                      :disabled="!canIncreaseLabelLogoSize"
+                      icon="i-lucide-plus"
+                      size="lg"
+                      variant="subtle"
+                      @click="increaseLabelLogoSize"
+                    />
+                  </UFieldGroup>
+                </UFormField>
+              </div>
+            </div>
+
+            <UAlert
+              v-if="labelLogoError"
+              color="warning"
+              icon="i-lucide-triangle-alert"
+              :title="labelLogoError"
+              variant="subtle"
+            />
+          </div>
         </div>
 
         <div
-          v-else-if="activeTool === 'logo' && !isCircleShape"
-          class="space-y-4 rounded-lg border border-default bg-default p-4"
-          data-testid="rectangle-label-logo-controls"
+          v-else-if="activeTool === 'labelColors' && !isCircleShape"
+          class="space-y-5"
         >
-          <div class="space-y-2">
-            <span class="text-sm font-medium text-highlighted">Logo</span>
-            <button
-              class="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center transition"
-              :class="isLabelLogoDragActive ? 'border-primary bg-primary/5 text-primary' : 'border-slate-300 bg-white text-slate-700 hover:border-primary hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-primary'"
-              data-testid="rectangle-label-logo-dropzone"
-              type="button"
-              @click="openLabelLogoFileDialog"
-              @dragenter.prevent="isLabelLogoDragActive = true"
-              @dragover.prevent="isLabelLogoDragActive = true"
-              @dragleave.prevent="isLabelLogoDragActive = false"
-              @drop.prevent="handleLabelLogoDrop"
-            >
-              <UIcon
-                aria-hidden="true"
-                name="i-lucide-image-up"
-                class="size-7"
-              />
-              <span class="text-sm font-semibold">
-                {{ labelLogoFileName || 'Drop logo image' }}
-              </span>
-              <span class="text-xs text-muted">SVG, PNG, JPG, WebP, GIF</span>
-            </button>
-            <input
-              ref="labelLogoFileInput"
-              accept="image/*"
-              class="sr-only"
-              data-testid="rectangle-label-logo-file-input"
-              type="file"
-              @change="handleLabelLogoFileInput"
-            >
-          </div>
-
-          <UButton
-            v-if="hasLabelLogo"
-            color="neutral"
-            icon="i-lucide-trash-2"
-            size="sm"
-            variant="subtle"
-            @click="removeLabelLogo"
-          >
-            Remove Logo
-          </UButton>
-
-          <UFormField label="Position">
+          <section class="space-y-2">
+            <h3 class="text-sm font-medium text-highlighted">
+              Background Color
+            </h3>
             <div
-              aria-label="Logo position"
-              class="flex flex-wrap gap-2"
-              data-testid="rectangle-label-logo-position-controls"
-              role="radiogroup"
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="label-background-color-selector"
             >
               <button
-                :aria-checked="selectedLabelLogoPosition === 'top'"
-                class="rounded-lg border px-3 py-2 text-sm font-medium transition"
-                :class="selectedLabelLogoPosition === 'top' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                role="radio"
+                aria-label="Use no label background color"
+                :aria-pressed="isSelectedLabelBackgroundColor(null)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelBackgroundColor(null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
                 type="button"
-                @click="selectLabelLogoPosition('top')"
+                @click="selectLabelBackgroundColor(null)"
               >
-                Top
+                <UIcon
+                  aria-hidden="true"
+                  name="i-lucide-ban"
+                  class="size-4"
+                />
+                <span>None</span>
               </button>
+
               <button
-                :aria-checked="selectedLabelLogoPosition === 'bottom'"
-                class="rounded-lg border px-3 py-2 text-sm font-medium transition"
-                :class="selectedLabelLogoPosition === 'bottom' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-                role="radio"
+                :aria-label="`Use ${blackColorName} as the label background color`"
+                :aria-pressed="isSelectedLabelBackgroundColor(blackColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelBackgroundColor(blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
                 type="button"
-                @click="selectLabelLogoPosition('bottom')"
+                @click="selectLabelBackgroundColor(blackColorName)"
               >
-                Bottom
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getPaletteColorClass(blackColorName, 'bg', getDefaultPaletteColorStep(blackColorName))"
+                />
+                <span>{{ blackColorName }}</span>
+              </button>
+
+              <button
+                v-for="color in tailwindColors"
+                :key="`label-background-${color.name}`"
+                :aria-label="`Use ${color.name} as the label background color`"
+                :aria-pressed="isSelectedLabelBackgroundColor(color.name)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelBackgroundColor(color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelBackgroundColor(color.name)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getTailwindColorClass(color, 'bg', selectedLabelBackgroundColorStep)"
+                />
+                <span>{{ color.name }}</span>
               </button>
             </div>
-          </UFormField>
 
-          <UAlert
-            v-if="labelLogoError"
-            color="warning"
-            icon="i-lucide-triangle-alert"
-            :title="labelLogoError"
-            variant="subtle"
-          />
+            <div
+              v-if="hasLabelBackgroundStepControl"
+              class="pt-1"
+              data-testid="label-background-color-step-control"
+            >
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-highlighted">Color Step</span>
+                <span class="text-muted">{{ selectedLabelBackgroundColorName }} {{ selectedLabelBackgroundColorStep }}</span>
+              </div>
+
+              <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+                <span>Lighter</span>
+                <span>Darker</span>
+              </div>
+
+              <USlider
+                v-model="selectedLabelBackgroundColorStep"
+                aria-label="Background color step"
+                class="mt-1"
+                data-testid="label-background-color-step-slider"
+                :max="900"
+                :min="100"
+                :step="100"
+                :style="labelBackgroundColorStepSliderStyle"
+                :tooltip="true"
+                :ui="colorStepSliderUi"
+              />
+
+              <div class="mt-2 flex justify-between text-xs text-muted">
+                <span
+                  v-for="step in tailwindColorSteps"
+                  :key="`label-background-${step}`"
+                >
+                  {{ step }}
+                </span>
+              </div>
+            </div>
+          </section>
+
+          <section class="space-y-2">
+            <h3 class="text-sm font-medium text-highlighted">
+              Text Color
+            </h3>
+            <div
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="label-text-color-selector"
+            >
+              <button
+                aria-label="Use default label text color"
+                :aria-pressed="isSelectedLabelTextColor(null)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(null)"
+              >
+                <UIcon
+                  aria-hidden="true"
+                  name="i-lucide-type"
+                  class="size-4"
+                />
+                <span>Default</span>
+              </button>
+
+              <button
+                :aria-label="`Use ${whiteColorName} as the label text color`"
+                :aria-pressed="isSelectedLabelTextColor(whiteColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(whiteColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(whiteColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getPaletteColorClass(whiteColorName, 'bg', isSelectedLabelTextColor(whiteColorName) ? selectedLabelTextColorStep : getDefaultPaletteColorStep(whiteColorName))"
+                />
+                <span>{{ whiteColorName }}</span>
+              </button>
+
+              <button
+                :aria-label="`Use ${blackColorName} as the label text color`"
+                :aria-pressed="isSelectedLabelTextColor(blackColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(blackColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getPaletteColorClass(blackColorName, 'bg', isSelectedLabelTextColor(blackColorName) ? selectedLabelTextColorStep : getDefaultPaletteColorStep(blackColorName))"
+                />
+                <span>{{ blackColorName }}</span>
+              </button>
+
+              <button
+                v-for="color in tailwindColors"
+                :key="`label-text-${color.name}`"
+                :aria-label="`Use ${color.name} as the label text color`"
+                :aria-pressed="isSelectedLabelTextColor(color.name)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(color.name)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getTailwindColorClass(color, 'bg', selectedLabelTextColorStep)"
+                />
+                <span>{{ color.name }}</span>
+              </button>
+            </div>
+
+            <div
+              v-if="hasLabelTextStepControl"
+              class="pt-1"
+              data-testid="label-text-color-step-control"
+            >
+              <div class="flex items-center justify-between gap-3 text-sm">
+                <span class="font-medium text-highlighted">Color Step</span>
+                <span class="text-muted">{{ selectedLabelTextColorName }} {{ selectedLabelTextColorStep }}</span>
+              </div>
+
+              <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+                <span>Lighter</span>
+                <span>Darker</span>
+              </div>
+
+              <USlider
+                v-model="selectedLabelTextColorStep"
+                aria-label="Text color step"
+                class="mt-1"
+                data-testid="label-text-color-step-slider"
+                :max="900"
+                :min="100"
+                :step="100"
+                :style="labelTextColorStepSliderStyle"
+                :tooltip="true"
+                :ui="colorStepSliderUi"
+              />
+
+              <div class="mt-2 flex justify-between text-xs text-muted">
+                <span
+                  v-for="step in tailwindColorSteps"
+                  :key="`label-text-${step}`"
+                >
+                  {{ step }}
+                </span>
+              </div>
+            </div>
+          </section>
         </div>
 
         <div

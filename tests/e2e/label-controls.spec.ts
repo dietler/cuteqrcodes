@@ -7,7 +7,7 @@ test('aligns label panel controls', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com')
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
 
   const primaryControls = page.getByTestId('rectangle-label-desktop-primary-controls')
   const additionalControls = page.getByTestId('rectangle-label-desktop-additional-controls')
@@ -60,7 +60,7 @@ test('positions side labels beside the QR code', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com/side-label-test')
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByTestId('rectangle-label-desktop-primary-controls').getByPlaceholder('Add a word').fill('A very long side label for width fitting')
   await page.getByTestId('rectangle-label-desktop-additional-controls').locator('#qr-additional-text').fill('Centered beside QR')
   await page.waitForFunction(() => document.fonts?.ready)
@@ -101,7 +101,7 @@ test('resizes long additional text visibly', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com/additional-text-size')
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   const primaryControls = page.getByTestId('rectangle-label-desktop-primary-controls')
   const additionalControls = page.getByTestId('rectangle-label-desktop-additional-controls')
 

@@ -54,8 +54,8 @@ test('keeps the current QR draft across navigation and clears it only from the C
   await expect.poll(() => getStoredDraft(page)).toBeNull()
 
   await urlInput.fill('https://example.com/after-clear')
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await expect(page.locator('input[placeholder="Add a word"]')).toHaveValue('')
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('')
   await expect(page.locator('#qr-additional-text')).toHaveValue('')
 
   await page.getByRole('button', { name: 'Colors' }).click()
@@ -83,8 +83,8 @@ async function createDraftQr(page: Page) {
   await page.getByRole('button', { name: 'Directional' }).click()
   await page.getByRole('button', { name: 'Use Blue as the 2nd gradient color' }).click()
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await page.locator('input[placeholder="Add a word"]').fill(draftLabel)
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Label' }).fill(draftLabel)
   await page.locator('#qr-additional-text').fill(draftAdditionalText)
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
@@ -98,8 +98,8 @@ async function createDraftQr(page: Page) {
 async function expectDraftControls(page: Page, expectedUrl: string) {
   await expect(page.locator('input[type="url"]')).toHaveValue(expectedUrl)
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await expect(page.locator('input[placeholder="Add a word"]')).toHaveValue(draftLabel)
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue(draftLabel)
   await expect(page.locator('#qr-additional-text')).toHaveValue(draftAdditionalText)
 
   await page.getByRole('button', { name: 'Colors' }).click()

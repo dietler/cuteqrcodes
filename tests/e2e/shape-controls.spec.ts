@@ -99,8 +99,8 @@ test('colors the QR code step slider with the selected shade', async ({ page }) 
     .getByTestId('qr-color-selector')
     .getByRole('button', { name: 'Use Emerald for the QR code' })
     .click()
-  await page.getByRole('button', { name: 'Steps' }).click()
 
+  await expect(page.getByRole('button', { name: 'Steps' })).toHaveCount(0)
   await expect(page.getByTestId('qr-color-step-control')).toContainText('Emerald 500')
   await expectStepSliderColor(page, 'qr-color-step-slider', 'var(--color-emerald-500)')
 
@@ -217,7 +217,7 @@ test('draws wavy borders in rectangle and circle mode', async ({ page }) => {
   expect(rectangleState.cornerPointCounts.every(count => count > 8)).toBe(true)
   expect(rectangleState.pathCommands).toBeGreaterThan(80)
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByRole('textbox', { name: 'Label' }).fill('Welcome to')
 
   const labeledRectangleState = await getWavyRectangleBorderState(page)
@@ -322,12 +322,14 @@ test('moves top and bottom label text when switching shapes', async ({ page }) =
   })
   await page.locator('input[type="url"]').fill('https://example.com/shape-label-transfer')
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByRole('textbox', { name: 'Label' }).fill('Rectangle label')
   await page.locator('#qr-additional-text').fill('Rectangle additional')
 
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Circle' }).click()
+  await expect(page.getByRole('button', { name: 'Label', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Label & Logo', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Label', exact: true }).click()
 
   await expect(page.locator('input[placeholder="Top text"]')).toHaveValue('Rectangle label')
@@ -342,7 +344,7 @@ test('moves top and bottom label text when switching shapes', async ({ page }) =
 
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Rectangle/Square' }).click()
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
 
   await expect(page.getByRole('textbox', { name: 'Label' })).toHaveValue('Circle top')
   await expect(page.locator('#qr-additional-text')).toHaveValue('Circle bottom')
@@ -366,7 +368,7 @@ test('evens stacked rectangle label spacing above and below the QR code', async 
   })
   await page.locator('input[type="url"]').fill('https://example.com/even-label-spacing')
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
   await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
   await expect(page.getByRole('img', { name: 'Generated QR code' })).toBeVisible()
@@ -392,12 +394,14 @@ test('colors rectangle label background and text with border-matched QR spacing'
   })
   await page.locator('input[type="url"]').fill('https://example.com/rectangle-label-colors')
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
   await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
   await page.getByRole('button', { name: 'Border', exact: true }).click()
   await page.getByRole('radio', { name: 'Thin border' }).click()
   await page.getByRole('button', { name: 'Colors' }).click()
+  await expect(page.getByTestId('label-background-color-selector')).toHaveCount(0)
+  await page.getByRole('button', { name: 'Label color controls' }).click()
   await page
     .getByTestId('label-background-color-selector')
     .getByRole('button', { name: 'Use Yellow as the label background color' })
@@ -405,8 +409,9 @@ test('colors rectangle label background and text with border-matched QR spacing'
 
   const textColorButtons = page.getByTestId('label-text-color-selector').locator('button')
 
-  await expect(textColorButtons.first()).toContainText('White')
-  await textColorButtons.first().click()
+  await expect(textColorButtons.first()).toContainText('Default')
+  await expect(textColorButtons.nth(1)).toContainText('White')
+  await textColorButtons.nth(1).click()
 
   let colorState = await getRectangleLabelColorState(page)
 
@@ -426,8 +431,9 @@ test('colors rectangle label background and text with border-matched QR spacing'
   expect(colorState.backgroundWidth).toBeCloseTo(colorState.qrWidth, 4)
   expect(colorState.backgroundX).toBeCloseTo(colorState.qrX, 4)
   expect(colorState.topGap).toBeCloseTo(colorState.borderGap, 4)
+  expect(colorState.backgroundInnerTopGap).toBeCloseTo(colorState.borderGap, 4)
+  expect(colorState.backgroundInnerBottomGap).toBeCloseTo(colorState.borderGap, 4)
 
-  await page.getByRole('button', { name: 'Steps' }).click()
   await expect(page.getByTestId('qr-color-step-control')).toHaveCount(0)
   await expect(page.getByTestId('label-background-color-step-control')).toContainText('Yellow 500')
   await expect(page.getByTestId('label-text-color-step-control')).toContainText('Blue 500')
@@ -446,7 +452,7 @@ test('colors rectangle label background and text with border-matched QR spacing'
   expect(colorState.labelClass).toContain('text-blue-400')
   expect(colorState.additionalTextClass).toContain('text-blue-400')
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
   await page.getByTestId('rectangle-label-position-controls').getByRole('radio', { name: 'Left' }).click()
 
   colorState = await getRectangleLabelColorState(page)
@@ -464,6 +470,50 @@ test('colors rectangle label background and text with border-matched QR spacing'
   expect(colorState.rightGap).toBeCloseTo(colorState.borderGap, 4)
 })
 
+test('keeps rectangle label background steps across colors but disconnects black', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/background-step-black')
+
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
+  await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
+  await page.getByRole('button', { name: 'Label color controls' }).click()
+
+  const backgroundSelector = page.getByTestId('label-background-color-selector')
+  const redBackgroundButton = backgroundSelector.getByRole('button', { name: 'Use Red as the label background color' })
+  const pinkBackgroundButton = backgroundSelector.getByRole('button', { name: 'Use Pink as the label background color' })
+  const blackBackgroundButton = backgroundSelector.getByRole('button', { name: 'Use Black as the label background color' })
+
+  await redBackgroundButton.click()
+  await expect(page.getByTestId('label-background-color-step-control')).toContainText('Red 500')
+
+  const backgroundStepSlider = page.getByTestId('label-background-color-step-control').getByRole('slider')
+
+  await backgroundStepSlider.press('ArrowLeft')
+  await backgroundStepSlider.press('ArrowLeft')
+  await backgroundStepSlider.press('ArrowLeft')
+  await expect(page.getByTestId('label-background-color-step-control')).toContainText('Red 200')
+
+  await pinkBackgroundButton.click()
+  await expect(page.getByTestId('label-background-color-step-control')).toContainText('Pink 200')
+
+  await blackBackgroundButton.click()
+  await expect(page.getByTestId('label-background-color-step-control')).toHaveCount(0)
+  await expect(page.getByTestId('qr-label-background')).toHaveClass(/fill-black/)
+  await expect(page.getByRole('button', { name: 'Steps' })).toHaveCount(0)
+
+  await expect(redBackgroundButton.locator('span').first()).toHaveClass(/bg-red-500/)
+
+  await redBackgroundButton.click()
+  await expect(page.getByTestId('label-background-color-step-control')).toContainText('Red 500')
+  await expect(page.getByTestId('qr-label-background')).toHaveClass(/fill-red-500/)
+})
+
 test('uploads a rectangle label logo and positions it around the label text', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 900 })
   await page.goto('/')
@@ -474,20 +524,34 @@ test('uploads a rectangle label logo and positions it around the label text', as
   })
   await page.locator('input[type="url"]').fill('https://example.com/rectangle-label-logo')
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
 
-  const labelButtonBox = await page.getByRole('button', { name: 'Label', exact: true }).boundingBox()
-  const logoButton = page.getByRole('button', { name: 'Logo', exact: true })
-  const logoButtonBox = await logoButton.boundingBox()
+  const labelButtonBox = await page.getByRole('button', { name: 'Label & Logo', exact: true }).boundingBox()
+  const labelColorsButton = page.getByRole('button', { name: 'Label color controls' })
+  const labelColorsButtonBox = await labelColorsButton.boundingBox()
 
-  expect(logoButtonBox?.x ?? 0).toBeGreaterThan(labelButtonBox?.x ?? 0)
-  expect((logoButtonBox?.x ?? 0) - ((labelButtonBox?.x ?? 0) + (labelButtonBox?.width ?? 0))).toBeLessThan(8)
+  await expect(page.getByRole('button', { name: 'Logo', exact: true })).toHaveCount(0)
+  expect(labelColorsButtonBox?.x ?? 0).toBeGreaterThan(labelButtonBox?.x ?? 0)
+  expect((labelColorsButtonBox?.x ?? 0) - ((labelButtonBox?.x ?? 0) + (labelButtonBox?.width ?? 0))).toBeLessThan(8)
 
   await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
   await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
-  await logoButton.click()
 
   await expect(page.getByTestId('rectangle-label-logo-controls')).toBeVisible()
+  const logoControlOrder = await getSectionTopPositions(page, [
+    'rectangle-label-desktop-primary-controls',
+    'rectangle-label-desktop-additional-controls',
+    'rectangle-label-logo-position-controls',
+    'rectangle-label-logo-dropzone'
+  ])
+
+  expect(logoControlOrder['rectangle-label-desktop-primary-controls']).toBeLessThan(logoControlOrder['rectangle-label-desktop-additional-controls'])
+  expect(logoControlOrder['rectangle-label-desktop-additional-controls']).toBeLessThan(logoControlOrder['rectangle-label-logo-position-controls'])
+  expect(logoControlOrder['rectangle-label-logo-position-controls']).toBeLessThan(logoControlOrder['rectangle-label-logo-dropzone'])
+
+  await expect(page.getByTestId('rectangle-label-logo-desktop-prompt')).toBeVisible()
+  await expect(page.getByTestId('rectangle-label-logo-mobile-prompt')).toBeHidden()
+
   await page.getByTestId('rectangle-label-logo-file-input').setInputFiles({
     buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="40"><rect width="120" height="40" fill="#2563eb"/></svg>'),
     mimeType: 'image/svg+xml',
@@ -495,15 +559,44 @@ test('uploads a rectangle label logo and positions it around the label text', as
   })
 
   await expect(page.getByTestId('rectangle-label-logo-dropzone')).toContainText('brand-logo.svg')
+  await expect(page.getByTestId('rectangle-label-logo-size-controls')).toBeVisible()
   await expect(page.getByTestId('qr-label-logo')).toHaveAttribute('href', /^data:image\/svg\+xml/)
+
+  const logoControlsLayout = await getRectangleLabelLogoControlsLayout(page)
+
+  expect(logoControlsLayout.sideControlsLeft).toBeGreaterThan(logoControlsLayout.dropzoneRight)
+  expect(logoControlsLayout.sideControlsTop).toBeCloseTo(logoControlsLayout.dropzoneTop, 0)
+  expect(logoControlsLayout.dropzoneHeight).toBeCloseTo(logoControlsLayout.sideControlsHeight, 0)
+  expect(logoControlsLayout.positionControlsRight).toBeCloseTo(logoControlsLayout.dropzoneRight, 0)
+  expect(logoControlsLayout.sideControlsWidth).toBeGreaterThanOrEqual(128)
+  expect(logoControlsLayout.removeButtonWhiteSpace).toBe('nowrap')
+  expect(logoControlsLayout.removeBottom).toBeLessThan(logoControlsLayout.sizeTop)
 
   let logoState = await getRectangleLabelLogoState(page)
 
+  expect(logoState.logoWidth).toBeCloseTo(logoState.qrWidth, 4)
   expect(logoState.logoBottom).toBeLessThan(logoState.textTop)
+  await expect(page.getByRole('button', { name: 'Increase logo size' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Decrease logo size' })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Decrease logo size' }).click()
+
+  const smallerLogoState = await getRectangleLabelLogoState(page)
+
+  expect(smallerLogoState.logoWidth).toBeLessThan(logoState.logoWidth)
+  expect(smallerLogoState.logoWidth).toBeCloseTo(logoState.qrWidth * 0.9, 4)
+  await expect(page.getByRole('button', { name: 'Increase logo size' })).toBeEnabled()
+
+  await page.getByRole('button', { name: 'Increase logo size' }).click()
+
+  logoState = await getRectangleLabelLogoState(page)
+
+  expect(logoState.logoWidth).toBeCloseTo(logoState.qrWidth, 4)
+  await expect(page.getByRole('button', { name: 'Increase logo size' })).toBeDisabled()
 
   await page
     .getByTestId('rectangle-label-logo-position-controls')
-    .getByRole('radio', { name: 'Bottom' })
+    .getByRole('button', { name: 'Below' })
     .click()
 
   logoState = await getRectangleLabelLogoState(page)
@@ -513,6 +606,35 @@ test('uploads a rectangle label logo and positions it around the label text', as
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Circle' }).click()
   await expect(page.getByRole('button', { name: 'Logo', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Label color controls' })).toHaveCount(0)
+})
+
+test('maximizes a padded rectangle side label logo inside the label space', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 900 })
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/side-label-logo')
+
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await page.getByTestId('rectangle-label-position-controls').getByRole('radio', { name: 'Right' }).click()
+  await page.getByTestId('rectangle-label-logo-file-input').setInputFiles({
+    buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="500"><rect x="170" y="230" width="160" height="40" fill="#ff6600"/></svg>'),
+    mimeType: 'image/svg+xml',
+    name: 'wide-logo-with-padding.svg'
+  })
+
+  await expect(page.getByTestId('qr-label-logo')).toHaveAttribute('href', /^data:image\/png/)
+
+  const logoState = await getRectangleSideLabelLogoState(page)
+
+  expect(logoState.logoX).toBeGreaterThan(logoState.qrRight)
+  expect(logoState.logoWidth).toBeCloseTo(logoState.qrWidth, 4)
+  expect(logoState.logoHeight).toBeCloseTo(logoState.qrWidth / 4, 4)
+  expect(logoState.logoCenterY).toBeCloseTo(logoState.qrCenterY, 4)
 })
 
 test('uses sectioned mobile label controls for rectangle and circle labels', async ({ page }) => {
@@ -525,7 +647,10 @@ test('uses sectioned mobile label controls for rectangle and circle labels', asy
   })
   await page.locator('input[type="url"]').fill('https://example.com/mobile-label-controls')
 
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+
+  await expect(page.getByTestId('rectangle-label-logo-mobile-prompt')).toBeVisible()
+  await expect(page.getByTestId('rectangle-label-logo-desktop-prompt')).toBeHidden()
 
   const rectangleMobileControls = page.getByTestId('rectangle-label-mobile-controls')
 
@@ -535,30 +660,34 @@ test('uses sectioned mobile label controls for rectangle and circle labels', asy
   const mobileRectangleOrder = await getSectionTopPositions(page, [
     'rectangle-label-position-controls',
     'rectangle-label-mobile-section-label',
-    'rectangle-label-mobile-section-additional'
+    'rectangle-label-mobile-section-additional',
+    'rectangle-label-logo-controls'
   ])
 
   expect(mobileRectangleOrder['rectangle-label-position-controls']).toBeLessThan(mobileRectangleOrder['rectangle-label-mobile-section-label'])
   expect(mobileRectangleOrder['rectangle-label-mobile-section-label']).toBeLessThan(mobileRectangleOrder['rectangle-label-mobile-section-additional'])
+  expect(mobileRectangleOrder['rectangle-label-mobile-section-additional']).toBeLessThan(mobileRectangleOrder['rectangle-label-logo-controls'])
 
-  const rectangleLayout = await rectangleMobileControls.evaluate((element) => {
-    const containerBox = element.getBoundingClientRect()
-    const labelInput = element.querySelector('input[placeholder="Add a word"]') as HTMLInputElement | null
-    const additionalInput = element.querySelector('input[placeholder="Add smaller text"]') as HTMLInputElement | null
+  const rectangleLayout = await page.evaluate(() => {
+    const labelSection = document.querySelector('[data-testid="rectangle-label-mobile-section-label"]') as HTMLElement | null
+    const additionalSection = document.querySelector('[data-testid="rectangle-label-mobile-section-additional"]') as HTMLElement | null
+    const labelInput = labelSection?.querySelector('input[placeholder="Add a word"]') as HTMLInputElement | null
+    const additionalInput = additionalSection?.querySelector('input[placeholder="Add smaller text"]') as HTMLInputElement | null
 
-    if (!labelInput || !additionalInput) {
+    if (!labelSection || !additionalSection || !labelInput || !additionalInput) {
       throw new Error('Missing mobile rectangle label inputs.')
     }
 
     return {
+      additionalContainerWidth: additionalSection.getBoundingClientRect().width,
       additionalInputWidth: additionalInput.getBoundingClientRect().width,
-      containerWidth: containerBox.width,
+      labelContainerWidth: labelSection.getBoundingClientRect().width,
       labelInputWidth: labelInput.getBoundingClientRect().width
     }
   })
 
-  expect(rectangleLayout.labelInputWidth).toBeGreaterThan(rectangleLayout.containerWidth * 0.9)
-  expect(rectangleLayout.additionalInputWidth).toBeGreaterThan(rectangleLayout.containerWidth * 0.9)
+  expect(rectangleLayout.labelInputWidth).toBeGreaterThan(rectangleLayout.labelContainerWidth * 0.9)
+  expect(rectangleLayout.additionalInputWidth).toBeGreaterThan(rectangleLayout.additionalContainerWidth * 0.9)
   const rectangleSectionStates = await getSectionBoxStates(page, [
     'rectangle-label-mobile-section-label',
     'rectangle-label-mobile-section-additional'
@@ -574,6 +703,8 @@ test('uses sectioned mobile label controls for rectangle and circle labels', asy
 
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Circle' }).click()
+  await expect(page.getByRole('button', { name: 'Label', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Label & Logo', exact: true })).toHaveCount(0)
   await page.getByRole('button', { name: 'Label', exact: true }).click()
 
   await expect(page.getByTestId('circle-label-controls')).toBeVisible()
@@ -602,18 +733,20 @@ test('uses sectioned mobile label controls for rectangle and circle labels', asy
 
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Rectangle/Square' }).click()
-  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
 
   await expect(page.getByTestId('rectangle-label-mobile-controls')).toBeHidden()
 
   const desktopRectangleOrder = await getSectionTopPositions(page, [
     'rectangle-label-position-controls',
     'rectangle-label-desktop-primary-controls',
-    'rectangle-label-desktop-additional-controls'
+    'rectangle-label-desktop-additional-controls',
+    'rectangle-label-logo-controls'
   ])
 
   expect(desktopRectangleOrder['rectangle-label-position-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-desktop-primary-controls'])
   expect(desktopRectangleOrder['rectangle-label-desktop-primary-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-desktop-additional-controls'])
+  expect(desktopRectangleOrder['rectangle-label-desktop-additional-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-logo-controls'])
 })
 
 test('renders circle label text on curved paths', async ({ page }) => {
@@ -810,6 +943,40 @@ async function getSectionTopPositions(page: Page, testIds: string[]) {
   }, testIds)
 }
 
+async function getRectangleLabelLogoControlsLayout(page: Page) {
+  return page.evaluate(() => {
+    const dropzone = document.querySelector('[data-testid="rectangle-label-logo-dropzone"]') as HTMLElement | null
+    const positionControls = document.querySelector('[data-testid="rectangle-label-logo-position-controls"]') as HTMLElement | null
+    const sideControls = document.querySelector('[data-testid="rectangle-label-logo-side-controls"]') as HTMLElement | null
+    const removeButton = document.querySelector('[data-testid="rectangle-label-logo-remove-button"]') as HTMLElement | null
+    const sizeControls = document.querySelector('[data-testid="rectangle-label-logo-size-controls"]') as HTMLElement | null
+
+    if (!dropzone || !positionControls || !sideControls || !removeButton || !sizeControls) {
+      throw new Error('Missing rectangle label logo controls.')
+    }
+
+    const dropzoneRect = dropzone.getBoundingClientRect()
+    const positionControlsRect = positionControls.getBoundingClientRect()
+    const sideControlsRect = sideControls.getBoundingClientRect()
+    const removeRect = removeButton.getBoundingClientRect()
+    const sizeRect = sizeControls.getBoundingClientRect()
+
+    return {
+      dropzoneHeight: dropzoneRect.height,
+      dropzoneRight: dropzoneRect.right,
+      dropzoneTop: dropzoneRect.top,
+      positionControlsRight: positionControlsRect.right,
+      removeBottom: removeRect.bottom,
+      removeButtonWhiteSpace: getComputedStyle(removeButton).whiteSpace,
+      sideControlsHeight: sideControlsRect.height,
+      sideControlsLeft: sideControlsRect.left,
+      sideControlsTop: sideControlsRect.top,
+      sideControlsWidth: sideControlsRect.width,
+      sizeTop: sizeRect.top
+    }
+  })
+}
+
 async function expectStepSliderColor(page: Page, testId: string, expectedCssValue: string) {
   const sliderColorState = await page.getByTestId(testId).evaluate((slider, expectedValue) => {
     const range = slider.querySelector('[data-slot="range"]') as HTMLElement | null
@@ -910,11 +1077,19 @@ async function getRectangleLabelColorState(page: Page) {
     const qrBottom = qrY + qrHeight
     const backgroundRight = backgroundX + backgroundWidth
     const backgroundBottom = backgroundY + backgroundHeight
+    const labelY = Number(label.getAttribute('y'))
+    const labelFontSize = Number(label.getAttribute('font-size'))
+    const additionalY = Number(additional.getAttribute('y'))
+    const additionalFontSize = Number(additional.getAttribute('font-size'))
+    const contentTop = Math.min(labelY - labelFontSize / 2, additionalY - additionalFontSize / 2)
+    const contentBottom = Math.max(labelY + labelFontSize / 2, additionalY + additionalFontSize / 2)
 
     return {
       additionalTextClass: additional.getAttribute('class') ?? '',
       backgroundClass: background.getAttribute('class') ?? '',
       backgroundHeight,
+      backgroundInnerBottomGap: backgroundBottom - contentBottom,
+      backgroundInnerTopGap: contentTop - backgroundY,
       backgroundWidth,
       backgroundX,
       backgroundY,
@@ -940,12 +1115,14 @@ async function getRectangleLabelLogoState(page: Page) {
       .filter(element => element.getAttribute('opacity') !== '0')
     const label = renderedTexts.find(element => element.textContent?.trim() === 'WINGEN')
     const additional = renderedTexts.find(element => element.textContent?.trim() === 'Bakery & Restaurant')
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
 
-    if (!svg || !logo || !label || !additional) {
+    if (!svg || !logo || !label || !additional || !qrSvg) {
       throw new Error('Missing rectangle label logo elements.')
     }
 
     const logoTop = Number(logo.getAttribute('y'))
+    const logoWidth = Number(logo.getAttribute('width'))
     const logoBottom = logoTop + Number(logo.getAttribute('height'))
     const labelY = Number(label.getAttribute('y'))
     const labelFontSize = Number(label.getAttribute('font-size'))
@@ -958,9 +1135,42 @@ async function getRectangleLabelLogoState(page: Page) {
 
     return {
       logoBottom,
+      logoWidth,
       logoTop,
+      qrWidth: Number(qrSvg.getAttribute('width')),
       textBottom: Math.max(labelBottom, additionalBottom),
       textTop: Math.min(labelTop, additionalTop)
+    }
+  })
+}
+
+async function getRectangleSideLabelLogoState(page: Page) {
+  return page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const logo = svg?.querySelector('[data-testid="qr-label-logo"]') as SVGImageElement | null
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
+
+    if (!svg || !logo || !qrSvg) {
+      throw new Error('Missing rectangle side label logo elements.')
+    }
+
+    const logoX = Number(logo.getAttribute('x'))
+    const logoY = Number(logo.getAttribute('y'))
+    const logoWidth = Number(logo.getAttribute('width'))
+    const logoHeight = Number(logo.getAttribute('height'))
+    const qrX = Number(qrSvg.getAttribute('x'))
+    const qrY = Number(qrSvg.getAttribute('y'))
+    const qrWidth = Number(qrSvg.getAttribute('width'))
+    const qrHeight = Number(qrSvg.getAttribute('height'))
+
+    return {
+      logoCenterY: logoY + logoHeight / 2,
+      logoHeight,
+      logoWidth,
+      logoX,
+      qrCenterY: qrY + qrHeight / 2,
+      qrRight: qrX + qrWidth,
+      qrWidth
     }
   })
 }

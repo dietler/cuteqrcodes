@@ -19,6 +19,7 @@ export type LabelLogoPayload = {
   naturalWidth: number
   naturalHeight: number
   position: LabelLogoPosition
+  sizeStep?: number
 }
 
 export type SavedQrPayload = {
@@ -41,7 +42,9 @@ export type SavedQrPayload = {
   gradientStyle?: 'none' | 'directional' | 'radial'
   gradientDirection?: 'left-to-right' | 'top-to-bottom' | 'diagonal'
   gradientSecondColorName?: string | null
+  gradientSecondColorStep?: number
   gradientThirdColorName?: string | null
+  gradientThirdColorStep?: number
   labelBackgroundColorName?: string | null
   labelBackgroundColorStep?: number
   labelLogo?: LabelLogoPayload | null
