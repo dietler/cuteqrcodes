@@ -76,7 +76,7 @@ const purchasedQrCode = {
     dynamicLink: {
       destinationUrl: "https://example.com/menu",
       id: "dynamic-menu",
-      redirectUrl: "https://qrcodesonlabels.com/redirect/menu",
+      redirectUrl: "https://qrcodesonlabels.com/r/menu",
       slug: "menu",
       trackStatistics: true,
       useDynamicUrl: true,

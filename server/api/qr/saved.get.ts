@@ -26,7 +26,7 @@ export default defineEventHandler(async (event): Promise<SavedQrSummary> => {
       saved_qr_codes.updated_at,
       dynamic_qr_links.id as dynamic_link_id,
       dynamic_qr_links.destination_url as dynamic_destination_url,
-      concat('https://qrcodesonlabels.com/redirect/', dynamic_qr_links.slug) as dynamic_redirect_url,
+      concat('https://qrcodesonlabels.com/r/', dynamic_qr_links.slug) as dynamic_redirect_url,
       dynamic_qr_links.slug as dynamic_slug,
       dynamic_qr_links.tracks_statistics as dynamic_tracks_statistics,
       dynamic_qr_links.is_dynamic as dynamic_is_dynamic

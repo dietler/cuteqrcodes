@@ -38,7 +38,7 @@ export type DynamicQrStats = {
   totalScans: number
 }
 
-export const dynamicQrRedirectBaseUrl = 'https://qrcodesonlabels.com/redirect'
+export const dynamicQrRedirectBaseUrl = 'https://qrcodesonlabels.com/r'
 export const dynamicQrSlugMaxLength = 64
 export const dynamicQrSlugPattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
 

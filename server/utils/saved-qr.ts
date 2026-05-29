@@ -1,4 +1,4 @@
-import type { DynamicQrLinkPayload } from '~~/app/utils/dynamic-qr'
+import { createDynamicQrRedirectUrl, type DynamicQrLinkPayload } from '~~/app/utils/dynamic-qr'
 import type { SavedQrCode, SavedQrPayload, SavedQrStatus } from '~~/app/utils/saved-qr'
 
 type NeonSql = ReturnType<typeof useNeon>
@@ -217,7 +217,13 @@ export function mapSavedQrRow(row: DbRow): SavedQrCode {
 }
 
 function normalizeStoredPayload(value: unknown): SavedQrPayload {
-  return (typeof value === 'string' ? JSON.parse(value) : value) as SavedQrPayload
+  const payload = (typeof value === 'string' ? JSON.parse(value) : value) as SavedQrPayload
+
+  if (payload.dynamicLink && typeof payload.dynamicLink.slug === 'string') {
+    payload.dynamicLink.redirectUrl = createDynamicQrRedirectUrl(payload.dynamicLink.slug || 'guid')
+  }
+
+  return payload
 }
 
 function mapDynamicLinkFields(row: DbRow): DynamicQrLinkPayload | null {

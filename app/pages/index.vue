@@ -2134,7 +2134,7 @@ function applyDynamicLinkPayload(payload: SavedQrPayload['dynamicLink']) {
     ? {
         destinationUrl: typeof payload.destinationUrl === 'string' ? payload.destinationUrl : qrStore.url,
         id: payload.id,
-        redirectUrl: typeof payload.redirectUrl === 'string' ? payload.redirectUrl : createDynamicQrRedirectUrl(slug || 'guid'),
+        redirectUrl: createDynamicQrRedirectUrl(slug || 'guid'),
         slug,
         trackStatistics: payload.trackStatistics === true,
         useDynamicUrl: payload.useDynamicUrl === true
@@ -2623,7 +2623,7 @@ onUnmounted(() => {
           v-if="isCustomizingDynamicLink"
           class="mt-3 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"
         >
-          <span class="font-mono text-xs text-muted">qrcodesonlabels.com/redirect/</span>
+          <span class="font-mono text-xs text-muted">qrcodesonlabels.com/r/</span>
           <UInput
             :model-value="dynamicLinkSlug"
             autocomplete="off"

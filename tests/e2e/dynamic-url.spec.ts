@@ -2,7 +2,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test'
 
 const labelPrintPayloadStorageKey = 'cuteqrcodes.labelPrintPayload'
 const destinationUrl = 'https://example.com/menu'
-const dynamicRedirectUrl = 'https://qrcodesonlabels.com/redirect/menu-special'
+const dynamicRedirectUrl = 'https://qrcodesonlabels.com/r/menu-special'
 const trackStatsOnlyDescription = 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus IP-based location.'
 
 type DynamicLinkRequest = {
@@ -318,7 +318,7 @@ test('checks custom link availability and saves existing link updates', async ({
         link: {
           destinationUrl,
           id: 'dynamic-link-1',
-          redirectUrl: 'https://qrcodesonlabels.com/redirect/fresh-link',
+          redirectUrl: 'https://qrcodesonlabels.com/r/fresh-link',
           slug: 'fresh-link',
           trackStatistics: true,
           useDynamicUrl: true
@@ -351,7 +351,7 @@ test('checks custom link availability and saves existing link updates', async ({
     trackStatistics: true,
     useDynamicUrl: true
   }))
-  await expect(page.getByText('https://qrcodesonlabels.com/redirect/fresh-link')).toBeVisible()
+  await expect(page.getByText('https://qrcodesonlabels.com/r/fresh-link')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Customize Link.' })).toBeVisible()
 })
 
@@ -440,7 +440,7 @@ async function routeCreditsSummary(page: Page) {
 }
 
 async function routeDynamicSlugAvailability(page: Page, isAvailable: (slug: string) => boolean = () => true) {
-  await page.route('**/api/qr/dynamic-links/availability**', route => {
+  await page.route('**/api/qr/dynamic-links/availability**', (route) => {
     const url = new URL(route.request().url())
     const slug = url.searchParams.get('slug') || ''
 
