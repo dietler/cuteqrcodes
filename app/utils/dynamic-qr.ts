@@ -22,6 +22,10 @@ export type DynamicQrScanSummary = {
   label: string
 }
 
+export const dynamicQrStatsRanges = ['24h', '7d', '30d', '365d'] as const
+
+export type DynamicQrStatsRange = typeof dynamicQrStatsRanges[number]
+
 export type DynamicQrRecentScan = {
   city: string | null
   country: string | null
@@ -36,6 +40,30 @@ export type DynamicQrStats = {
   scansByCountry: DynamicQrScanSummary[]
   scansByDay: DynamicQrScanSummary[]
   totalScans: number
+}
+
+export type DynamicQrTopLinkSummary = DynamicQrScanSummary & {
+  id: string
+  lastScannedAt: string | null
+  slug: string
+}
+
+export type DynamicQrAggregateRecentScan = DynamicQrRecentScan & {
+  linkId: string
+  linkName: string
+  slug: string
+}
+
+export type DynamicQrAggregateStats = {
+  activeTrackedLinks: number
+  lastScannedAt: string | null
+  range: DynamicQrStatsRange
+  recentScans: DynamicQrAggregateRecentScan[]
+  scansByCountry: DynamicQrScanSummary[]
+  scansByPeriod: DynamicQrScanSummary[]
+  topLinks: DynamicQrTopLinkSummary[]
+  totalScans: number
+  totalTrackedLinks: number
 }
 
 export const dynamicQrRedirectBaseUrl = 'https://qrcodesonlabels.com/r'

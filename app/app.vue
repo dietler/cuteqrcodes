@@ -38,6 +38,11 @@ const navigationItems = computed(() => {
         to: '/saved-qr-codes'
       },
       {
+        label: 'Stats',
+        icon: 'i-lucide-chart-no-axes-column',
+        to: '/stats'
+      },
+      {
         label: 'Credits',
         icon: 'i-lucide-circle-dollar-sign',
         to: '/credits'
