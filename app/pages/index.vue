@@ -5,10 +5,10 @@ import { useSession } from '~~/lib/auth-client'
 import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, isValidDynamicQrSlug, normalizeDynamicQrSlug, type DynamicQrLinkPayload, type DynamicQrLinkResponse, type DynamicQrSlugAvailabilityResponse } from '~/utils/dynamic-qr'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
-import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type SavedQrPayload } from '~/utils/saved-qr'
+import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type LabelLogoPayload, type LabelLogoPosition, type SavedQrPayload } from '~/utils/saved-qr'
 import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
-type QrTool = 'shape' | 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
+type QrTool = 'shape' | 'colors' | 'step' | 'gradient' | 'label' | 'logo' | 'icon' | 'border'
 type QrShape = 'rectangle' | 'circle'
 type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double' | 'wavy'
 type CenterIconValue = string
@@ -166,6 +166,7 @@ const iconScroller = ref<HTMLElement | null>(null)
 const outputSvgElement = ref<SVGSVGElement | null>(null)
 const labelMeasureElement = ref<SVGTextElement | null>(null)
 const additionalTextMeasureElement = ref<SVGTextElement | null>(null)
+const labelLogoFileInput = ref<HTMLInputElement | null>(null)
 const labelTextWidth = ref(0)
 const additionalTextLineWidth = ref(0)
 const hasColorsBefore = ref(false)
@@ -182,11 +183,23 @@ const selectedGradientStyle = ref<GradientStyle>('none')
 const selectedGradientDirection = ref<GradientDirection>('left-to-right')
 const selectedGradientSecondColorName = ref<string | null>(null)
 const selectedGradientThirdColorName = ref<string | null>(null)
+const selectedLabelBackgroundColorName = ref<string | null>(null)
+const selectedLabelBackgroundColorStep = ref(500)
+const selectedLabelTextColorName = ref<string | null>(null)
+const selectedLabelTextColorStep = ref(500)
 const selectedQrShape = ref<QrShape>('rectangle')
 const labelSizeStep = ref(0)
 const additionalTextSizeStep = ref(0)
 const qrLabel = ref('')
 const qrAdditionalText = ref('')
+const labelLogoDataUrl = ref('')
+const labelLogoFileName = ref('')
+const labelLogoMimeType = ref('')
+const labelLogoNaturalWidth = ref(0)
+const labelLogoNaturalHeight = ref(0)
+const selectedLabelLogoPosition = ref<LabelLogoPosition>('top')
+const isLabelLogoDragActive = ref(false)
+const labelLogoError = ref('')
 const selectedAdditionalTextPlacement = ref<AdditionalTextPlacement>('below')
 const selectedLabelPosition = ref<LabelPosition>('top')
 const selectedCenterIcon = ref<CenterIconValue>('none')
@@ -228,6 +241,10 @@ const homepageDescriptionDismissedCookie = useCookie(homepageDescriptionDismisse
 
 const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const blackColorName = 'Black'
+const whiteColorName = 'White'
+const colorStepSliderUi = {
+  range: 'bg-[var(--qr-step-slider-color)]'
+}
 const additionalTextLineLength = 40
 const preferredAdditionalTextLineLength = 24
 const maxAdditionalTextLength = additionalTextLineLength * 3
@@ -239,6 +256,10 @@ const circleBorderCornerInsetRatio = (Math.SQRT2 - 1) / 2
 const sideLabelTextInsetRatio = 0.04
 const stackedLabelAdditionalTextGapRatio = 0.12
 const sideLabelAdditionalTextGapRatio = 0.18
+const labelLogoMaxWidthRatio = 0.55
+const labelLogoMaxHeightRatio = 0.18
+const labelLogoTextGapRatio = 0.3
+const acceptedLabelLogoExtensions = /\.(avif|gif|jpe?g|png|svg|webp)$/i
 
 const labelFonts: LabelFont[] = [
   { label: 'Google Sans', value: 'google-sans', class: 'font-google-sans' },
@@ -701,6 +722,7 @@ const selectedAdditionalTextFontClass = computed(() => labelFonts.find(font => f
 const selectedBorderStyle = computed(() => borderStyles.find(border => border.value === selectedBorder.value) ?? noBorderStyle)
 const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
 const isCircleShape = computed(() => selectedQrShape.value === 'circle')
+const hasLabelLogo = computed(() => labelLogoDataUrl.value.length > 0)
 const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
   bottom: circleLabelBottom.value.trim(),
   left: circleLabelLeft.value.trim(),
@@ -708,7 +730,17 @@ const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
   top: circleLabelTop.value.trim()
 }))
 const hasCircleLabelText = computed(() => isCircleShape.value && Object.values(circleLabelTexts.value).some(text => text.length > 0))
-const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0))
+const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0 || hasLabelLogo.value))
+const hasRectangleLabelBackground = computed(() => hasLabelText.value && Boolean(selectedLabelBackgroundColorName.value))
+const hasLabelBackgroundStepControl = computed(() => isPaletteColorStepAdjustable(selectedLabelBackgroundColorName.value))
+const hasLabelTextStepControl = computed(() => isPaletteColorStepAdjustable(selectedLabelTextColorName.value))
+const hasStepControls = computed(() => Boolean(selectedQrColor.value || hasLabelBackgroundStepControl.value || hasLabelTextStepControl.value))
+const qrColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedQrColor.value?.name ?? null, selectedColorStep.value))
+const labelBackgroundColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedLabelBackgroundColorName.value, selectedLabelBackgroundColorStep.value))
+const labelTextColorStepSliderStyle = computed(() => getColorStepSliderStyle(selectedLabelTextColorName.value, selectedLabelTextColorStep.value))
+const labelBackgroundFillClass = computed(() => selectedLabelBackgroundColorName.value ? getPaletteColorClass(selectedLabelBackgroundColorName.value, 'fill', selectedLabelBackgroundColorStep.value) : 'fill-transparent')
+const rectangleLabelTextClass = computed(() => selectedLabelTextColorName.value ? getPaletteColorClass(selectedLabelTextColorName.value, 'text', selectedLabelTextColorStep.value) : qrTextClass.value)
+const rectangleLabelTextFillPaint = computed(() => selectedLabelTextColorName.value ? null : textFillPaint.value)
 const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value)
 const hasCircleInset = computed(() => isCircleShape.value)
 const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(getBorderLineInnerEdge)) : 0)
@@ -752,7 +784,9 @@ const canIncreaseAdditionalTextSize = computed(() => {
 const canDecreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value > minTextSizeStep)
 const additionalTextLineGap = computed(() => additionalTextLines.value.length > 1 ? additionalTextFontSize.value * 0.12 : 0)
 const additionalTextBlockHeight = computed(() => additionalTextLines.value.length ? additionalTextFontSize.value * additionalTextLines.value.length + additionalTextLineGap.value * (additionalTextLines.value.length - 1) : 0)
-const usesStackedLabelSpacing = computed(() => !labelIsSide.value && Boolean(labelText.value && additionalTextLines.value.length))
+const hasLabelTextGroup = computed(() => labelText.value.length > 0 || additionalTextLines.value.length > 0)
+const labelStackedItemCount = computed(() => Number(hasLabelLogo.value) + Number(labelText.value.length > 0) + Number(additionalTextLines.value.length > 0))
+const usesStackedLabelSpacing = computed(() => !labelIsSide.value && labelStackedItemCount.value > 1)
 const stackedLabelGap = computed(() => usesStackedLabelSpacing.value ? labelFontSize.value * stackedLabelAdditionalTextGapRatio : 0)
 const additionalTextGap = computed(() => {
   if (!labelText.value || !additionalTextLines.value.length) {
@@ -761,18 +795,59 @@ const additionalTextGap = computed(() => {
 
   return labelIsSide.value ? labelFontSize.value * sideLabelAdditionalTextGapRatio : stackedLabelGap.value
 })
+const labelTextGroupHeight = computed(() => {
+  if (!hasLabelTextGroup.value) {
+    return 0
+  }
+
+  return (labelText.value ? labelFontSize.value : 0) + additionalTextGap.value + additionalTextBlockHeight.value
+})
+const labelLogoAspectRatio = computed(() => {
+  if (labelLogoNaturalWidth.value > 0 && labelLogoNaturalHeight.value > 0) {
+    return labelLogoNaturalWidth.value / labelLogoNaturalHeight.value
+  }
+
+  return 1
+})
+const labelLogoMaxWidth = computed(() => Math.max(1, fittedLabelTextWidth.value * labelLogoMaxWidthRatio))
+const labelLogoMaxHeight = computed(() => Math.max(1, qrOutputSize.value * labelLogoMaxHeightRatio))
+const labelLogoSize = computed(() => {
+  if (!hasLabelLogo.value) {
+    return {
+      height: 0,
+      width: 0
+    }
+  }
+
+  const aspectRatio = Math.max(labelLogoAspectRatio.value, 0.01)
+  let width = labelLogoMaxWidth.value
+  let height = width / aspectRatio
+
+  if (height > labelLogoMaxHeight.value) {
+    height = labelLogoMaxHeight.value
+    width = height * aspectRatio
+  }
+
+  return {
+    height,
+    width
+  }
+})
+const labelLogoWidth = computed(() => labelLogoSize.value.width)
+const labelLogoHeight = computed(() => labelLogoSize.value.height)
+const labelLogoGap = computed(() => hasLabelLogo.value && hasLabelTextGroup.value ? labelFontSize.value * labelLogoTextGapRatio : 0)
 const labelGap = computed(() => hasLabelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
 const labelBlockHeight = computed(() => {
   if (!hasLabelText.value) {
     return 0
   }
 
-  return stackedLabelGap.value * 2 + (labelText.value ? labelFontSize.value : 0) + additionalTextGap.value + additionalTextBlockHeight.value
+  return stackedLabelGap.value * 2 + labelLogoHeight.value + labelLogoGap.value + labelTextGroupHeight.value
 })
 const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value : 0)
 const bottomLabelHeight = computed(() => labelIsBottom.value ? labelBlockHeight.value : 0)
-const topLabelGap = computed(() => labelIsTop.value && !usesStackedLabelSpacing.value ? labelGap.value : 0)
-const bottomLabelGap = computed(() => labelIsBottom.value && !usesStackedLabelSpacing.value ? labelGap.value : 0)
+const topLabelGap = computed(() => labelIsTop.value && (!usesStackedLabelSpacing.value || hasRectangleLabelBackground.value) ? labelGap.value : 0)
+const bottomLabelGap = computed(() => labelIsBottom.value && (!usesStackedLabelSpacing.value || hasRectangleLabelBackground.value) ? labelGap.value : 0)
 const sideLabelWidth = computed(() => labelIsSide.value ? qrOutputSize.value : 0)
 const sideLabelGap = computed(() => labelIsSide.value ? labelGap.value : 0)
 const sideLabelTextInset = computed(() => labelIsSide.value ? qrOutputSize.value * sideLabelTextInsetRatio : 0)
@@ -839,13 +914,54 @@ const labelBlockY = computed(() => {
 
   return qrOutputY.value + qrOutputSize.value + bottomLabelGap.value
 })
-const labelContentY = computed(() => labelBlockY.value + stackedLabelGap.value)
+const labelBackgroundRect = computed<GradientBox>(() => {
+  if (!hasRectangleLabelBackground.value) {
+    return {
+      height: 0,
+      width: 0,
+      x: 0,
+      y: 0
+    }
+  }
+
+  if (labelIsSide.value) {
+    return {
+      height: qrOutputSize.value,
+      width: sideLabelWidth.value,
+      x: labelIsLeft.value ? borderContentInset.value : qrOutputX.value + qrOutputSize.value + sideLabelGap.value,
+      y: qrOutputY.value
+    }
+  }
+
+  return {
+    height: labelBlockHeight.value,
+    width: qrOutputSize.value,
+    x: qrOutputX.value,
+    y: labelBlockY.value
+  }
+})
+const labelStackStartY = computed(() => labelBlockY.value + stackedLabelGap.value)
+const labelContentY = computed(() => {
+  if (hasLabelLogo.value && selectedLabelLogoPosition.value === 'top') {
+    return labelStackStartY.value + labelLogoHeight.value + labelLogoGap.value
+  }
+
+  return labelStackStartY.value
+})
 const labelY = computed(() => {
   if (selectedAdditionalTextPlacement.value === 'above' && additionalTextLines.value.length) {
     return labelContentY.value + additionalTextBlockHeight.value + additionalTextGap.value + labelFontSize.value / 2
   }
 
   return labelContentY.value + labelFontSize.value / 2
+})
+const labelLogoX = computed(() => labelX.value - labelLogoWidth.value / 2)
+const labelLogoY = computed(() => {
+  if (selectedLabelLogoPosition.value === 'bottom') {
+    return labelStackStartY.value + labelTextGroupHeight.value + labelLogoGap.value
+  }
+
+  return labelStackStartY.value
 })
 const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
   ...line,
@@ -913,7 +1029,15 @@ const textLinearGradientCoordinates = computed(() => getLinearGradientCoordinate
 const textRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(textGradientBox.value))
 
 async function selectTool(tool: QrTool) {
-  if ((tool === 'step' || tool === 'gradient') && !selectedQrColor.value) {
+  if (tool === 'logo' && isCircleShape.value) {
+    return
+  }
+
+  if (tool === 'step' && !hasStepControls.value) {
+    return
+  }
+
+  if (tool === 'gradient' && !selectedQrColor.value) {
     return
   }
 
@@ -944,7 +1068,7 @@ function selectBlackColor() {
   selectedQrColor.value = null
   selectedColorStep.value = 500
 
-  if (activeTool.value === 'step' || activeTool.value === 'gradient') {
+  if (activeTool.value === 'gradient' || (activeTool.value === 'step' && !hasStepControls.value)) {
     activeTool.value = 'colors'
   }
 }
@@ -957,8 +1081,112 @@ function selectQrColor(color: TailwindColor) {
   selectedQrColor.value = color
 }
 
-function getTailwindColorClass(color: TailwindColor, utility: TailwindColorUtility) {
-  return `${utility}-${color.name.toLowerCase()}-${selectedColorStep.value}`
+function getTailwindColorClass(color: TailwindColor, utility: TailwindColorUtility, colorStep = selectedColorStep.value) {
+  return `${utility}-${color.name.toLowerCase()}-${colorStep}`
+}
+
+function selectLabelBackgroundColor(colorName: string | null) {
+  const normalizedColorName = normalizePaletteColorName(colorName)
+
+  if (normalizedColorName && normalizedColorName !== selectedLabelBackgroundColorName.value) {
+    selectedLabelBackgroundColorStep.value = getDefaultPaletteColorStep(normalizedColorName)
+  }
+
+  selectedLabelBackgroundColorName.value = normalizedColorName
+
+  if (!normalizedColorName) {
+    selectedLabelBackgroundColorStep.value = 500
+  }
+
+  updateActiveToolAfterStepColorChange()
+}
+
+function selectLabelTextColor(colorName: string | null) {
+  const normalizedColorName = normalizePaletteColorName(colorName)
+
+  if (normalizedColorName && normalizedColorName !== selectedLabelTextColorName.value) {
+    selectedLabelTextColorStep.value = getDefaultPaletteColorStep(normalizedColorName)
+  }
+
+  selectedLabelTextColorName.value = normalizedColorName
+
+  if (!normalizedColorName) {
+    selectedLabelTextColorStep.value = 500
+  }
+
+  updateActiveToolAfterStepColorChange()
+}
+
+function isSelectedLabelBackgroundColor(colorName: string | null) {
+  return selectedLabelBackgroundColorName.value === colorName
+}
+
+function isSelectedLabelTextColor(colorName: string | null) {
+  return selectedLabelTextColorName.value === colorName
+}
+
+function getPaletteColorClass(colorName: string, utility: TailwindColorUtility, colorStep = selectedColorStep.value) {
+  if (colorName === whiteColorName) {
+    return colorStep <= 100 ? `${utility}-white` : `${utility}-gray-${colorStep}`
+  }
+
+  if (colorName === blackColorName) {
+    return colorStep >= 900 ? `${utility}-black` : `${utility}-gray-${colorStep}`
+  }
+
+  const color = tailwindColors.find(item => item.name === colorName)
+
+  return color ? getTailwindColorClass(color, utility, colorStep) : `${utility}-black`
+}
+
+function getColorStepSliderStyle(colorName: string | null, colorStep: number) {
+  return {
+    '--qr-step-slider-color': getPaletteColorCssValue(colorName, colorStep)
+  }
+}
+
+function getPaletteColorCssValue(colorName: string | null, colorStep: number) {
+  if (colorName === whiteColorName) {
+    return colorStep <= 100 ? '#ffffff' : `var(--color-gray-${colorStep})`
+  }
+
+  if (colorName === blackColorName) {
+    return colorStep >= 900 ? '#000000' : `var(--color-gray-${colorStep})`
+  }
+
+  const color = tailwindColors.find(item => item.name === colorName)
+
+  return color ? `var(--color-${color.name.toLowerCase()}-${colorStep})` : '#000000'
+}
+
+function isPaletteColorStepAdjustable(colorName: string | null) {
+  return Boolean(colorName && (colorName === blackColorName || colorName === whiteColorName || tailwindColors.some(color => color.name === colorName)))
+}
+
+function updateActiveToolAfterStepColorChange() {
+  if (activeTool.value === 'step' && !hasStepControls.value) {
+    activeTool.value = 'colors'
+  }
+}
+
+function getDefaultPaletteColorStep(colorName: string | null) {
+  if (colorName === whiteColorName) {
+    return 100
+  }
+
+  return colorName === blackColorName ? 900 : 500
+}
+
+function normalizePaletteColorName(colorName: unknown) {
+  if (typeof colorName !== 'string') {
+    return null
+  }
+
+  if (colorName === blackColorName || colorName === whiteColorName || tailwindColors.some(color => color.name === colorName)) {
+    return colorName
+  }
+
+  return null
 }
 
 function selectGradientStyle(style: GradientStyle) {
@@ -982,6 +1210,10 @@ function isSelectedGradientColor(selectedColorName: string | null, colorName: st
 }
 
 function getGradientColorTextClass(colorName: string) {
+  if (colorName === whiteColorName) {
+    return 'text-white'
+  }
+
   if (colorName === blackColorName) {
     return 'text-black'
   }
@@ -992,15 +1224,7 @@ function getGradientColorTextClass(colorName: string) {
 }
 
 function normalizeGradientColorName(colorName: unknown) {
-  if (typeof colorName !== 'string') {
-    return null
-  }
-
-  if (colorName === blackColorName || tailwindColors.some(color => color.name === colorName)) {
-    return colorName
-  }
-
-  return null
+  return normalizePaletteColorName(colorName)
 }
 
 function isGradientStyle(value: unknown): value is GradientStyle {
@@ -1053,6 +1277,10 @@ function selectQrShape(shape: QrShape) {
 
   transferLabelTextForShape(shape)
   selectedQrShape.value = shape
+
+  if (shape === 'circle' && activeTool.value === 'logo') {
+    activeTool.value = 'label'
+  }
 }
 
 function transferLabelTextForShape(shape: QrShape) {
@@ -1088,6 +1316,108 @@ function selectLabelPosition(option: LabelPositionOption) {
 
 function selectAdditionalTextPlacement(placement: AdditionalTextPlacement) {
   selectedAdditionalTextPlacement.value = placement
+}
+
+function selectLabelLogoPosition(position: LabelLogoPosition) {
+  selectedLabelLogoPosition.value = position
+}
+
+function openLabelLogoFileDialog() {
+  labelLogoFileInput.value?.click()
+}
+
+function handleLabelLogoFileInput(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+
+  if (file) {
+    void loadLabelLogoFile(file)
+  }
+
+  input.value = ''
+}
+
+function handleLabelLogoDrop(event: DragEvent) {
+  isLabelLogoDragActive.value = false
+
+  const file = event.dataTransfer?.files?.[0]
+
+  if (file) {
+    void loadLabelLogoFile(file)
+  }
+}
+
+async function loadLabelLogoFile(file: File) {
+  labelLogoError.value = ''
+
+  if (!isAcceptedLabelLogoFile(file)) {
+    labelLogoError.value = 'Upload an image file.'
+    return
+  }
+
+  try {
+    const src = await readFileAsDataUrl(file)
+    const dimensions = await getImageDimensions(src)
+
+    labelLogoDataUrl.value = src
+    labelLogoFileName.value = file.name || 'Logo image'
+    labelLogoMimeType.value = file.type || getImageMimeTypeFromDataUrl(src)
+    labelLogoNaturalWidth.value = dimensions.width
+    labelLogoNaturalHeight.value = dimensions.height
+  } catch (error) {
+    labelLogoError.value = getErrorMessage(error, 'Unable to load this logo image.')
+  }
+}
+
+function isAcceptedLabelLogoFile(file: File) {
+  return file.type.startsWith('image/') || acceptedLabelLogoExtensions.test(file.name)
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result)
+        return
+      }
+
+      reject(new Error('Unable to read this logo image.'))
+    }
+    reader.onerror = () => reject(new Error('Unable to read this logo image.'))
+    reader.readAsDataURL(file)
+  })
+}
+
+function getImageDimensions(src: string) {
+  return new Promise<{ height: number, width: number }>((resolve, reject) => {
+    const image = new Image()
+
+    image.onload = () => {
+      resolve({
+        height: Math.max(1, image.naturalHeight || image.height || 1),
+        width: Math.max(1, image.naturalWidth || image.width || 1)
+      })
+    }
+    image.onerror = () => reject(new Error('Unable to read this logo image.'))
+    image.src = src
+  })
+}
+
+function getImageMimeTypeFromDataUrl(src: string) {
+  const match = src.match(/^data:([^;,]+)/)
+
+  return match?.[1] ?? 'image/*'
+}
+
+function removeLabelLogo() {
+  labelLogoDataUrl.value = ''
+  labelLogoFileName.value = ''
+  labelLogoMimeType.value = ''
+  labelLogoNaturalWidth.value = 0
+  labelLogoNaturalHeight.value = 0
+  labelLogoError.value = ''
 }
 
 function getCircleLabelText(placement: CircleLabelPlacement) {
@@ -2025,6 +2355,8 @@ function parseTagsInput(value: string) {
 }
 
 function createSavedQrPayload(): SavedQrPayload {
+  const labelLogo = createLabelLogoPayload()
+
   return {
     additionalText: qrAdditionalText.value,
     additionalTextFont: selectedAdditionalTextFont.value,
@@ -2040,13 +2372,33 @@ function createSavedQrPayload(): SavedQrPayload {
     gradientStyle: selectedGradientStyle.value,
     gradientThirdColorName: selectedGradientThirdColorName.value,
     label: qrLabel.value,
+    labelBackgroundColorName: selectedLabelBackgroundColorName.value,
+    labelBackgroundColorStep: selectedLabelBackgroundColorStep.value,
     labelFont: selectedLabelFont.value,
+    ...(labelLogo ? { labelLogo } : {}),
     labelPosition: selectedLabelPosition.value,
     labelSizeStep: labelSizeStep.value,
+    labelTextColorName: selectedLabelTextColorName.value,
+    labelTextColorStep: selectedLabelTextColorStep.value,
     shape: selectedQrShape.value,
     url: qrStore.url,
     version: 1,
     ...(hasDynamicQrFeature.value ? { dynamicLink: createDynamicQrLinkPayload() } : {})
+  }
+}
+
+function createLabelLogoPayload(): LabelLogoPayload | null {
+  if (!hasLabelLogo.value || isCircleShape.value) {
+    return null
+  }
+
+  return {
+    mimeType: labelLogoMimeType.value,
+    name: labelLogoFileName.value,
+    naturalHeight: labelLogoNaturalHeight.value,
+    naturalWidth: labelLogoNaturalWidth.value,
+    position: selectedLabelLogoPosition.value,
+    src: labelLogoDataUrl.value
   }
 }
 
@@ -2312,6 +2664,10 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   selectedGradientDirection.value = isGradientDirection(payload.gradientDirection) ? payload.gradientDirection : 'left-to-right'
   selectedGradientSecondColorName.value = normalizeGradientColorName(payload.gradientSecondColorName)
   selectedGradientThirdColorName.value = normalizeGradientColorName(payload.gradientThirdColorName)
+  selectedLabelBackgroundColorName.value = normalizePaletteColorName(payload.labelBackgroundColorName)
+  selectedLabelBackgroundColorStep.value = normalizeColorStep(payload.labelBackgroundColorStep, selectedLabelBackgroundColorName.value)
+  selectedLabelTextColorName.value = normalizePaletteColorName(payload.labelTextColorName)
+  selectedLabelTextColorStep.value = normalizeColorStep(payload.labelTextColorStep, selectedLabelTextColorName.value)
   qrLabel.value = typeof payload.label === 'string' ? payload.label : ''
   qrAdditionalText.value = typeof payload.additionalText === 'string' ? payload.additionalText.slice(0, maxAdditionalTextLength) : ''
   selectedAdditionalTextPlacement.value = payload.additionalTextPlacement === 'above' ? 'above' : 'below'
@@ -2320,6 +2676,7 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   selectedAdditionalTextFont.value = labelFonts.some(font => font.value === payload.additionalTextFont) ? payload.additionalTextFont : fallbackLabelFont.value
   labelSizeStep.value = clampTextSizeStep(payload.labelSizeStep)
   additionalTextSizeStep.value = clampAdditionalTextSizeStep(payload.additionalTextSizeStep)
+  applyLabelLogoPayload(payload.labelLogo)
   selectedCenterIcon.value = centerIconOptions.some(icon => icon.value === payload.centerIcon) ? payload.centerIcon : 'none'
   selectedBorder.value = borderStyles.some(border => border.value === payload.border) ? payload.border as BorderValue : 'none'
   selectedQrShape.value = isQrShape(payload.shape) ? payload.shape : 'rectangle'
@@ -2336,6 +2693,22 @@ function applyCircleLabelsPayload(payload: SavedQrPayload['circleLabels']) {
     setCircleLabelSizeStep(placement, label?.sizeStep)
     setCircleLabelOrientation(placement, label?.orientation)
   }
+}
+
+function applyLabelLogoPayload(payload: SavedQrPayload['labelLogo']) {
+  if (!payload || typeof payload.src !== 'string' || !payload.src.startsWith('data:image/')) {
+    removeLabelLogo()
+    selectedLabelLogoPosition.value = 'top'
+    return
+  }
+
+  labelLogoDataUrl.value = payload.src
+  labelLogoFileName.value = typeof payload.name === 'string' ? payload.name : 'Logo image'
+  labelLogoMimeType.value = typeof payload.mimeType === 'string' ? payload.mimeType : getImageMimeTypeFromDataUrl(payload.src)
+  labelLogoNaturalWidth.value = typeof payload.naturalWidth === 'number' && payload.naturalWidth > 0 ? payload.naturalWidth : 1
+  labelLogoNaturalHeight.value = typeof payload.naturalHeight === 'number' && payload.naturalHeight > 0 ? payload.naturalHeight : 1
+  selectedLabelLogoPosition.value = payload.position === 'bottom' ? 'bottom' : 'top'
+  labelLogoError.value = ''
 }
 
 function applyDynamicLinkPayload(payload: SavedQrPayload['dynamicLink']) {
@@ -2396,12 +2769,18 @@ function resetCurrentQrState() {
   selectedGradientDirection.value = 'left-to-right'
   selectedGradientSecondColorName.value = null
   selectedGradientThirdColorName.value = null
+  selectedLabelBackgroundColorName.value = null
+  selectedLabelBackgroundColorStep.value = 500
+  selectedLabelTextColorName.value = null
+  selectedLabelTextColorStep.value = 500
   labelSizeStep.value = 0
   additionalTextSizeStep.value = 0
   qrLabel.value = ''
   qrAdditionalText.value = ''
+  removeLabelLogo()
   applyCircleLabelsPayload(undefined)
   selectedAdditionalTextPlacement.value = 'below'
+  selectedLabelLogoPosition.value = 'top'
   selectedLabelPosition.value = 'top'
   selectedLabelFont.value = fallbackLabelFont.value
   selectedAdditionalTextFont.value = fallbackLabelFont.value
@@ -2437,6 +2816,11 @@ function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
     && payload.additionalTextFont === fallbackLabelFont.value
     && payload.labelSizeStep === 0
     && payload.additionalTextSizeStep === 0
+    && !payload.labelBackgroundColorName
+    && (!payload.labelBackgroundColorStep || payload.labelBackgroundColorStep === 500)
+    && !payload.labelLogo
+    && !payload.labelTextColorName
+    && (!payload.labelTextColorStep || payload.labelTextColorStep === 500)
     && isDefaultCircleLabels(payload.circleLabels)
     && payload.centerIcon === 'none'
     && payload.border === 'none'
@@ -2472,8 +2856,16 @@ function normalizeActiveTool(value: unknown): QrTool | null {
     return null
   }
 
-  if ((value === 'step' || value === 'gradient') && !selectedQrColor.value) {
+  if (value === 'step' && !hasStepControls.value) {
     return 'colors'
+  }
+
+  if (value === 'gradient' && !selectedQrColor.value) {
+    return 'colors'
+  }
+
+  if (value === 'logo' && isCircleShape.value) {
+    return 'label'
   }
 
   return value
@@ -2491,6 +2883,7 @@ function isQrTool(value: unknown): value is QrTool {
     || value === 'step'
     || value === 'gradient'
     || value === 'label'
+    || value === 'logo'
     || value === 'icon'
     || value === 'border'
 }
@@ -2505,6 +2898,10 @@ function clampTextSizeStep(value: unknown) {
 
 function clampAdditionalTextSizeStep(value: unknown) {
   return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minTextSizeStep), maxAdditionalTextSizeStep) : 0
+}
+
+function normalizeColorStep(value: unknown, colorName: string | null = null) {
+  return typeof value === 'number' && tailwindColorSteps.includes(value) ? value : getDefaultPaletteColorStep(colorName)
 }
 
 function getDefaultQrName() {
@@ -2770,6 +3167,10 @@ watch([
   selectedGradientDirection,
   selectedGradientSecondColorName,
   selectedGradientThirdColorName,
+  selectedLabelBackgroundColorName,
+  selectedLabelBackgroundColorStep,
+  selectedLabelTextColorName,
+  selectedLabelTextColorStep,
   labelSizeStep,
   additionalTextSizeStep,
   circleLabelTopSizeStep,
@@ -2782,11 +3183,17 @@ watch([
   circleLabelRightOrientation,
   qrLabel,
   qrAdditionalText,
+  labelLogoDataUrl,
+  labelLogoFileName,
+  labelLogoMimeType,
+  labelLogoNaturalWidth,
+  labelLogoNaturalHeight,
   circleLabelTop,
   circleLabelBottom,
   circleLabelLeft,
   circleLabelRight,
   selectedAdditionalTextPlacement,
+  selectedLabelLogoPosition,
   selectedLabelPosition,
   selectedLabelFont,
   selectedAdditionalTextFont,
@@ -3060,7 +3467,7 @@ onUnmounted(() => {
                 Colors
               </UButton>
               <UButton
-                v-if="selectedQrColor"
+                v-if="hasStepControls"
                 :aria-pressed="activeTool === 'step'"
                 :color="activeTool === 'step' ? 'primary' : 'neutral'"
                 icon="i-lucide-lab-stairs"
@@ -3080,15 +3487,27 @@ onUnmounted(() => {
                 Gradient
               </UButton>
             </UFieldGroup>
-            <UButton
-              :aria-pressed="activeTool === 'label'"
-              :color="activeTool === 'label' ? 'primary' : 'neutral'"
-              icon="i-lucide-type"
-              :variant="activeTool === 'label' ? 'solid' : 'subtle'"
-              @click="selectTool('label')"
-            >
-              Label
-            </UButton>
+            <UFieldGroup>
+              <UButton
+                :aria-pressed="activeTool === 'label'"
+                :color="activeTool === 'label' ? 'primary' : 'neutral'"
+                icon="i-lucide-type"
+                :variant="activeTool === 'label' ? 'solid' : 'subtle'"
+                @click="selectTool('label')"
+              >
+                Label
+              </UButton>
+              <UButton
+                v-if="!isCircleShape"
+                :aria-pressed="activeTool === 'logo'"
+                :color="activeTool === 'logo' ? 'primary' : 'neutral'"
+                icon="i-lucide-image-up"
+                :variant="activeTool === 'logo' ? 'solid' : 'subtle'"
+                @click="selectTool('logo')"
+              >
+                Logo
+              </UButton>
+            </UFieldGroup>
             <UButton
               :aria-pressed="activeTool === 'icon'"
               :color="activeTool === 'icon' ? 'primary' : 'neutral'"
@@ -3137,91 +3556,323 @@ onUnmounted(() => {
 
         <div
           v-else-if="activeTool === 'colors'"
-          class="relative"
+          class="space-y-5"
         >
-          <div
-            ref="colorScroller"
-            :class="mobileScrollDesktopWrapClasses"
-            data-testid="qr-color-selector"
-            @scroll="updateColorScrollState"
+          <section class="space-y-2">
+            <h3 class="text-sm font-medium text-highlighted">
+              QR Code Color
+            </h3>
+            <div class="relative">
+              <div
+                ref="colorScroller"
+                :class="mobileScrollDesktopWrapClasses"
+                data-testid="qr-color-selector"
+                @scroll="updateColorScrollState"
+              >
+                <button
+                  aria-label="Use Black for the QR code"
+                  :aria-pressed="!selectedQrColor"
+                  class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                  :class="!selectedQrColor ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                  type="button"
+                  @click="selectBlackColor"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="size-4 rounded-full bg-black ring-1 ring-black/10"
+                  />
+                  <span>Black</span>
+                </button>
+
+                <button
+                  v-for="color in tailwindColors"
+                  :key="color.name"
+                  :aria-label="`Use ${color.name} for the QR code`"
+                  :aria-pressed="selectedQrColor?.name === color.name"
+                  class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                  :class="selectedQrColor?.name === color.name ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                  type="button"
+                  @click="selectQrColor(color)"
+                >
+                  <span
+                    aria-hidden="true"
+                    class="size-4 rounded-full ring-1 ring-black/10"
+                    :class="getTailwindColorClass(color, 'bg')"
+                  />
+                  <span>{{ color.name }}</span>
+                </button>
+              </div>
+
+              <div
+                v-if="hasColorsBefore"
+                aria-hidden="true"
+                class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent md:hidden"
+              />
+              <div
+                v-if="hasColorsAfter"
+                aria-hidden="true"
+                class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
+              />
+            </div>
+          </section>
+
+          <section
+            v-if="!isCircleShape"
+            class="space-y-2"
           >
-            <button
-              aria-label="Use Black for the QR code"
-              :aria-pressed="!selectedQrColor"
-              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="!selectedQrColor ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectBlackColor"
+            <h3 class="text-sm font-medium text-highlighted">
+              Background Color
+            </h3>
+            <div
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="label-background-color-selector"
             >
-              <span
-                aria-hidden="true"
-                class="size-4 rounded-full bg-black ring-1 ring-black/10"
-              />
-              <span>Black</span>
-            </button>
+              <button
+                aria-label="Use no label background color"
+                :aria-pressed="isSelectedLabelBackgroundColor(null)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelBackgroundColor(null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelBackgroundColor(null)"
+              >
+                <UIcon
+                  aria-hidden="true"
+                  name="i-lucide-ban"
+                  class="size-4"
+                />
+                <span>None</span>
+              </button>
 
-            <button
-              v-for="color in tailwindColors"
-              :key="color.name"
-              :aria-label="`Use ${color.name} for the QR code`"
-              :aria-pressed="selectedQrColor?.name === color.name"
-              class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
-              :class="selectedQrColor?.name === color.name ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
-              type="button"
-              @click="selectQrColor(color)"
+              <button
+                :aria-label="`Use ${blackColorName} as the label background color`"
+                :aria-pressed="isSelectedLabelBackgroundColor(blackColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelBackgroundColor(blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelBackgroundColor(blackColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getPaletteColorClass(blackColorName, 'bg', isSelectedLabelBackgroundColor(blackColorName) ? selectedLabelBackgroundColorStep : getDefaultPaletteColorStep(blackColorName))"
+                />
+                <span>{{ blackColorName }}</span>
+              </button>
+
+              <button
+                v-for="color in tailwindColors"
+                :key="`label-background-${color.name}`"
+                :aria-label="`Use ${color.name} as the label background color`"
+                :aria-pressed="isSelectedLabelBackgroundColor(color.name)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelBackgroundColor(color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelBackgroundColor(color.name)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getTailwindColorClass(color, 'bg', selectedLabelBackgroundColorStep)"
+                />
+                <span>{{ color.name }}</span>
+              </button>
+            </div>
+          </section>
+
+          <section
+            v-if="!isCircleShape"
+            class="space-y-2"
+          >
+            <h3 class="text-sm font-medium text-highlighted">
+              Text Color
+            </h3>
+            <div
+              :class="mobileScrollDesktopWrapClasses"
+              data-testid="label-text-color-selector"
             >
-              <span
-                aria-hidden="true"
-                class="size-4 rounded-full ring-1 ring-black/10"
-                :class="getTailwindColorClass(color, 'bg')"
-              />
-              <span>{{ color.name }}</span>
-            </button>
-          </div>
+              <button
+                :aria-label="`Use ${whiteColorName} as the label text color`"
+                :aria-pressed="isSelectedLabelTextColor(whiteColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(whiteColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(whiteColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getPaletteColorClass(whiteColorName, 'bg', isSelectedLabelTextColor(whiteColorName) ? selectedLabelTextColorStep : getDefaultPaletteColorStep(whiteColorName))"
+                />
+                <span>{{ whiteColorName }}</span>
+              </button>
 
-          <div
-            v-if="hasColorsBefore"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 left-0 w-10 bg-gradient-to-r from-[var(--ui-bg)] to-transparent md:hidden"
-          />
-          <div
-            v-if="hasColorsAfter"
-            aria-hidden="true"
-            class="pointer-events-none absolute inset-y-0 right-0 w-10 bg-gradient-to-l from-[var(--ui-bg)] to-transparent md:hidden"
-          />
+              <button
+                aria-label="Use default label text color"
+                :aria-pressed="isSelectedLabelTextColor(null)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(null) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(null)"
+              >
+                <UIcon
+                  aria-hidden="true"
+                  name="i-lucide-type"
+                  class="size-4"
+                />
+                <span>Default</span>
+              </button>
+
+              <button
+                :aria-label="`Use ${blackColorName} as the label text color`"
+                :aria-pressed="isSelectedLabelTextColor(blackColorName)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(blackColorName) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(blackColorName)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getPaletteColorClass(blackColorName, 'bg', isSelectedLabelTextColor(blackColorName) ? selectedLabelTextColorStep : getDefaultPaletteColorStep(blackColorName))"
+                />
+                <span>{{ blackColorName }}</span>
+              </button>
+
+              <button
+                v-for="color in tailwindColors"
+                :key="`label-text-${color.name}`"
+                :aria-label="`Use ${color.name} as the label text color`"
+                :aria-pressed="isSelectedLabelTextColor(color.name)"
+                class="flex shrink-0 items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition"
+                :class="isSelectedLabelTextColor(color.name) ? 'border-primary bg-white text-slate-700 dark:bg-slate-950 dark:text-slate-200' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                type="button"
+                @click="selectLabelTextColor(color.name)"
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-4 rounded-full ring-1 ring-black/10"
+                  :class="getTailwindColorClass(color, 'bg', selectedLabelTextColorStep)"
+                />
+                <span>{{ color.name }}</span>
+              </button>
+            </div>
+          </section>
         </div>
 
         <div
           v-else-if="activeTool === 'step'"
-          class="rounded-lg border border-default bg-default p-4"
+          class="space-y-5 rounded-lg border border-default bg-default p-4"
         >
-          <div class="flex items-center justify-between gap-3 text-sm">
-            <span class="font-medium text-highlighted">Color step</span>
-            <span class="text-muted">{{ selectedQrColor?.name }} {{ selectedColorStep }}</span>
-          </div>
+          <section
+            v-if="selectedQrColor"
+            data-testid="qr-color-step-control"
+          >
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="font-medium text-highlighted">QR Code Color</span>
+              <span class="text-muted">{{ selectedQrColor.name }} {{ selectedColorStep }}</span>
+            </div>
 
-          <div class="mt-4 flex justify-between text-xs font-medium text-muted">
-            <span>Lighter</span>
-            <span>Darker</span>
-          </div>
+            <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+              <span>Lighter</span>
+              <span>Darker</span>
+            </div>
 
-          <USlider
-            v-model="selectedColorStep"
-            class="mt-1"
-            :max="900"
-            :min="100"
-            :step="100"
-            :tooltip="true"
-          />
+            <USlider
+              v-model="selectedColorStep"
+              aria-label="QR code color step"
+              class="mt-1"
+              data-testid="qr-color-step-slider"
+              :max="900"
+              :min="100"
+              :step="100"
+              :style="qrColorStepSliderStyle"
+              :tooltip="true"
+              :ui="colorStepSliderUi"
+            />
 
-          <div class="mt-2 flex justify-between text-xs text-muted">
-            <span
-              v-for="step in tailwindColorSteps"
-              :key="step"
-            >
-              {{ step }}
-            </span>
-          </div>
+            <div class="mt-2 flex justify-between text-xs text-muted">
+              <span
+                v-for="step in tailwindColorSteps"
+                :key="`qr-${step}`"
+              >
+                {{ step }}
+              </span>
+            </div>
+          </section>
+
+          <section
+            v-if="hasLabelBackgroundStepControl"
+            data-testid="label-background-color-step-control"
+          >
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="font-medium text-highlighted">Background Color</span>
+              <span class="text-muted">{{ selectedLabelBackgroundColorName }} {{ selectedLabelBackgroundColorStep }}</span>
+            </div>
+
+            <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+              <span>Lighter</span>
+              <span>Darker</span>
+            </div>
+
+            <USlider
+              v-model="selectedLabelBackgroundColorStep"
+              aria-label="Background color step"
+              class="mt-1"
+              data-testid="label-background-color-step-slider"
+              :max="900"
+              :min="100"
+              :step="100"
+              :style="labelBackgroundColorStepSliderStyle"
+              :tooltip="true"
+              :ui="colorStepSliderUi"
+            />
+
+            <div class="mt-2 flex justify-between text-xs text-muted">
+              <span
+                v-for="step in tailwindColorSteps"
+                :key="`label-background-${step}`"
+              >
+                {{ step }}
+              </span>
+            </div>
+          </section>
+
+          <section
+            v-if="hasLabelTextStepControl"
+            data-testid="label-text-color-step-control"
+          >
+            <div class="flex items-center justify-between gap-3 text-sm">
+              <span class="font-medium text-highlighted">Text Color</span>
+              <span class="text-muted">{{ selectedLabelTextColorName }} {{ selectedLabelTextColorStep }}</span>
+            </div>
+
+            <div class="mt-4 flex justify-between text-xs font-medium text-muted">
+              <span>Lighter</span>
+              <span>Darker</span>
+            </div>
+
+            <USlider
+              v-model="selectedLabelTextColorStep"
+              aria-label="Text color step"
+              class="mt-1"
+              data-testid="label-text-color-step-slider"
+              :max="900"
+              :min="100"
+              :step="100"
+              :style="labelTextColorStepSliderStyle"
+              :tooltip="true"
+              :ui="colorStepSliderUi"
+            />
+
+            <div class="mt-2 flex justify-between text-xs text-muted">
+              <span
+                v-for="step in tailwindColorSteps"
+                :key="`label-text-${step}`"
+              >
+                {{ step }}
+              </span>
+            </div>
+          </section>
         </div>
 
         <div
@@ -3832,6 +4483,94 @@ onUnmounted(() => {
         </div>
 
         <div
+          v-else-if="activeTool === 'logo' && !isCircleShape"
+          class="space-y-4 rounded-lg border border-default bg-default p-4"
+          data-testid="rectangle-label-logo-controls"
+        >
+          <div class="space-y-2">
+            <span class="text-sm font-medium text-highlighted">Logo</span>
+            <button
+              class="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-4 py-6 text-center transition"
+              :class="isLabelLogoDragActive ? 'border-primary bg-primary/5 text-primary' : 'border-slate-300 bg-white text-slate-700 hover:border-primary hover:bg-primary/5 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-primary'"
+              data-testid="rectangle-label-logo-dropzone"
+              type="button"
+              @click="openLabelLogoFileDialog"
+              @dragenter.prevent="isLabelLogoDragActive = true"
+              @dragover.prevent="isLabelLogoDragActive = true"
+              @dragleave.prevent="isLabelLogoDragActive = false"
+              @drop.prevent="handleLabelLogoDrop"
+            >
+              <UIcon
+                aria-hidden="true"
+                name="i-lucide-image-up"
+                class="size-7"
+              />
+              <span class="text-sm font-semibold">
+                {{ labelLogoFileName || 'Drop logo image' }}
+              </span>
+              <span class="text-xs text-muted">SVG, PNG, JPG, WebP, GIF</span>
+            </button>
+            <input
+              ref="labelLogoFileInput"
+              accept="image/*"
+              class="sr-only"
+              data-testid="rectangle-label-logo-file-input"
+              type="file"
+              @change="handleLabelLogoFileInput"
+            >
+          </div>
+
+          <UButton
+            v-if="hasLabelLogo"
+            color="neutral"
+            icon="i-lucide-trash-2"
+            size="sm"
+            variant="subtle"
+            @click="removeLabelLogo"
+          >
+            Remove Logo
+          </UButton>
+
+          <UFormField label="Position">
+            <div
+              aria-label="Logo position"
+              class="flex flex-wrap gap-2"
+              data-testid="rectangle-label-logo-position-controls"
+              role="radiogroup"
+            >
+              <button
+                :aria-checked="selectedLabelLogoPosition === 'top'"
+                class="rounded-lg border px-3 py-2 text-sm font-medium transition"
+                :class="selectedLabelLogoPosition === 'top' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                role="radio"
+                type="button"
+                @click="selectLabelLogoPosition('top')"
+              >
+                Top
+              </button>
+              <button
+                :aria-checked="selectedLabelLogoPosition === 'bottom'"
+                class="rounded-lg border px-3 py-2 text-sm font-medium transition"
+                :class="selectedLabelLogoPosition === 'bottom' ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
+                role="radio"
+                type="button"
+                @click="selectLabelLogoPosition('bottom')"
+              >
+                Bottom
+              </button>
+            </div>
+          </UFormField>
+
+          <UAlert
+            v-if="labelLogoError"
+            color="warning"
+            icon="i-lucide-triangle-alert"
+            :title="labelLogoError"
+            variant="subtle"
+          />
+        </div>
+
+        <div
           v-else-if="activeTool === 'icon'"
           aria-label="Center icon"
           class="space-y-3"
@@ -4356,6 +5095,25 @@ onUnmounted(() => {
                     :y="centerIconY"
                   />
                 </template>
+                <rect
+                  v-if="hasRectangleLabelBackground"
+                  data-testid="qr-label-background"
+                  :class="labelBackgroundFillClass"
+                  :height="labelBackgroundRect.height"
+                  :width="labelBackgroundRect.width"
+                  :x="labelBackgroundRect.x"
+                  :y="labelBackgroundRect.y"
+                />
+                <image
+                  v-if="!isCircleShape && hasLabelLogo"
+                  data-testid="qr-label-logo"
+                  :height="labelLogoHeight"
+                  :href="labelLogoDataUrl"
+                  preserveAspectRatio="xMidYMid meet"
+                  :width="labelLogoWidth"
+                  :x="labelLogoX"
+                  :y="labelLogoY"
+                />
                 <text
                   v-if="!isCircleShape && labelText"
                   ref="labelMeasureElement"
@@ -4380,20 +5138,20 @@ onUnmounted(() => {
                 </text>
                 <text
                   v-if="!isCircleShape && labelText"
-                  :fill="textFillPaint ?? 'currentColor'"
+                  :fill="rectangleLabelTextFillPaint ?? 'currentColor'"
                   :font-size="labelFontSize"
                   :x="labelX"
                   :y="labelY"
                   dominant-baseline="central"
                   text-anchor="middle"
-                  :class="textFillPaint ? selectedLabelFontClass : [qrTextClass, selectedLabelFontClass]"
+                  :class="rectangleLabelTextFillPaint ? selectedLabelFontClass : [rectangleLabelTextClass, selectedLabelFontClass]"
                 >
                   {{ labelText }}
                 </text>
                 <text
                   v-for="(line, index) in isCircleShape ? [] : additionalTextLines"
                   :key="`additional-text-${index}`"
-                  :fill="textFillPaint ?? 'currentColor'"
+                  :fill="rectangleLabelTextFillPaint ?? 'currentColor'"
                   :font-size="additionalTextFontSize"
                   font-weight="300"
                   opacity="0.68"
@@ -4401,7 +5159,7 @@ onUnmounted(() => {
                   :y="getAdditionalTextLineY(index)"
                   dominant-baseline="central"
                   text-anchor="middle"
-                  :class="textFillPaint ? selectedAdditionalTextFontClass : [qrTextClass, selectedAdditionalTextFontClass]"
+                  :class="rectangleLabelTextFillPaint ? selectedAdditionalTextFontClass : [rectangleLabelTextClass, selectedAdditionalTextFontClass]"
                 >
                   {{ line }}
                 </text>

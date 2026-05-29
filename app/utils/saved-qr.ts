@@ -2,6 +2,7 @@ import type { DynamicQrLinkPayload } from './dynamic-qr'
 
 export type CircleLabelPlacement = 'top' | 'bottom' | 'left' | 'right'
 export type CircleLabelOrientation = 'up' | 'down'
+export type LabelLogoPosition = 'top' | 'bottom'
 export type SavedQrStatus = 'draft' | 'purchased'
 
 export type CircleLabelPayload = {
@@ -9,6 +10,15 @@ export type CircleLabelPayload = {
   font: string
   sizeStep: number
   orientation?: CircleLabelOrientation
+}
+
+export type LabelLogoPayload = {
+  src: string
+  name: string
+  mimeType: string
+  naturalWidth: number
+  naturalHeight: number
+  position: LabelLogoPosition
 }
 
 export type SavedQrPayload = {
@@ -32,6 +42,11 @@ export type SavedQrPayload = {
   gradientDirection?: 'left-to-right' | 'top-to-bottom' | 'diagonal'
   gradientSecondColorName?: string | null
   gradientThirdColorName?: string | null
+  labelBackgroundColorName?: string | null
+  labelBackgroundColorStep?: number
+  labelLogo?: LabelLogoPayload | null
+  labelTextColorName?: string | null
+  labelTextColorStep?: number
   dynamicLink?: DynamicQrLinkPayload
 }
 
