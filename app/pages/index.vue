@@ -3008,7 +3008,10 @@ onUnmounted(() => {
       :data-sample-count="sampleQrImages.length"
       data-testid="sample-qr-carousel"
     >
-      <div class="sample-qr-carousel-stage relative mx-auto h-[min(54vw,22rem)] max-h-[22rem] min-h-[15rem] max-w-xl">
+      <div
+        class="sample-qr-carousel-stage relative mx-auto h-[min(86svw,68svh)] max-w-[min(86svw,68svh)]"
+        data-testid="sample-qr-carousel-stage"
+      >
         <img
           v-for="(sample, index) in sampleQrImages"
           :key="sample.src"
@@ -4659,9 +4662,9 @@ onUnmounted(() => {
 .sample-qr-carousel-image {
   position: absolute;
   inset: 0;
-  width: auto;
-  max-width: min(100%, 22rem);
-  height: auto;
+  width: 100%;
+  max-width: 100%;
+  height: 100%;
   max-height: 100%;
   margin: auto;
   object-fit: contain;
