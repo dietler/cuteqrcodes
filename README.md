@@ -35,6 +35,8 @@ bun run dev
 ## Auth And Database
 
 Better Auth is mounted at `/api/auth/*` and configured for Neon Postgres.
+Rate limiting uses database-backed storage and trusts Cloudflare's
+`cf-connecting-ip` header for client IP detection.
 
 Useful commands:
 

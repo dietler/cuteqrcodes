@@ -1,7 +1,9 @@
 import type { CreditPack, CreditPackId, CreditTransaction, PurchasedPdf } from '~~/app/utils/credits'
-import type { DynamicQrLinkPayload } from '~~/app/utils/dynamic-qr'
+import { createDynamicQrRedirectUrl, type DynamicQrLinkPayload } from '~~/app/utils/dynamic-qr'
+import type { SavedQrPayload } from '~~/app/utils/saved-qr'
 import { creditPacks } from '~~/app/utils/credits'
 import { ensureDynamicQrTables, getDynamicQrFeatureCost, mapDynamicQrLinkRow, type DynamicQrLinkInput } from '~~/server/utils/dynamic-qr'
+import { ensureSavedQrTables, mapSavedQrRow } from '~~/server/utils/saved-qr'
 import type { H3Event } from 'h3'
 import { getCloudflareEnv } from '~~/server/utils/runtime-env'
 
@@ -27,6 +29,10 @@ type R2BucketLike = {
 type PdfPurchaseInput = {
   dynamicLink?: DynamicQrLinkInput
   pdfBytes: Uint8Array
+  previewHeight: number
+  previewSvg: string
+  previewWidth: number
+  qrPayload: SavedQrPayload
   qrTitle: string
   templateId: string
   templateLabel: string
@@ -280,7 +286,10 @@ export async function grantCreditsForOrder({
 export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) {
   const sql = useNeon()
   const bucket = getPdfBucket(event)
-  await ensureCreditTables(sql)
+  await Promise.all([
+    ensureCreditTables(sql),
+    ensureSavedQrTables(sql)
+  ])
 
   if (input.dynamicLink) {
     await ensureDynamicQrTables(sql)
@@ -304,7 +313,23 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
 
   const pdfId = crypto.randomUUID()
   const dynamicLinkId = input.dynamicLink?.existingLinkId || crypto.randomUUID()
+  const purchasedQrId = crypto.randomUUID()
   const storageKey = `purchased-pdfs/${input.userId}/${pdfId}.pdf`
+  const purchasedQrPayload: SavedQrPayload = {
+    ...input.qrPayload,
+    ...(input.dynamicLink
+      ? {
+          dynamicLink: {
+            destinationUrl: input.dynamicLink.destinationUrl,
+            id: dynamicLinkId,
+            redirectUrl: createDynamicQrRedirectUrl(input.dynamicLink.slug),
+            slug: input.dynamicLink.slug,
+            trackStatistics: input.dynamicLink.trackStatistics,
+            useDynamicUrl: input.dynamicLink.useDynamicUrl
+          }
+        }
+      : {})
+  }
   const transactionMetadata = {
     dynamicLink: input.dynamicLink
       ? {
@@ -381,6 +406,33 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
       from updated_balance
       returning id
     ),
+    inserted_qr_code as (
+      insert into saved_qr_codes (
+        id,
+        user_id,
+        name,
+        payload,
+        preview_svg,
+        preview_width,
+        preview_height,
+        status,
+        tags,
+        pdf_purchase_id
+      )
+      select
+        ${purchasedQrId},
+        ${input.userId},
+        ${input.qrTitle},
+        ${JSON.stringify(purchasedQrPayload)}::jsonb,
+        ${input.previewSvg},
+        ${input.previewWidth},
+        ${input.previewHeight},
+        'purchased',
+        '{}'::text[],
+        inserted_pdf.id
+      from inserted_pdf
+      returning id
+    ),
     inserted_transaction as (
       insert into credit_transactions (
         id,
@@ -401,7 +453,7 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
         ${`${input.templateLabel} PDF purchase`},
         inserted_pdf.id,
         ${JSON.stringify(transactionMetadata)}::jsonb
-      from updated_balance, inserted_pdf
+      from updated_balance, inserted_pdf, inserted_qr_code
       returning id
     )
     select updated_balance.balance as balance_after, updated_link.*
@@ -457,6 +509,33 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
       from updated_balance
       returning id
     ),
+    inserted_qr_code as (
+      insert into saved_qr_codes (
+        id,
+        user_id,
+        name,
+        payload,
+        preview_svg,
+        preview_width,
+        preview_height,
+        status,
+        tags,
+        pdf_purchase_id
+      )
+      select
+        ${purchasedQrId},
+        ${input.userId},
+        ${input.qrTitle},
+        ${JSON.stringify(purchasedQrPayload)}::jsonb,
+        ${input.previewSvg},
+        ${input.previewWidth},
+        ${input.previewHeight},
+        'purchased',
+        '{}'::text[],
+        inserted_pdf.id
+      from inserted_pdf
+      returning id
+    ),
     inserted_transaction as (
       insert into credit_transactions (
         id,
@@ -477,7 +556,7 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
         ${`${input.templateLabel} PDF purchase`},
         inserted_pdf.id,
         ${JSON.stringify(transactionMetadata)}::jsonb
-      from updated_balance, inserted_pdf
+      from updated_balance, inserted_pdf, inserted_qr_code
       returning id
     )
     select updated_balance.balance as balance_after, inserted_link.*
@@ -512,6 +591,33 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
         ${input.pdfBytes.byteLength}
       from updated_balance
       returning id, template_id, template_label, qr_title, size_bytes, created_at
+    ),
+    inserted_qr_code as (
+      insert into saved_qr_codes (
+        id,
+        user_id,
+        name,
+        payload,
+        preview_svg,
+        preview_width,
+        preview_height,
+        status,
+        tags,
+        pdf_purchase_id
+      )
+      select
+        ${purchasedQrId},
+        ${input.userId},
+        ${input.qrTitle},
+        ${JSON.stringify(purchasedQrPayload)}::jsonb,
+        ${input.previewSvg},
+        ${input.previewWidth},
+        ${input.previewHeight},
+        'purchased',
+        '{}'::text[],
+        inserted_pdf.id
+      from inserted_pdf
+      returning id
     )
     insert into credit_transactions (
       id,
@@ -532,7 +638,7 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
         ${`${input.templateLabel} PDF purchase`},
         inserted_pdf.id,
         ${JSON.stringify(transactionMetadata)}::jsonb
-    from updated_balance, inserted_pdf
+    from updated_balance, inserted_pdf, inserted_qr_code
     returning balance_after, pdf_purchase_id
   `
   } catch (error) {
@@ -563,11 +669,19 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
       and user_id = ${input.userId}
     limit 1
   `
+  const qrRows = await sql`
+    select id, name, payload, preview_svg, preview_width, preview_height, status, tags, pdf_purchase_id, created_at, updated_at
+    from saved_qr_codes
+    where id = ${purchasedQrId}
+      and user_id = ${input.userId}
+    limit 1
+  `
 
   return {
     balance: getNumberField(rows[0]!, 'balance_after'),
     ...(input.dynamicLink ? { dynamicLink: mapDynamicQrLinkRow(rows[0]!) } : {}),
-    pdf: mapPurchasedPdfRow(pdfRows[0]!)
+    pdf: mapPurchasedPdfRow(pdfRows[0]!),
+    qrCode: mapSavedQrRow(qrRows[0]!)
   }
 }
 

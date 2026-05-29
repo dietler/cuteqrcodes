@@ -1,18 +1,36 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import type { CreditsSummary, CreditPack } from '~/utils/credits'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { CreditsSummary, CreditPack, CreditPackId } from '~/utils/credits'
 import { creditPacks } from '~/utils/credits'
 import { useSession } from '~~/lib/auth-client'
+
+type StoredCreditCheckout = {
+  credits: number
+  packId: CreditPackId
+  startedAt: string
+}
+
+const checkoutStateStorageKey = 'cuteqrcodes.creditCheckout'
+const checkoutPollingDelayMs = 1500
+const checkoutPollingAttempts = 12
+const checkoutMatchGraceMs = 5 * 60 * 1000
 
 const route = useRoute()
 const session = useSession()
 const isLoading = ref(false)
 const isCreatingCheckout = ref('')
 const creditsError = ref('')
+const isProcessingCheckoutReturn = ref(false)
 const summary = ref<CreditsSummary | null>(null)
+let checkoutPollingTimer: number | null = null
+let checkoutPollingRunId = 0
 
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
 const balance = computed(() => summary.value?.balance ?? 0)
+const isCheckoutSuccess = computed(() => route.query.checkout === 'success')
+const checkoutSuccessMessage = computed(() => isProcessingCheckoutReturn.value
+  ? 'Payment complete. Updating your credits...'
+  : 'Payment complete. If the latest purchase is not shown yet, it will appear shortly.')
 const returnTo = computed(() => {
   const value = route.query.returnTo
 
@@ -21,21 +39,58 @@ const returnTo = computed(() => {
 
 onMounted(() => {
   if (isLoggedIn.value) {
-    void loadSummary()
+    refreshCreditsForRoute()
   }
 })
 
-async function loadSummary() {
+onBeforeUnmount(() => {
+  stopCheckoutReturnRefresh()
+})
+
+watch(isLoggedIn, (loggedIn) => {
+  if (loggedIn) {
+    refreshCreditsForRoute()
+  } else {
+    stopCheckoutReturnRefresh()
+    summary.value = null
+  }
+})
+
+watch(() => route.query.checkout, () => {
+  if (isLoggedIn.value) {
+    refreshCreditsForRoute()
+  }
+})
+
+function refreshCreditsForRoute() {
+  if (isCheckoutSuccess.value) {
+    startCheckoutReturnRefresh()
+  } else {
+    stopCheckoutReturnRefresh()
+    void loadSummary()
+  }
+}
+
+async function loadSummary(): Promise<CreditsSummary | null> {
   isLoading.value = true
   creditsError.value = ''
 
   try {
-    summary.value = await $fetch<CreditsSummary>('/api/credits/summary')
+    const nextSummary = await $fetch<CreditsSummary>('/api/credits/summary')
+    summary.value = nextSummary
+
+    return nextSummary
   } catch (error) {
     creditsError.value = getErrorMessage(error, 'Unable to load credits.')
+
+    return null
   } finally {
     isLoading.value = false
   }
+}
+
+async function refreshSummary() {
+  await loadSummary()
 }
 
 async function purchaseCredits(pack: CreditPack) {
@@ -47,6 +102,8 @@ async function purchaseCredits(pack: CreditPack) {
   creditsError.value = ''
 
   try {
+    storePendingCheckout(pack)
+
     const response = await $fetch<{ checkoutUrl: string }>('/api/credits/checkout', {
       body: {
         packId: pack.id,
@@ -57,8 +114,131 @@ async function purchaseCredits(pack: CreditPack) {
 
     window.location.href = response.checkoutUrl
   } catch (error) {
+    clearPendingCheckout()
     creditsError.value = getErrorMessage(error, 'Unable to start checkout.')
     isCreatingCheckout.value = ''
+  }
+}
+
+function startCheckoutReturnRefresh() {
+  stopCheckoutReturnRefresh()
+
+  isProcessingCheckoutReturn.value = true
+  checkoutPollingRunId += 1
+
+  void pollCheckoutReturnSummary(checkoutPollingRunId, 1)
+}
+
+function stopCheckoutReturnRefresh() {
+  checkoutPollingRunId += 1
+  isProcessingCheckoutReturn.value = false
+
+  if (checkoutPollingTimer) {
+    window.clearTimeout(checkoutPollingTimer)
+    checkoutPollingTimer = null
+  }
+}
+
+async function pollCheckoutReturnSummary(runId: number, attempt: number) {
+  const nextSummary = await loadSummary()
+
+  if (runId !== checkoutPollingRunId) {
+    return
+  }
+
+  const pendingCheckout = getPendingCheckout()
+
+  if (nextSummary && pendingCheckout && hasExpectedCreditPurchase(nextSummary, pendingCheckout)) {
+    clearPendingCheckout()
+    finishCheckoutReturnRefresh(runId)
+
+    return
+  }
+
+  if (attempt >= checkoutPollingAttempts || !isCheckoutSuccess.value) {
+    clearPendingCheckout()
+    finishCheckoutReturnRefresh(runId)
+
+    return
+  }
+
+  checkoutPollingTimer = window.setTimeout(() => {
+    void pollCheckoutReturnSummary(runId, attempt + 1)
+  }, checkoutPollingDelayMs)
+}
+
+function finishCheckoutReturnRefresh(runId: number) {
+  if (runId !== checkoutPollingRunId) {
+    return
+  }
+
+  isProcessingCheckoutReturn.value = false
+  checkoutPollingTimer = null
+}
+
+function hasExpectedCreditPurchase(nextSummary: CreditsSummary, pendingCheckout: StoredCreditCheckout) {
+  const startedAt = Date.parse(pendingCheckout.startedAt)
+  const earliestMatchTime = Number.isFinite(startedAt) ? startedAt - checkoutMatchGraceMs : 0
+
+  return nextSummary.transactions.some(transaction =>
+    transaction.type === 'credit_purchase'
+    && transaction.credits === pendingCheckout.credits
+    && Date.parse(transaction.createdAt) >= earliestMatchTime)
+}
+
+function storePendingCheckout(pack: CreditPack) {
+  if (!import.meta.client) {
+    return
+  }
+
+  try {
+    sessionStorage.setItem(checkoutStateStorageKey, JSON.stringify({
+      credits: pack.credits,
+      packId: pack.id,
+      startedAt: new Date().toISOString()
+    } satisfies StoredCreditCheckout))
+  } catch {
+    // The success-return polling still works without session storage; it just runs for the full window.
+  }
+}
+
+function getPendingCheckout(): StoredCreditCheckout | null {
+  if (!import.meta.client) {
+    return null
+  }
+
+  try {
+    const rawValue = sessionStorage.getItem(checkoutStateStorageKey)
+
+    if (!rawValue) {
+      return null
+    }
+
+    const value = JSON.parse(rawValue) as Partial<StoredCreditCheckout>
+
+    if (!value.packId || typeof value.credits !== 'number' || !value.startedAt) {
+      return null
+    }
+
+    return {
+      credits: value.credits,
+      packId: value.packId,
+      startedAt: value.startedAt
+    }
+  } catch {
+    return null
+  }
+}
+
+function clearPendingCheckout() {
+  if (!import.meta.client) {
+    return
+  }
+
+  try {
+    sessionStorage.removeItem(checkoutStateStorageKey)
+  } catch {
+    // Ignore storage cleanup failures.
   }
 }
 
@@ -67,20 +247,6 @@ function formatDate(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short'
   }).format(new Date(value))
-}
-
-function formatBytes(value: number) {
-  if (value < 1024) {
-    return `${value} B`
-  }
-
-  const kilobytes = value / 1024
-
-  if (kilobytes < 1024) {
-    return `${kilobytes.toFixed(1)} KB`
-  }
-
-  return `${(kilobytes / 1024).toFixed(1)} MB`
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -129,6 +295,14 @@ function getErrorMessage(error: unknown, fallback: string) {
     />
 
     <UAlert
+      v-if="isCheckoutSuccess"
+      color="success"
+      icon="i-lucide-check-circle"
+      :title="checkoutSuccessMessage"
+      variant="subtle"
+    />
+
+    <UAlert
       v-if="creditsError"
       color="warning"
       icon="i-lucide-triangle-alert"
@@ -143,7 +317,7 @@ function getErrorMessage(error: unknown, fallback: string) {
             Log in to manage credits
           </h2>
           <p class="mt-1 text-sm text-muted">
-            Credits and purchased PDFs are tied to your account.
+            Credits are tied to your account.
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
@@ -177,7 +351,7 @@ function getErrorMessage(error: unknown, fallback: string) {
             icon="i-lucide-refresh-cw"
             :loading="isLoading"
             variant="subtle"
-            @click="loadSummary"
+            @click="refreshSummary"
           >
             Refresh
           </UButton>
@@ -211,42 +385,7 @@ function getErrorMessage(error: unknown, fallback: string) {
         </div>
       </section>
 
-      <section class="grid gap-4 lg:grid-cols-2">
-        <UCard>
-          <div class="space-y-3">
-            <h2 class="text-base font-semibold text-highlighted">
-              Purchased PDFs
-            </h2>
-
-            <UAlert
-              v-if="!summary?.pdfs.length"
-              color="neutral"
-              icon="i-lucide-file-text"
-              title="No purchased PDFs yet."
-              variant="subtle"
-            />
-
-            <div
-              v-for="pdf in summary?.pdfs"
-              :key="pdf.id"
-              class="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
-            >
-              <div class="min-w-0">
-                <span class="block truncate text-sm font-semibold text-highlighted">{{ pdf.qrTitle }}</span>
-                <span class="block text-sm text-muted">{{ pdf.templateLabel }} - {{ formatBytes(pdf.sizeBytes) }} - {{ formatDate(pdf.createdAt) }}</span>
-              </div>
-              <UButton
-                color="neutral"
-                icon="i-lucide-download"
-                :to="pdf.downloadUrl"
-                variant="subtle"
-              >
-                Download PDF
-              </UButton>
-            </div>
-          </div>
-        </UCard>
-
+      <section>
         <UCard>
           <div class="space-y-3">
             <h2 class="text-base font-semibold text-highlighted">

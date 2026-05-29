@@ -1,6 +1,7 @@
 import { labelTemplates } from '~~/app/utils/label-print'
 import { savePurchasedPdf } from '~~/server/utils/credits'
 import { normalizeDestinationUrl, normalizeDynamicQrSlugForServer, type DynamicQrLinkInput } from '~~/server/utils/dynamic-qr'
+import { normalizeSavedQrPayload } from '~~/server/utils/saved-qr'
 
 type PdfPurchaseBody = {
   dynamicLink?: {
@@ -11,6 +12,10 @@ type PdfPurchaseBody = {
     useDynamicUrl?: unknown
   }
   pdfBase64?: unknown
+  previewHeight?: unknown
+  previewSvg?: unknown
+  previewWidth?: unknown
+  qrPayload?: unknown
   qrTitle?: unknown
   templateId?: unknown
 }
@@ -23,6 +28,10 @@ export default defineEventHandler(async (event) => {
   const qrTitle = normalizeQrTitle(body?.qrTitle)
   const pdfBase64 = typeof body?.pdfBase64 === 'string' ? body.pdfBase64 : ''
   const dynamicLink = normalizePurchaseDynamicLink(body?.dynamicLink, session.user.id)
+  const previewSvg = typeof body?.previewSvg === 'string' ? body.previewSvg : ''
+  const previewWidth = typeof body?.previewWidth === 'number' ? body.previewWidth : 0
+  const previewHeight = typeof body?.previewHeight === 'number' ? body.previewHeight : 0
+  const qrPayload = normalizeSavedQrPayload(body?.qrPayload)
 
   if (!template) {
     throw createError({
@@ -31,10 +40,21 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  if (!previewSvg || !previewWidth || !previewHeight) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'QR code preview is invalid.'
+    })
+  }
+
   const pdfBytes = decodePdfBase64(pdfBase64)
   const result = await savePurchasedPdf(event, {
     ...(dynamicLink ? { dynamicLink } : {}),
     pdfBytes,
+    previewHeight,
+    previewSvg,
+    previewWidth,
+    qrPayload,
     qrTitle,
     templateId: template.id,
     templateLabel: template.label,

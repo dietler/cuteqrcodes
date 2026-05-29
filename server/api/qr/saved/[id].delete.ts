@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   if (!id) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'Saved QR code id is required.'
+      statusMessage: 'QR code id is required.'
     })
   }
 
@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   if (!rows.length) {
     throw createError({
       statusCode: 404,
-      statusMessage: 'Saved QR code not found.'
+      statusMessage: 'QR code not found.'
     })
   }
 

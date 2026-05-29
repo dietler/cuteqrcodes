@@ -1,33 +1,48 @@
-import type { SavedQrFolderWithCodes } from '~~/app/utils/saved-qr'
-import { ensureSavedQrTables, mapFolderRow, mapSavedQrRow } from '~~/server/utils/saved-qr'
+import type { SavedQrSummary } from '~~/app/utils/saved-qr'
+import { ensureDynamicQrTables } from '~~/server/utils/dynamic-qr'
+import { ensureSavedQrTables, mapSavedQrRow } from '~~/server/utils/saved-qr'
 
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async (event): Promise<SavedQrSummary> => {
   const session = await requireUserSession(event)
   const sql = useNeon()
 
-  await ensureSavedQrTables(sql)
+  await Promise.all([
+    ensureDynamicQrTables(sql),
+    ensureSavedQrTables(sql)
+  ])
 
-  const folderRows = await sql`
-    select id, name, created_at, updated_at
-    from qr_folders
-    where user_id = ${session.user.id}
-    order by lower(name), name
-  `
-  const savedRows = await sql`
-    select id, folder_id, name, payload, preview_svg, preview_width, preview_height, created_at, updated_at
+  const rows = await sql`
+    select
+      saved_qr_codes.id,
+      saved_qr_codes.name,
+      saved_qr_codes.payload,
+      saved_qr_codes.preview_svg,
+      saved_qr_codes.preview_width,
+      saved_qr_codes.preview_height,
+      saved_qr_codes.status,
+      saved_qr_codes.tags,
+      saved_qr_codes.pdf_purchase_id,
+      saved_qr_codes.created_at,
+      saved_qr_codes.updated_at,
+      dynamic_qr_links.id as dynamic_link_id,
+      dynamic_qr_links.destination_url as dynamic_destination_url,
+      concat('https://qrcodesonlabels.com/redirect/', dynamic_qr_links.slug) as dynamic_redirect_url,
+      dynamic_qr_links.slug as dynamic_slug,
+      dynamic_qr_links.tracks_statistics as dynamic_tracks_statistics,
+      dynamic_qr_links.is_dynamic as dynamic_is_dynamic
     from saved_qr_codes
-    where user_id = ${session.user.id}
-    order by updated_at desc
+    left join dynamic_qr_links
+      on dynamic_qr_links.id = saved_qr_codes.payload #>> '{dynamicLink,id}'
+      and dynamic_qr_links.user_id = saved_qr_codes.user_id
+    where saved_qr_codes.user_id = ${session.user.id}
+    order by saved_qr_codes.status, saved_qr_codes.updated_at desc
   `
-  const folders: SavedQrFolderWithCodes[] = folderRows.map(row => ({
-    ...mapFolderRow(row),
-    qrCodes: []
-  }))
-  const folderMap = new Map(folders.map(folder => [folder.id, folder]))
+  const qrCodes = rows.map(mapSavedQrRow)
+  const tags = [...new Set(qrCodes.flatMap(qrCode => qrCode.tags))]
+    .sort((first, second) => first.localeCompare(second))
 
-  savedRows.map(mapSavedQrRow).forEach((qrCode) => {
-    folderMap.get(qrCode.folderId)?.qrCodes.push(qrCode)
-  })
-
-  return { folders }
+  return {
+    qrCodes,
+    tags
+  }
 })

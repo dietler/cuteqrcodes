@@ -8,14 +8,14 @@ test('shows logged-out header auth buttons instead of the account avatar', async
 
   const header = page.getByRole('banner')
 
-  await expect(header.getByRole('link', { name: 'Login to Save' })).toHaveAttribute('href', '/login')
+  await expect(header.getByRole('link', { name: 'Login to Save Drafts' })).toHaveAttribute('href', '/login')
   await expect(header.getByRole('link', { name: 'Create an Account' })).toHaveAttribute('href', '/register')
   await expect(header.getByRole('button', { name: 'Account menu' })).toHaveCount(0)
 
   await page.locator('input[type="url"]').fill('https://example.com')
 
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: 'Login to Save' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Save Draft QR Code', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Login to Save Drafts' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Print to Labels', exact: true })).toBeVisible()
 })
 
@@ -28,12 +28,12 @@ test('keeps the account menu and builder save button for logged-in users', async
   const header = page.getByRole('banner')
 
   await expect(header.getByRole('button', { name: 'Account menu for user@example.com' })).toBeVisible()
-  await expect(header.getByRole('link', { name: 'Login to Save' })).toHaveCount(0)
+  await expect(header.getByRole('link', { name: 'Login to Save Drafts' })).toHaveCount(0)
   await expect(header.getByRole('link', { name: 'Create an Account' })).toHaveCount(0)
 
   await page.locator('input[type="url"]').fill('https://example.com')
 
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save Draft QR Code', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Print to Labels', exact: true })).toBeVisible()
 })
 

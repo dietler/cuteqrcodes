@@ -139,10 +139,20 @@ export function createAuth(options: AuthOptions = {}) {
     })
   })
   return betterAuth({
+    appName,
+    advanced: {
+      ipAddress: {
+        // Cloudflare Pages sets this from the real client IP.
+        ipAddressHeaders: ['cf-connecting-ip']
+      }
+    },
     baseURL: options.baseURL,
     database: {
       db,
       type: 'postgres'
+    },
+    experimental: {
+      joins: true
     },
     emailAndPassword: {
       enabled: true,
@@ -161,6 +171,10 @@ export function createAuth(options: AuthOptions = {}) {
       }
     },
     plugins: options.plugins || [],
+    rateLimit: {
+      modelName: 'rateLimit',
+      storage: 'database'
+    },
     secret: options.secret,
     trustedOrigins: options.trustedOrigins
   })

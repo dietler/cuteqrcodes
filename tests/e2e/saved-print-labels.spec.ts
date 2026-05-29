@@ -5,7 +5,6 @@ const labelPrintPayloadStorageKey = "cuteqrcodes.labelPrintPayload";
 
 const savedQrCode = {
   createdAt: "2026-05-26T00:00:00.000Z",
-  folderId: "folder-print",
   id: "saved-print",
   name: "Saved print link",
   payload: {
@@ -28,6 +27,9 @@ const savedQrCode = {
   previewSvg:
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><rect width="21" height="21" fill="white"/><rect x="1" y="1" width="19" height="19" fill="black"/></svg>',
   previewWidth: 21,
+  status: "draft",
+  tags: [],
+  pdfPurchaseId: null,
   updatedAt: "2026-05-26T00:00:00.000Z",
 };
 
@@ -65,6 +67,27 @@ const circleSavedQrCode = {
   previewWidth: 30,
 };
 
+const purchasedQrCode = {
+  ...savedQrCode,
+  id: "purchased-menu",
+  name: "Purchased menu QR",
+  payload: {
+    ...savedQrCode.payload,
+    dynamicLink: {
+      destinationUrl: "https://example.com/menu",
+      id: "dynamic-menu",
+      redirectUrl: "https://qrcodesonlabels.com/redirect/menu",
+      slug: "menu",
+      trackStatistics: true,
+      useDynamicUrl: true,
+    },
+    url: "https://example.com/menu",
+  },
+  pdfPurchaseId: "pdf-menu",
+  status: "purchased",
+  tags: ["menu", "paid"],
+};
+
 async function routeSavedPrintFixtures(
   page: Page,
   {
@@ -99,15 +122,8 @@ async function routeSavedPrintFixtures(
     route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
-        folders: [
-          {
-            createdAt: "2026-05-26T00:00:00.000Z",
-            id: "folder-print",
-            name: "Print folder",
-            qrCodes: [qrCode],
-            updatedAt: "2026-05-26T00:00:00.000Z",
-          },
-        ],
+        qrCodes: [qrCode],
+        tags: qrCode.tags,
       }),
     }),
   );
@@ -389,6 +405,133 @@ test("saved QR print link loads labels from the saved id", async ({ page }) => {
 
   await expect(page.getByText("Saved print link")).toBeVisible();
   await expect(page.getByText("No QR code is ready for labels.")).toBeHidden();
+});
+
+test("my QR codes shows draft and purchased QR actions with tag filtering", async ({
+  page,
+}) => {
+  let dynamicUpdateRequest:
+    | {
+        destinationUrl?: string;
+        existingLinkId?: string;
+        slug?: string;
+        trackStatistics?: boolean;
+        useDynamicUrl?: boolean;
+      }
+    | null = null;
+
+  await routeSavedPrintFixtures(page, {
+    qrCode: {
+      ...savedQrCode,
+      tags: ["draft"],
+    },
+  });
+  await page.route(/\/api\/qr\/saved$/, (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        qrCodes: [
+          {
+            ...savedQrCode,
+            tags: ["draft"],
+          },
+          purchasedQrCode,
+        ],
+        tags: ["draft", "menu", "paid"],
+      }),
+    }),
+  );
+  await page.route("**/api/qr/dynamic-links", async (route) => {
+    dynamicUpdateRequest = route.request().postDataJSON();
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        balance: 10,
+        link: {
+          ...purchasedQrCode.payload.dynamicLink,
+          destinationUrl: "https://example.com/new-menu",
+        },
+      }),
+    });
+  });
+  await page.route(`**/api/qr/saved/${purchasedQrCode.id}`, async (route) => {
+    if (route.request().method() !== "PATCH") {
+      await route.fallback();
+      return;
+    }
+
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        qrCode: {
+          ...purchasedQrCode,
+          payload: {
+            ...purchasedQrCode.payload,
+            dynamicLink: {
+              ...purchasedQrCode.payload.dynamicLink,
+              destinationUrl: "https://example.com/new-menu",
+            },
+          },
+        },
+      }),
+    });
+  });
+  await page.route("**/api/qr/dynamic-links/dynamic-menu/stats", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        lastScannedAt: "2026-05-28T18:00:00.000Z",
+        recentScans: [
+          {
+            city: "Livermore",
+            country: "US",
+            id: "scan-1",
+            region: "CA",
+            scannedAt: "2026-05-28T18:00:00.000Z",
+          },
+        ],
+        scansByCountry: [{ count: 2, label: "US" }],
+        scansByDay: [{ count: 2, label: "2026-05-28" }],
+        totalScans: 2,
+      }),
+    }),
+  );
+
+  await page.goto("/saved-qr-codes");
+
+  await expect(page.getByRole("heading", { name: "My QR Codes" }).first()).toBeVisible();
+  await expect(page.getByText("Saved print link")).toBeVisible();
+  await expect(page.getByText("Purchased menu QR")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
+    "href",
+    "/api/credits/pdfs/pdf-menu",
+  );
+  await expect(page.getByRole("button", { name: "Edit URL" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View Stats" })).toBeVisible();
+
+  await page.getByRole("button", { name: "paid" }).first().click();
+  await expect(page.getByText("Saved print link")).toHaveCount(0);
+  await expect(page.getByText("Purchased menu QR")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit URL" }).click();
+  await page.getByRole("textbox", { name: "URL" }).fill("https://example.com/new-menu");
+  await page.getByRole("button", { name: "Save URL" }).click();
+  await expect.poll(() => dynamicUpdateRequest).toEqual({
+    destinationUrl: "https://example.com/new-menu",
+    existingLinkId: "dynamic-menu",
+    slug: "menu",
+    trackStatistics: true,
+    useDynamicUrl: true,
+  });
+
+  await page.getByRole("button", { name: "View Stats" }).click();
+  await expect(page.getByRole("dialog", { name: "View Stats" })).toContainText(
+    "Total Scans",
+  );
+  await expect(page.getByRole("dialog", { name: "View Stats" })).toContainText(
+    "2",
+  );
 });
 
 test("unwatermarked purchase redirects to credits when balance is empty", async ({

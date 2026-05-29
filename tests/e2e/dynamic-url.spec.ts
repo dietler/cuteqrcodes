@@ -14,7 +14,6 @@ type DynamicLinkRequest = {
 }
 
 type SavedQrRequest = {
-  folderId?: string
   name?: string
   payload?: {
     dynamicLink?: {
@@ -27,6 +26,7 @@ type SavedQrRequest = {
     }
     url?: string
   }
+  tags?: string[]
 }
 
 type SavedDynamicLinkPayload = NonNullable<SavedQrRequest['payload']>['dynamicLink']
@@ -43,6 +43,9 @@ type PdfPurchaseRequest = {
 
 type PrintStoragePayload = {
   dynamicLink?: SavedDynamicLinkPayload
+  qrPayload?: {
+    dynamicLink?: SavedDynamicLinkPayload
+  }
   title?: string
   url?: string
 }
@@ -142,6 +145,20 @@ test('creates a paid dynamic tracking link when purchasing a printable PDF', asy
       useDynamicUrl: true
     },
     pdfBase64: expect.any(String),
+    previewHeight: expect.any(Number),
+    previewSvg: expect.stringContaining('<svg'),
+    previewWidth: expect.any(Number),
+    qrPayload: expect.objectContaining({
+      dynamicLink: {
+        destinationUrl,
+        id: '',
+        redirectUrl: dynamicRedirectUrl,
+        slug: 'menu-special',
+        trackStatistics: true,
+        useDynamicUrl: true
+      },
+      url: destinationUrl
+    }),
     templateId: expect.any(String)
   }))
 
@@ -155,6 +172,9 @@ test('creates a paid dynamic tracking link when purchasing a printable PDF', asy
 
   expect(purchasedPrintPayload).toEqual(expect.objectContaining({
     dynamicLink: createDynamicLinkResponse(),
+    qrPayload: expect.objectContaining({
+      dynamicLink: createDynamicLinkResponse()
+    }),
     title: dynamicRedirectUrl,
     url: dynamicRedirectUrl
   }))
@@ -207,20 +227,19 @@ test('hides dynamic options until a URL is entered without clearing selected set
   await expect(page.getByText(dynamicRedirectUrl)).toBeVisible()
 })
 
-test('saves dynamic link metadata with the saved QR payload', async ({ page }) => {
+test('saves dynamic link settings in a draft QR payload without creating the paid link', async ({ page }) => {
   let savedRequest: SavedQrRequest | null = null
+  let dynamicRequest: DynamicLinkRequest | null = null
 
   await routeLoggedInSession(page)
-  await routeSaveFolders(page)
-  await page.route('**/api/qr/dynamic-links', route =>
-    route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        balance: 8,
-        link: createDynamicLinkResponse()
-      })
+  await page.route('**/api/qr/dynamic-links', async (route) => {
+    dynamicRequest = route.request().postDataJSON() as DynamicLinkRequest
+
+    await route.fulfill({
+      body: 'Draft saves should not create dynamic links.',
+      status: 500
     })
-  )
+  })
   await page.route('**/api/qr/saved', async (route) => {
     savedRequest = route.request().postDataJSON() as SavedQrRequest
 
@@ -234,17 +253,23 @@ test('saves dynamic link metadata with the saved QR payload', async ({ page }) =
   await waitForBuilder(page)
   await configureDynamicQr(page)
 
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Save QR Code' })).toBeVisible()
-  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click()
+  await page.getByRole('button', { name: 'Save Draft QR Code', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Save Draft QR Code' })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Save Draft QR Code', exact: true }).click()
   await expect.poll(() => savedRequest).not.toBeNull()
 
-  expect(savedRequest).toEqual(expect.objectContaining({
-    folderId: 'folder-dynamic'
-  }))
+  expect(dynamicRequest).toBeNull()
+  expect(savedRequest?.tags).toEqual([])
   expect(savedRequest?.payload).toEqual(expect.objectContaining({
     url: destinationUrl,
-    dynamicLink: createDynamicLinkResponse()
+    dynamicLink: {
+      destinationUrl,
+      id: '',
+      redirectUrl: dynamicRedirectUrl,
+      slug: 'menu-special',
+      trackStatistics: true,
+      useDynamicUrl: true
+    }
   }))
 })
 
@@ -327,22 +352,6 @@ async function routeCreditsSummary(page: Page) {
         packs: [],
         pdfs: [],
         transactions: []
-      })
-    })
-  )
-}
-
-async function routeSaveFolders(page: Page) {
-  await page.route('**/api/qr/folders', route =>
-    route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        folders: [{
-          createdAt: '2026-05-28T00:00:00.000Z',
-          id: 'folder-dynamic',
-          name: 'Dynamic QR Codes',
-          updatedAt: '2026-05-28T00:00:00.000Z'
-        }]
       })
     })
   )

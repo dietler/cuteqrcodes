@@ -12,6 +12,27 @@ export type DynamicQrLinkResponse = {
   link: DynamicQrLinkPayload
 }
 
+export type DynamicQrScanSummary = {
+  count: number
+  label: string
+}
+
+export type DynamicQrRecentScan = {
+  city: string | null
+  country: string | null
+  id: string
+  region: string | null
+  scannedAt: string
+}
+
+export type DynamicQrStats = {
+  lastScannedAt: string | null
+  recentScans: DynamicQrRecentScan[]
+  scansByCountry: DynamicQrScanSummary[]
+  scansByDay: DynamicQrScanSummary[]
+  totalScans: number
+}
+
 export const dynamicQrRedirectBaseUrl = 'https://qrcodesonlabels.com/redirect'
 export const dynamicQrSlugMaxLength = 64
 export const dynamicQrSlugPattern = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/

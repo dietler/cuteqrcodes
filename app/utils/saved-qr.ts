@@ -2,6 +2,7 @@ import type { DynamicQrLinkPayload } from './dynamic-qr'
 
 export type CircleLabelPlacement = 'top' | 'bottom' | 'left' | 'right'
 export type CircleLabelOrientation = 'up' | 'down'
+export type SavedQrStatus = 'draft' | 'purchased'
 
 export type CircleLabelPayload = {
   text: string
@@ -34,27 +35,23 @@ export type SavedQrPayload = {
   dynamicLink?: DynamicQrLinkPayload
 }
 
-export type SavedQrFolder = {
-  id: string
-  name: string
-  createdAt: string
-  updatedAt: string
-}
-
 export type SavedQrCode = {
   id: string
-  folderId: string
   name: string
   payload: SavedQrPayload
+  pdfPurchaseId: string | null
   previewSvg: string
   previewWidth: number
   previewHeight: number
+  status: SavedQrStatus
+  tags: string[]
   createdAt: string
   updatedAt: string
 }
 
-export type SavedQrFolderWithCodes = SavedQrFolder & {
+export type SavedQrSummary = {
   qrCodes: SavedQrCode[]
+  tags: string[]
 }
 
 export const currentQrDraftStorageKey = 'cuteqrcodes.currentQrDraft'

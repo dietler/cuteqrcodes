@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 const descriptionText = 'Create QR Codes for Menus, Waivers, Websites, Events, Documents, Tickets, Reviews, Music, Payment, Chat and more. Enter your URL. Customize the look and feel, and then select the label size you would like to print your QR Code on.'
-const saveDescriptionText = 'Register for an account to Save QR Code designs.'
+const saveDescriptionText = 'Register for an account to Save Draft QR Code designs.'
 const descriptionCookieName = 'cuteqrcodes_home_description_dismissed'
 
 test('dismisses the homepage description and remembers it with a cookie', async ({ page }) => {

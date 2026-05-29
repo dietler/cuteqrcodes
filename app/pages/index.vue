@@ -2,10 +2,10 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useSession } from '~~/lib/auth-client'
-import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, isValidDynamicQrSlug, normalizeDynamicQrSlug, type DynamicQrLinkPayload, type DynamicQrLinkResponse } from '~/utils/dynamic-qr'
+import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, normalizeDynamicQrSlug, type DynamicQrLinkPayload } from '~/utils/dynamic-qr'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
-import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type SavedQrFolder, type SavedQrPayload } from '~/utils/saved-qr'
+import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type SavedQrPayload } from '~/utils/saved-qr'
 import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
 type QrTool = 'shape' | 'colors' | 'step' | 'gradient' | 'label' | 'icon' | 'border'
@@ -175,15 +175,11 @@ const centerIconSearch = ref('')
 const isPreparingLabelPrint = ref(false)
 const printLabelError = ref('')
 const isSaveDialogOpen = ref(false)
-const isLoadingSaveFolders = ref(false)
-const isCreatingSaveFolder = ref(false)
 const isSavingQr = ref(false)
 let isClearingCurrentQrDraft = false
 const saveQrName = ref('')
-const newSaveFolderName = ref('')
-const selectedSaveFolderId = ref('')
+const saveQrTagsInput = ref('')
 const saveQrError = ref('')
-const savedQrFolders = ref<SavedQrFolder[]>([])
 const homepageDescriptionDismissedCookieName = 'cuteqrcodes_home_description_dismissed'
 const homepageDescriptionDismissedCookieMaxAge = 60 * 60 * 24 * 365
 const homepageDescriptionDismissedCookie = useCookie(homepageDescriptionDismissedCookieName, {
@@ -508,10 +504,6 @@ const tailwindColors: TailwindColor[] = [
 const hasQrContent = computed(() => qrStore.content.length > 0)
 const shouldShowHomepageDescription = computed(() => homepageDescriptionDismissedCookie.value !== '1')
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
-const savedFolderItems = computed(() => savedQrFolders.value.map(folder => ({
-  label: folder.name,
-  value: folder.id
-})))
 const hasDynamicQrFeature = computed(() => useDynamicUrl.value || trackScanStatistics.value)
 const shouldShowDynamicQrControls = computed(() => hasQrContent.value)
 const dynamicLinkCreditCost = computed(() => Number(useDynamicUrl.value) + Number(trackScanStatistics.value))
@@ -1725,52 +1717,6 @@ async function openSaveDialog() {
   saveQrError.value = ''
   saveQrName.value ||= getDefaultQrName()
   isSaveDialogOpen.value = true
-  await loadSaveFolders()
-}
-
-async function loadSaveFolders() {
-  isLoadingSaveFolders.value = true
-  saveQrError.value = ''
-
-  try {
-    const response = await $fetch<{ folders: SavedQrFolder[] }>('/api/qr/folders')
-
-    savedQrFolders.value = response.folders
-
-    if (!selectedSaveFolderId.value || !savedQrFolders.value.some(folder => folder.id === selectedSaveFolderId.value)) {
-      selectedSaveFolderId.value = savedQrFolders.value[0]?.id ?? ''
-    }
-  } catch (error) {
-    saveQrError.value = getErrorMessage(error, 'Unable to load folders.')
-  } finally {
-    isLoadingSaveFolders.value = false
-  }
-}
-
-async function createSaveFolder() {
-  const folderName = newSaveFolderName.value.trim()
-
-  if (!folderName || isCreatingSaveFolder.value) {
-    return
-  }
-
-  isCreatingSaveFolder.value = true
-  saveQrError.value = ''
-
-  try {
-    const response = await $fetch<{ folder: SavedQrFolder }>('/api/qr/folders', {
-      body: { name: folderName },
-      method: 'POST'
-    })
-
-    savedQrFolders.value = [...savedQrFolders.value, response.folder].sort((first, second) => first.name.localeCompare(second.name))
-    selectedSaveFolderId.value = response.folder.id
-    newSaveFolderName.value = ''
-  } catch (error) {
-    saveQrError.value = getErrorMessage(error, 'Unable to create that folder.')
-  } finally {
-    isCreatingSaveFolder.value = false
-  }
 }
 
 async function saveCurrentQr() {
@@ -1781,38 +1727,39 @@ async function saveCurrentQr() {
     return
   }
 
-  if (!selectedSaveFolderId.value) {
-    saveQrError.value = 'Choose or create a folder.'
-    return
-  }
-
   isSavingQr.value = true
   saveQrError.value = ''
 
   try {
-    await ensureDynamicQrLink()
-
     const printPayload = await createLabelPrintPayload()
 
     await $fetch('/api/qr/saved', {
       body: {
-        folderId: selectedSaveFolderId.value,
         name,
         payload: createSavedQrPayload(),
         previewHeight: printPayload.height,
         previewSvg: printPayload.svg,
-        previewWidth: printPayload.width
+        previewWidth: printPayload.width,
+        tags: parseTagsInput(saveQrTagsInput.value)
       },
       method: 'POST'
     })
 
     isSaveDialogOpen.value = false
     saveQrName.value = ''
+    saveQrTagsInput.value = ''
   } catch (error) {
     saveQrError.value = getErrorMessage(error, 'Unable to save this QR code.')
   } finally {
     isSavingQr.value = false
   }
+}
+
+function parseTagsInput(value: string) {
+  return value
+    .split(',')
+    .map(tag => tag.trim())
+    .filter(Boolean)
 }
 
 function createSavedQrPayload(): SavedQrPayload {
@@ -1856,48 +1803,6 @@ function createDynamicQrLinkPayload(): DynamicQrLinkPayload {
       }
 }
 
-async function ensureDynamicQrLink() {
-  if (!hasDynamicQrFeature.value) {
-    activeDynamicLink.value = null
-    return null
-  }
-
-  if (!isLoggedIn.value) {
-    await navigateTo('/login?redirect=/')
-    throw new Error('Login is required to create a dynamic QR link.')
-  }
-
-  if (isActiveDynamicLinkCurrent()) {
-    return activeDynamicLink.value
-  }
-
-  const slug = getValidDynamicLinkSlug()
-
-  let response: DynamicQrLinkResponse
-
-  try {
-    response = await $fetch<DynamicQrLinkResponse>('/api/qr/dynamic-links', {
-      body: {
-        destinationUrl: getDynamicDestinationUrl(),
-        existingLinkId: activeDynamicLink.value?.id || undefined,
-        slug,
-        trackStatistics: trackScanStatistics.value,
-        useDynamicUrl: useDynamicUrl.value
-      },
-      method: 'POST'
-    })
-  } catch (error) {
-    dynamicLinkError.value = getErrorMessage(error, 'Unable to create this dynamic QR link.')
-    throw error
-  }
-
-  activeDynamicLink.value = response.link
-  dynamicLinkSlug.value = response.link.slug
-  dynamicLinkError.value = ''
-
-  return response.link
-}
-
 function isActiveDynamicLinkCurrent() {
   const link = activeDynamicLink.value
 
@@ -1906,17 +1811,6 @@ function isActiveDynamicLinkCurrent() {
     && link.destinationUrl === getDynamicDestinationUrl()
     && link.trackStatistics === trackScanStatistics.value
     && link.useDynamicUrl === useDynamicUrl.value)
-}
-
-function getValidDynamicLinkSlug() {
-  const slug = normalizedDynamicLinkSlug.value
-
-  if (!slug || !isValidDynamicQrSlug(slug)) {
-    dynamicLinkError.value = 'Use lowercase letters, numbers, and hyphens for the custom link.'
-    throw new Error(dynamicLinkError.value)
-  }
-
-  return slug
 }
 
 function updateDynamicLinkSlug(value: string | number) {
@@ -2143,8 +2037,7 @@ function resetCurrentQrState() {
   printLabelError.value = ''
   isSaveDialogOpen.value = false
   saveQrName.value = ''
-  newSaveFolderName.value = ''
-  selectedSaveFolderId.value = ''
+  saveQrTagsInput.value = ''
   saveQrError.value = ''
   useDynamicUrl.value = false
   trackScanStatistics.value = false
@@ -2267,6 +2160,7 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
     createdAt: Date.now(),
     height: outputSvgHeight.value,
     name: getDefaultQrName(),
+    qrPayload: createSavedQrPayload(),
     qrShape: selectedQrShape.value,
     svg: new XMLSerializer().serializeToString(clonedSvg),
     title: qrContent.value,
@@ -2449,7 +2343,7 @@ onUnmounted(() => {
           >
             Register
           </NuxtLink>
-          for an account to Save QR Code designs.
+          for an account to Save Draft QR Code designs.
         </p>
         <button
           aria-label="Dismiss homepage description"
@@ -4042,7 +3936,7 @@ onUnmounted(() => {
               variant="subtle"
               @click="handleSaveButtonClick"
             >
-              Save
+              Save Draft QR Code
             </UButton>
 
             <UButton
@@ -4070,8 +3964,8 @@ onUnmounted(() => {
 
     <UModal
       v-model:open="isSaveDialogOpen"
-      title="Save QR Code"
-      description="Name this QR code and choose a folder."
+      title="Save Draft QR Code"
+      description="Name this draft QR code."
       :dismissible="!isSavingQr"
     >
       <template #body>
@@ -4094,42 +3988,16 @@ onUnmounted(() => {
             />
           </UFormField>
 
-          <UFormField label="Folder">
-            <USelect
-              v-model="selectedSaveFolderId"
+          <UFormField label="Tags">
+            <UInput
+              v-model="saveQrTagsInput"
+              autocomplete="off"
               class="w-full"
-              :disabled="isLoadingSaveFolders || savedFolderItems.length === 0"
-              :items="savedFolderItems"
-              placeholder="Create a folder first"
+              icon="i-lucide-tags"
+              placeholder="menu, spring, table tents"
               size="lg"
             />
           </UFormField>
-
-          <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-            <UFormField label="New Folder">
-              <UInput
-                v-model="newSaveFolderName"
-                autocomplete="off"
-                class="w-full"
-                icon="i-lucide-folder-plus"
-                size="lg"
-                @keydown.enter.prevent="createSaveFolder"
-              />
-            </UFormField>
-            <div class="flex items-end">
-              <UButton
-                class="w-full justify-center sm:w-auto"
-                color="neutral"
-                :disabled="!newSaveFolderName.trim()"
-                :loading="isCreatingSaveFolder"
-                size="lg"
-                variant="subtle"
-                @click="createSaveFolder"
-              >
-                Create Folder
-              </UButton>
-            </div>
-          </div>
         </div>
       </template>
 
@@ -4144,11 +4012,11 @@ onUnmounted(() => {
             Cancel
           </UButton>
           <UButton
-            :disabled="!saveQrName.trim() || !selectedSaveFolderId"
+            :disabled="!saveQrName.trim()"
             :loading="isSavingQr"
             @click="saveCurrentQr"
           >
-            Save
+            Save Draft QR Code
           </UButton>
         </div>
       </template>

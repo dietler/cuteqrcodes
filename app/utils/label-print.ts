@@ -1,4 +1,4 @@
-import type { SavedQrCode } from "./saved-qr";
+import type { SavedQrCode, SavedQrPayload } from "./saved-qr";
 import type { DynamicQrLinkPayload } from "./dynamic-qr";
 
 export type LabelPrintPayload = {
@@ -6,6 +6,7 @@ export type LabelPrintPayload = {
   height: number;
   name?: string;
   qrShape?: "rectangle" | "circle";
+  qrPayload?: SavedQrPayload;
   dynamicLink?: DynamicQrLinkPayload;
   svg: string;
   title: string;
@@ -59,6 +60,7 @@ export function createLabelPrintPayloadFromSavedQr(
     createdAt: Date.now(),
     height: qrCode.previewHeight,
     name: qrCode.name,
+    qrPayload: qrCode.payload,
     qrShape: qrCode.payload?.shape === "circle" ? "circle" : "rectangle",
     svg: qrCode.previewSvg,
     title: qrCode.name,

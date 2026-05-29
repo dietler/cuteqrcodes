@@ -22,7 +22,7 @@ import {
   type LabelTemplateType,
   type LabelPrintPayload,
 } from "~/utils/label-print";
-import type { SavedQrCode } from "~/utils/saved-qr";
+import type { SavedQrCode, SavedQrPayload } from "~/utils/saved-qr";
 import { embedUsedSvgFontFacesInText } from "~/utils/svg-export";
 import { useSession } from "~~/lib/auth-client";
 
@@ -343,6 +343,10 @@ function readPrintPayload() {
       delete payload.dynamicLink;
     }
 
+    if (!isSavedQrPayload(payload.qrPayload)) {
+      delete payload.qrPayload;
+    }
+
     return payload as LabelPrintPayload;
   } catch {
     return null;
@@ -364,6 +368,16 @@ function isDynamicLinkPayload(value: unknown): value is DynamicQrLinkPayload {
     typeof payload.trackStatistics === "boolean" &&
     typeof payload.useDynamicUrl === "boolean"
   );
+}
+
+function isSavedQrPayload(value: unknown): value is SavedQrPayload {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const payload = value as Partial<SavedQrPayload>;
+
+  return payload.version === 1 && typeof payload.url === "string";
 }
 
 async function loadPrintPayload() {
@@ -531,6 +545,10 @@ async function purchaseLabelPdf(template: LabelTemplate) {
       body: {
         dynamicLink: payload.dynamicLink,
         pdfBase64: uint8ArrayToBase64(pdfBytes),
+        previewHeight: payload.height,
+        previewSvg: payload.svg,
+        previewWidth: payload.width,
+        qrPayload: payload.qrPayload,
         qrTitle: payload.name || payload.title,
         templateId: template.id,
       },
@@ -542,6 +560,12 @@ async function purchaseLabelPdf(template: LabelTemplate) {
       printPayload.value = {
         ...payload,
         dynamicLink: response.dynamicLink,
+        qrPayload: payload.qrPayload
+          ? {
+              ...payload.qrPayload,
+              dynamicLink: response.dynamicLink,
+            }
+          : undefined,
         title: response.dynamicLink.redirectUrl,
         url: response.dynamicLink.redirectUrl,
       };

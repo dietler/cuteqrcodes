@@ -33,8 +33,8 @@ const navigationItems = computed(() => {
   if (isLoggedIn.value) {
     return [
       {
-        label: 'Saved QR Codes',
-        icon: 'i-lucide-folder-open',
+        label: 'My QR Codes',
+        icon: 'i-lucide-qr-code',
         to: '/saved-qr-codes'
       },
       {
@@ -52,7 +52,7 @@ const navigationItems = computed(() => {
 
   return [
     {
-      label: 'Login to Save',
+      label: 'Login to Save Drafts',
       icon: 'i-lucide-save',
       to: '/login'
     },
@@ -176,7 +176,8 @@ async function handleLogout() {
               color="neutral"
               icon="i-lucide-user"
               :label="isLoggedIn ? userEmail : undefined"
-              variant="ghost"
+              trailing-icon="i-lucide-chevron-down"
+              variant="subtle"
             />
           </UDropdownMenu>
           <template v-else>
@@ -186,7 +187,7 @@ async function handleLogout() {
               to="/login"
               variant="subtle"
             >
-              Login to Save
+              Login to Save Drafts
             </UButton>
             <UButton
               icon="i-lucide-user-plus"
