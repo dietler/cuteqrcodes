@@ -63,8 +63,8 @@ test('embeds selected web fonts in the print-label SVG payload', async ({ page }
   expect(missingFontFamilies).toEqual([])
 
   await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await page.locator('input[placeholder="Add a word"]').fill(labelText)
-  await page.locator('button[role="combobox"]:not([aria-labelledby])').click()
+  await page.getByTestId('rectangle-label-desktop-primary-controls').getByPlaceholder('Add a word').fill(labelText)
+  await page.getByTestId('rectangle-label-desktop-primary-controls').getByRole('combobox').click()
   await page.getByRole('option', { name: 'Roboto Condensed' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
   await page.getByRole('radio', { name: 'Thin border' }).click()

@@ -524,6 +524,9 @@ test("my QR codes shows draft and purchased QR actions with tag filtering", asyn
   await expect(
     page.getByRole("button", { name: "New QR Code Based on This One" }),
   ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy To New QR Code" }),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
     "href",
     "/api/credits/pdfs/pdf-menu",

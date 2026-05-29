@@ -331,6 +331,32 @@ test('moves top and bottom label text when switching shapes', async ({ page }) =
   await expect(page.locator('input[placeholder="Right text"]')).toHaveValue('')
 })
 
+test('evens stacked rectangle label spacing above and below the QR code', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/even-label-spacing')
+
+  await page.getByRole('button', { name: 'Label', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
+  await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
+  await expect(page.getByRole('img', { name: 'Generated QR code' })).toBeVisible()
+
+  let spacing = await getStackedRectangleLabelSpacing(page)
+
+  expect(spacing.above).toBeCloseTo(spacing.between, 4)
+  expect(spacing.between).toBeCloseTo(spacing.below, 4)
+
+  await page.getByRole('radio', { name: 'Bottom' }).click()
+  spacing = await getStackedRectangleLabelSpacing(page)
+
+  expect(spacing.above).toBeCloseTo(spacing.between, 4)
+  expect(spacing.between).toBeCloseTo(spacing.below, 4)
+})
+
 test('uses sectioned mobile label controls for rectangle and circle labels', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
@@ -624,6 +650,47 @@ async function getSectionTopPositions(page: Page, testIds: string[]) {
       return [testId, element.getBoundingClientRect().top]
     }))
   }, testIds)
+}
+
+async function getStackedRectangleLabelSpacing(page: Page) {
+  return page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
+    const renderedTexts = Array.from(svg?.querySelectorAll('text') ?? [])
+      .filter(element => element.getAttribute('opacity') !== '0')
+    const label = renderedTexts.find(element => element.textContent?.trim() === 'WINGEN')
+    const additional = renderedTexts.find(element => element.textContent?.trim() === 'Bakery & Restaurant')
+
+    if (!svg || !qrSvg || !label || !additional) {
+      throw new Error('Missing stacked rectangle label elements.')
+    }
+
+    const labelY = Number(label.getAttribute('y'))
+    const labelFontSize = Number(label.getAttribute('font-size'))
+    const additionalY = Number(additional.getAttribute('y'))
+    const additionalFontSize = Number(additional.getAttribute('font-size'))
+    const qrY = Number(qrSvg.getAttribute('y'))
+    const qrHeight = Number(qrSvg.getAttribute('height'))
+    const labelTop = labelY - labelFontSize / 2
+    const labelBottom = labelY + labelFontSize / 2
+    const additionalTop = additionalY - additionalFontSize / 2
+    const additionalBottom = additionalY + additionalFontSize / 2
+    const qrBottom = qrY + qrHeight
+
+    if (qrY > additionalBottom) {
+      return {
+        above: labelTop,
+        below: qrY - additionalBottom,
+        between: additionalTop - labelBottom
+      }
+    }
+
+    return {
+      above: labelTop - qrBottom,
+      below: svg.viewBox.baseVal.height - additionalBottom,
+      between: additionalTop - labelBottom
+    }
+  })
 }
 
 function parseCircleLabelPath(d: string) {

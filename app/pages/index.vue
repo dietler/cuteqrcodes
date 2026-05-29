@@ -14,6 +14,7 @@ type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double' | 'wavy'
 type CenterIconValue = string
 type AdditionalTextPlacement = 'above' | 'below'
 type LabelPosition = 'top' | 'left' | 'right' | 'bottom'
+type DownloadImageFormat = 'png' | 'svg'
 type TailwindColorUtility = 'bg' | 'fill' | 'stroke' | 'text'
 type GradientStyle = 'none' | 'directional' | 'radial'
 type GradientDirection = 'left-to-right' | 'top-to-bottom' | 'diagonal'
@@ -77,6 +78,13 @@ type CenterIconOption = {
   categoryLabel: string
 }
 
+type SampleQrImage = {
+  alt: string
+  name: string
+  src: string
+  testId: string
+}
+
 type CenterIconCategory = {
   label: string
   value: string
@@ -130,6 +138,11 @@ type CurrentQrDraftPayload = SavedQrPayload & {
   centerIconSearch?: string
 }
 type DynamicLinkAvailabilityStatus = 'idle' | 'checking' | 'available' | 'unavailable' | 'error'
+type QrImageExport = {
+  height: number
+  svg: string
+  width: number
+}
 
 const qrStore = useQrStore()
 const session = useSession()
@@ -178,17 +191,29 @@ const activeCenterIconCategory = ref<string | null>(null)
 const centerIconSearch = ref('')
 const isPreparingLabelPrint = ref(false)
 const printLabelError = ref('')
+const isDownloadingImage = ref(false)
+const imageDownloadError = ref('')
 const isSaveDialogOpen = ref(false)
 const isSavingQr = ref(false)
+const activeSampleQrIndex = ref(0)
+const previousSampleQrIndex = ref<number | null>(null)
+const isSampleQrSlideSettled = ref(false)
 let isClearingCurrentQrDraft = false
 const saveQrName = ref('')
 const saveQrTagsInput = ref('')
 const saveQrError = ref('')
 let dynamicLinkAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
 let dynamicLinkAvailabilityRunId = 0
+let sampleQrAnimationFrame: number | null = null
+let sampleQrSettleFrame: number | null = null
+let sampleQrStartedAt = 0
+let sampleQrPreviousClearAt = 0
 const homepageDescriptionDismissedCookieName = 'cuteqrcodes_home_description_dismissed'
 const homepageDescriptionDismissedCookieMaxAge = 60 * 60 * 24 * 365
 const dynamicLinkAvailabilityCheckDelayMs = 350
+const sampleQrSlideHoldMs = 5000
+const sampleQrSlideTransitionMs = 900
+const sampleQrSlideCycleMs = sampleQrSlideHoldMs + sampleQrSlideTransitionMs
 const homepageDescriptionDismissedCookie = useCookie(homepageDescriptionDismissedCookieName, {
   decode: value => value,
   encode: value => String(value),
@@ -443,6 +468,24 @@ const centerIconOptions = [noCenterIconOption, ...getCenterIconOptions(centerIco
 const selectedCenterIconOption = computed(() => centerIconOptions.find(icon => icon.value === selectedCenterIcon.value) ?? noCenterIconOption)
 const hasCenterIcon = computed(() => selectedCenterIconOption.value.src.length > 0)
 
+const sampleQrImageModules = import.meta.glob('../../public/samples/*.{png,jpg,jpeg,webp,gif,svg}', {
+  eager: true,
+  import: 'default',
+  query: '?url'
+}) as Record<string, string>
+const sampleQrImages: SampleQrImage[] = Object.entries(sampleQrImageModules)
+  .sort(([firstPath], [secondPath]) => firstPath.localeCompare(secondPath))
+  .map(([path, src]) => {
+    const name = getSampleQrImageName(path)
+
+    return {
+      alt: `${name} QR code sample`,
+      name,
+      src: normalizeSampleQrImageUrl(path, src),
+      testId: `sample-qr-image-${getSampleQrImageId(path)}`
+    }
+  })
+
 const noBorderStyle: BorderStyle = {
   label: 'No border',
   value: 'none',
@@ -516,6 +559,7 @@ const shouldShowHomepageDescription = computed(() => homepageDescriptionDismisse
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
 const hasDynamicQrFeature = computed(() => useDynamicUrl.value || trackScanStatistics.value)
 const shouldShowDynamicQrControls = computed(() => hasQrContent.value)
+const shouldShowSampleQrCarousel = computed(() => !hasQrContent.value && sampleQrImages.length > 0)
 const dynamicLinkCreditCost = computed(() => Number(useDynamicUrl.value) + Number(trackScanStatistics.value))
 const normalizedDynamicLinkSlug = computed(() => normalizeDynamicQrSlug(dynamicLinkSlug.value))
 const dynamicLinkRedirectUrl = computed(() => createDynamicQrRedirectUrl(normalizedDynamicLinkSlug.value || 'guid'))
@@ -554,6 +598,22 @@ const canSaveDynamicLinkUpdate = computed(() =>
   && dynamicLinkAvailabilityStatus.value === 'available'
   && !isSavingDynamicLink.value
   && (activeDynamicLink.value ? !isActiveDynamicLinkCurrent() : true))
+const downloadImageMenuItems = computed(() => [
+  {
+    label: 'PNG',
+    icon: 'i-lucide-file-image',
+    onSelect: () => {
+      void downloadQrImage('png')
+    }
+  },
+  {
+    label: 'SVG',
+    icon: 'i-lucide-file-code-2',
+    onSelect: () => {
+      void downloadQrImage('svg')
+    }
+  }
+])
 const generatedQr = computed(() => {
   if (!hasQrContent.value) {
     return {
@@ -687,12 +747,14 @@ const canIncreaseAdditionalTextSize = computed(() => {
 const canDecreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value > minTextSizeStep)
 const additionalTextLineGap = computed(() => additionalTextLines.value.length > 1 ? additionalTextFontSize.value * 0.12 : 0)
 const additionalTextBlockHeight = computed(() => additionalTextLines.value.length ? additionalTextFontSize.value * additionalTextLines.value.length + additionalTextLineGap.value * (additionalTextLines.value.length - 1) : 0)
+const usesStackedLabelSpacing = computed(() => !labelIsSide.value && Boolean(labelText.value && additionalTextLines.value.length))
+const stackedLabelGap = computed(() => usesStackedLabelSpacing.value ? labelFontSize.value * stackedLabelAdditionalTextGapRatio : 0)
 const additionalTextGap = computed(() => {
   if (!labelText.value || !additionalTextLines.value.length) {
     return 0
   }
 
-  return labelFontSize.value * (labelIsSide.value ? sideLabelAdditionalTextGapRatio : stackedLabelAdditionalTextGapRatio)
+  return labelIsSide.value ? labelFontSize.value * sideLabelAdditionalTextGapRatio : stackedLabelGap.value
 })
 const labelGap = computed(() => hasLabelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
 const labelBlockHeight = computed(() => {
@@ -700,12 +762,12 @@ const labelBlockHeight = computed(() => {
     return 0
   }
 
-  return (labelText.value ? labelFontSize.value : 0) + additionalTextGap.value + additionalTextBlockHeight.value
+  return stackedLabelGap.value * 2 + (labelText.value ? labelFontSize.value : 0) + additionalTextGap.value + additionalTextBlockHeight.value
 })
 const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value : 0)
 const bottomLabelHeight = computed(() => labelIsBottom.value ? labelBlockHeight.value : 0)
-const topLabelGap = computed(() => labelIsTop.value ? labelGap.value : 0)
-const bottomLabelGap = computed(() => labelIsBottom.value ? labelGap.value : 0)
+const topLabelGap = computed(() => labelIsTop.value && !usesStackedLabelSpacing.value ? labelGap.value : 0)
+const bottomLabelGap = computed(() => labelIsBottom.value && !usesStackedLabelSpacing.value ? labelGap.value : 0)
 const sideLabelWidth = computed(() => labelIsSide.value ? qrOutputSize.value : 0)
 const sideLabelGap = computed(() => labelIsSide.value ? labelGap.value : 0)
 const sideLabelTextInset = computed(() => labelIsSide.value ? qrOutputSize.value * sideLabelTextInsetRatio : 0)
@@ -772,12 +834,13 @@ const labelBlockY = computed(() => {
 
   return qrOutputY.value + qrOutputSize.value + bottomLabelGap.value
 })
+const labelContentY = computed(() => labelBlockY.value + stackedLabelGap.value)
 const labelY = computed(() => {
   if (selectedAdditionalTextPlacement.value === 'above' && additionalTextLines.value.length) {
-    return labelBlockY.value + additionalTextBlockHeight.value + additionalTextGap.value + labelFontSize.value / 2
+    return labelContentY.value + additionalTextBlockHeight.value + additionalTextGap.value + labelFontSize.value / 2
   }
 
-  return labelBlockY.value + labelFontSize.value / 2
+  return labelContentY.value + labelFontSize.value / 2
 })
 const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
   ...line,
@@ -1176,6 +1239,127 @@ function getCenterIconSearchText(icon: CenterIconOption) {
   return `${icon.categoryLabel} ${icon.label} ${icon.value}`.toLowerCase()
 }
 
+function normalizeSampleQrImageUrl(path: string, _src: string) {
+  return `/${path.replace(/\\/g, '/').replace(/^.*?public\//, '')}`
+}
+
+function getSampleQrImageName(path: string) {
+  const filename = path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? 'sample'
+
+  return filename
+    .split(/[-_]+/)
+    .filter(Boolean)
+    .map(part => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ')
+}
+
+function getSampleQrImageId(path: string) {
+  return path
+    .split('/')
+    .pop()
+    ?.replace(/\.[^.]+$/, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'sample'
+}
+
+function getSampleQrSlideState(index: number) {
+  if (previousSampleQrIndex.value === index) {
+    return 'exiting'
+  }
+
+  if (activeSampleQrIndex.value === index) {
+    return isSampleQrSlideSettled.value ? 'active' : 'entering'
+  }
+
+  return 'idle'
+}
+
+function startSampleQrCarousel() {
+  stopSampleQrCarousel()
+  activeSampleQrIndex.value = 0
+  previousSampleQrIndex.value = null
+  isSampleQrSlideSettled.value = false
+  sampleQrStartedAt = performance.now()
+  sampleQrPreviousClearAt = 0
+  settleSampleQrSlide()
+
+  if (sampleQrImages.length > 1) {
+    requestSampleQrAnimationFrame()
+  }
+}
+
+function stopSampleQrCarousel() {
+  if (sampleQrAnimationFrame !== null) {
+    cancelAnimationFrame(sampleQrAnimationFrame)
+    sampleQrAnimationFrame = null
+  }
+
+  if (sampleQrSettleFrame !== null) {
+    cancelAnimationFrame(sampleQrSettleFrame)
+    sampleQrSettleFrame = null
+  }
+
+  previousSampleQrIndex.value = null
+  isSampleQrSlideSettled.value = true
+  sampleQrStartedAt = 0
+  sampleQrPreviousClearAt = 0
+}
+
+function settleSampleQrSlide() {
+  if (sampleQrSettleFrame !== null) {
+    cancelAnimationFrame(sampleQrSettleFrame)
+  }
+
+  sampleQrSettleFrame = requestAnimationFrame(() => {
+    isSampleQrSlideSettled.value = true
+    sampleQrSettleFrame = null
+  })
+}
+
+function requestSampleQrAnimationFrame() {
+  if (sampleQrAnimationFrame !== null) {
+    return
+  }
+
+  sampleQrAnimationFrame = requestAnimationFrame(updateSampleQrCarousel)
+}
+
+function updateSampleQrCarousel(now: number) {
+  sampleQrAnimationFrame = null
+
+  if (!shouldShowSampleQrCarousel.value || sampleQrImages.length < 2) {
+    return
+  }
+
+  const nextSampleQrIndex = getSampleQrIndexForTime(now)
+
+  if (nextSampleQrIndex !== activeSampleQrIndex.value) {
+    previousSampleQrIndex.value = activeSampleQrIndex.value
+    activeSampleQrIndex.value = nextSampleQrIndex
+    isSampleQrSlideSettled.value = false
+    sampleQrPreviousClearAt = now + sampleQrSlideTransitionMs
+    settleSampleQrSlide()
+  }
+
+  if (previousSampleQrIndex.value !== null && sampleQrPreviousClearAt > 0 && now >= sampleQrPreviousClearAt) {
+    previousSampleQrIndex.value = null
+    sampleQrPreviousClearAt = 0
+  }
+
+  requestSampleQrAnimationFrame()
+}
+
+function getSampleQrIndexForTime(now: number) {
+  const elapsed = Math.max(0, now - sampleQrStartedAt)
+
+  if (elapsed < sampleQrSlideHoldMs) {
+    return 0
+  }
+
+  return (1 + Math.floor((elapsed - sampleQrSlideHoldMs) / sampleQrSlideCycleMs)) % sampleQrImages.length
+}
+
 function isCenterIconCategorySelected(category: CenterIconCategory) {
   return selectedCenterIcon.value.startsWith(`${category.value}/`)
 }
@@ -1298,8 +1482,8 @@ function getBreakableWordPieces(word: string) {
 
 function getAdditionalTextLineY(index: number) {
   const y = selectedAdditionalTextPlacement.value === 'below' && labelText.value
-    ? labelBlockY.value + labelFontSize.value + additionalTextGap.value
-    : labelBlockY.value
+    ? labelContentY.value + labelFontSize.value + additionalTextGap.value
+    : labelContentY.value
 
   return y + additionalTextFontSize.value / 2 + index * (additionalTextFontSize.value + additionalTextLineGap.value)
 }
@@ -1736,6 +1920,31 @@ async function goToPrintLabels() {
     printLabelError.value = getErrorMessage(error, 'Unable to prepare the label print page.')
   } finally {
     isPreparingLabelPrint.value = false
+  }
+}
+
+async function downloadQrImage(format: DownloadImageFormat) {
+  if (!generatedQr.value.code || isDownloadingImage.value) {
+    return
+  }
+
+  isDownloadingImage.value = true
+  imageDownloadError.value = ''
+
+  try {
+    const imageExport = await createQrImageExport()
+    const filename = `${getQrImageFileBaseName()}.${format}`
+
+    if (format === 'svg') {
+      downloadBlob(new Blob([imageExport.svg], { type: 'image/svg+xml;charset=utf-8' }), filename)
+      return
+    }
+
+    downloadBlob(await createPngBlobFromSvg(imageExport), filename)
+  } catch (error) {
+    imageDownloadError.value = getErrorMessage(error, 'Unable to download this QR code image.')
+  } finally {
+    isDownloadingImage.value = false
   }
 }
 
@@ -2290,6 +2499,23 @@ function getDefaultQrName() {
 }
 
 async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
+  const imageExport = await createQrImageExport()
+
+  return {
+    createdAt: Date.now(),
+    height: imageExport.height,
+    name: getDefaultQrName(),
+    qrPayload: createSavedQrPayload(),
+    qrShape: selectedQrShape.value,
+    svg: imageExport.svg,
+    title: qrContent.value,
+    url: qrContent.value,
+    width: imageExport.width,
+    ...(hasDynamicQrFeature.value ? { dynamicLink: createDynamicQrLinkPayload() } : {})
+  }
+}
+
+async function createQrImageExport(): Promise<QrImageExport> {
   const sourceSvg = outputSvgElement.value
 
   if (!sourceSvg) {
@@ -2307,17 +2533,90 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
   await inlineSvgImages(clonedSvg)
 
   return {
-    createdAt: Date.now(),
     height: outputSvgHeight.value,
-    name: getDefaultQrName(),
-    qrPayload: createSavedQrPayload(),
-    qrShape: selectedQrShape.value,
     svg: new XMLSerializer().serializeToString(clonedSvg),
-    title: qrContent.value,
-    url: qrContent.value,
-    width: outputSvgWidth.value,
-    ...(hasDynamicQrFeature.value ? { dynamicLink: createDynamicQrLinkPayload() } : {})
+    width: outputSvgWidth.value
   }
+}
+
+async function createPngBlobFromSvg(imageExport: QrImageExport) {
+  const imageUrl = URL.createObjectURL(new Blob([imageExport.svg], { type: 'image/svg+xml;charset=utf-8' }))
+
+  try {
+    const image = await loadImage(imageUrl)
+    const scale = getPngExportScale(imageExport)
+    const canvas = document.createElement('canvas')
+
+    canvas.width = Math.max(1, Math.ceil(imageExport.width * scale))
+    canvas.height = Math.max(1, Math.ceil(imageExport.height * scale))
+
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      throw new Error('Unable to prepare the PNG canvas.')
+    }
+
+    context.fillStyle = '#fff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (blob) {
+          resolve(blob)
+          return
+        }
+
+        reject(new Error('Unable to create the PNG image.'))
+      }, 'image/png')
+    })
+  } finally {
+    URL.revokeObjectURL(imageUrl)
+  }
+}
+
+function loadImage(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Unable to render the QR code image.'))
+    image.src = src
+  })
+}
+
+function getPngExportScale(imageExport: QrImageExport) {
+  const longEdge = Math.max(imageExport.width, imageExport.height, 1)
+
+  return Math.max(1, Math.ceil(2048 / longEdge))
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url)
+  }, 1000)
+}
+
+function getQrImageFileBaseName() {
+  return getSafeFileName(getDefaultQrName()) || 'qr-code'
+}
+
+function getSafeFileName(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -2386,6 +2685,10 @@ onMounted(async () => {
     restoreCurrentQrDraftFromStorage()
   }
 
+  if (shouldShowSampleQrCarousel.value) {
+    startSampleQrCarousel()
+  }
+
   await nextTick()
   updateScrollStates()
   window.addEventListener('resize', updateScrollStates)
@@ -2404,6 +2707,14 @@ watch(hasQrContent, (hasContent) => {
     activeTool.value = null
   }
 })
+watch(shouldShowSampleQrCarousel, (shouldShow) => {
+  if (shouldShow) {
+    startSampleQrCarousel()
+    return
+  }
+
+  stopSampleQrCarousel()
+}, { flush: 'post' })
 watch(hasDynamicQrFeature, (enabled) => {
   if (enabled && !normalizedDynamicLinkSlug.value) {
     dynamicLinkSlug.value = createRandomDynamicQrSlug()
@@ -2474,6 +2785,7 @@ onUnmounted(() => {
   window.removeEventListener('resize', updateScrollStates)
   window.removeEventListener('pagehide', persistCurrentQrDraft)
   resetDynamicLinkAvailability()
+  stopSampleQrCarousel()
 })
 </script>
 
@@ -2515,7 +2827,7 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <UCard>
+    <UCard data-testid="qr-url-card">
       <UFormField label="URL">
         <UFieldGroup class="w-full">
           <UInput
@@ -2662,6 +2974,28 @@ onUnmounted(() => {
         </p>
       </div>
     </UCard>
+
+    <div
+      v-if="shouldShowSampleQrCarousel"
+      aria-label="Sample QR code designs"
+      class="sample-qr-carousel overflow-hidden"
+      :data-active-index="activeSampleQrIndex"
+      :data-sample-count="sampleQrImages.length"
+      data-testid="sample-qr-carousel"
+    >
+      <div class="sample-qr-carousel-stage relative mx-auto h-[min(54vw,22rem)] max-h-[22rem] min-h-[15rem] max-w-xl">
+        <img
+          v-for="(sample, index) in sampleQrImages"
+          :key="sample.src"
+          :alt="sample.alt"
+          class="sample-qr-carousel-image"
+          :class="`sample-qr-carousel-image--${getSampleQrSlideState(index)}`"
+          :data-state="getSampleQrSlideState(index)"
+          :data-testid="sample.testId"
+          :src="sample.src"
+        >
+      </div>
+    </div>
 
     <div
       v-if="hasQrContent"
@@ -3736,6 +4070,13 @@ onUnmounted(() => {
           :title="printLabelError"
           variant="subtle"
         />
+        <UAlert
+          v-if="imageDownloadError"
+          color="warning"
+          icon="i-lucide-triangle-alert"
+          :title="imageDownloadError"
+          variant="subtle"
+        />
       </div>
 
       <div
@@ -4101,18 +4442,35 @@ onUnmounted(() => {
           class="flex flex-col items-center justify-center gap-3"
         >
           <div
-            class="flex w-full max-w-[min(86svw,68svh)] items-center gap-3"
-            :class="isLoggedIn ? 'justify-between' : 'justify-end'"
+            class="flex w-full max-w-[min(86svw,68svh)] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
           >
-            <UButton
-              v-if="isLoggedIn"
-              color="neutral"
-              icon="i-lucide-save"
-              variant="subtle"
-              @click="handleSaveButtonClick"
-            >
-              Save Draft QR Code
-            </UButton>
+            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <UDropdownMenu
+                :content="{ align: 'start' }"
+                :items="downloadImageMenuItems"
+              >
+                <UButton
+                  color="neutral"
+                  :disabled="isDownloadingImage"
+                  icon="i-lucide-download"
+                  :loading="isDownloadingImage"
+                  trailing-icon="i-lucide-chevron-down"
+                  variant="subtle"
+                >
+                  Download Image
+                </UButton>
+              </UDropdownMenu>
+
+              <UButton
+                v-if="isLoggedIn"
+                color="neutral"
+                icon="i-lucide-save"
+                variant="subtle"
+                @click="handleSaveButtonClick"
+              >
+                Save Draft QR Code
+              </UButton>
+            </div>
 
             <UButton
               color="neutral"
@@ -4265,9 +4623,57 @@ onUnmounted(() => {
     rgb(2 6 23 / 92%);
 }
 
+.sample-qr-carousel {
+  isolation: isolate;
+}
+
+.sample-qr-carousel-stage {
+  contain: layout paint;
+}
+
+.sample-qr-carousel-image {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  max-width: min(100%, 22rem);
+  height: auto;
+  max-height: 100%;
+  margin: auto;
+  object-fit: contain;
+  opacity: 0;
+  transform: translateX(118%) scale(0.97);
+  transition:
+    transform 900ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 280ms ease;
+  will-change: transform, opacity;
+}
+
+.sample-qr-carousel-image--active {
+  z-index: 2;
+  opacity: 1;
+  transform: translateX(0) scale(1);
+}
+
+.sample-qr-carousel-image--entering {
+  z-index: 2;
+}
+
+.sample-qr-carousel-image--exiting {
+  z-index: 1;
+  opacity: 0;
+  transform: translateX(-118%) scale(0.97);
+  transition:
+    transform 900ms cubic-bezier(0.7, 0, 0.84, 0),
+    opacity 480ms ease;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .homepage-description {
     animation: none;
+  }
+
+  .sample-qr-carousel-image {
+    transition: none;
   }
 }
 
