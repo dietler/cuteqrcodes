@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import type { CreditsSummary, CreditPack, CreditPackId } from '~/utils/credits'
+import type { CreditsSummary, CreditPack, CreditPackId, CreditTransaction } from '~/utils/credits'
 import { creditPacks } from '~/utils/credits'
 import { useSession } from '~~/lib/auth-client'
 
@@ -186,6 +186,35 @@ function hasExpectedCreditPurchase(nextSummary: CreditsSummary, pendingCheckout:
     && Date.parse(transaction.createdAt) >= earliestMatchTime)
 }
 
+function getLabelPurchaseFeatureText(transaction: CreditTransaction) {
+  const details = transaction.labelPurchase
+
+  if (!details) {
+    return ''
+  }
+
+  const features = [
+    details.editable ? 'Editable' : '',
+    details.trackStats ? 'Stats' : ''
+  ].filter(Boolean)
+
+  return features.length ? features.join(', ') : 'None'
+}
+
+function getCreditTransactionIcon(transaction: CreditTransaction) {
+  return transaction.credits > 0 ? 'i-lucide-credit-card' : 'i-lucide-qr-code'
+}
+
+function getCreditTransactionIconLabel(transaction: CreditTransaction) {
+  return transaction.credits > 0 ? 'Credit purchase' : 'QR code credit spend'
+}
+
+function getCreditTransactionIconClasses(transaction: CreditTransaction) {
+  return transaction.credits > 0
+    ? 'bg-green-50 text-green-700 ring-green-200 dark:bg-green-950/50 dark:text-green-300 dark:ring-green-800'
+    : 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-800'
+}
+
 function storePendingCheckout(pack: CreditPack) {
   if (!import.meta.client) {
     return
@@ -271,7 +300,7 @@ function getErrorMessage(error: unknown, fallback: string) {
           Credits
         </h1>
         <p class="mt-1 text-sm text-muted">
-          Use credits to create unwatermarked label PDFs.
+          Use credits to create unwatermarked label PDFs. Credits never expire.
         </p>
       </div>
 
@@ -405,9 +434,63 @@ function getErrorMessage(error: unknown, fallback: string) {
               :key="transaction.id"
               class="flex items-start justify-between gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800"
             >
-              <div class="min-w-0">
-                <span class="block text-sm font-semibold text-highlighted">{{ transaction.description }}</span>
-                <span class="block text-sm text-muted">{{ formatDate(transaction.createdAt) }}</span>
+              <div class="flex min-w-0 items-start gap-3">
+                <span
+                  class="inline-flex size-9 shrink-0 items-center justify-center rounded-md ring-1"
+                  :aria-label="getCreditTransactionIconLabel(transaction)"
+                  :class="getCreditTransactionIconClasses(transaction)"
+                  role="img"
+                >
+                  <UIcon
+                    aria-hidden="true"
+                    class="size-4"
+                    :name="getCreditTransactionIcon(transaction)"
+                  />
+                </span>
+                <div class="min-w-0">
+                  <span class="block text-sm font-semibold text-highlighted">{{ transaction.description }}</span>
+                  <span class="block text-sm text-muted">{{ formatDate(transaction.createdAt) }}</span>
+                  <dl
+                    v-if="transaction.labelPurchase"
+                    class="mt-2 grid gap-1 text-xs text-muted"
+                  >
+                    <div
+                      v-if="transaction.labelPurchase.destinationUrl"
+                      class="min-w-0"
+                    >
+                      <dt class="inline font-medium text-toned">
+                        URL:
+                      </dt>
+                      <dd class="inline break-all">
+                        {{ transaction.labelPurchase.destinationUrl }}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt class="inline font-medium text-toned">
+                        Features:
+                      </dt>
+                      <dd class="inline">
+                        {{ getLabelPurchaseFeatureText(transaction) }}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div
+                    v-if="transaction.receiptUrl"
+                    class="mt-2"
+                  >
+                    <UButton
+                      color="neutral"
+                      icon="i-lucide-receipt-text"
+                      :to="transaction.receiptUrl"
+                      rel="noopener noreferrer"
+                      size="xs"
+                      target="_blank"
+                      variant="subtle"
+                    >
+                      View receipt
+                    </UButton>
+                  </div>
+                </div>
               </div>
               <div class="shrink-0 text-right">
                 <span

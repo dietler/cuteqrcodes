@@ -1,4 +1,4 @@
-import type { CreditPack, CreditPackId, CreditTransaction, PurchasedPdf } from '~~/app/utils/credits'
+import type { CreditPack, CreditPackId, CreditTransaction, CreditTransactionLabelPurchase, PurchasedPdf } from '~~/app/utils/credits'
 import { createDynamicQrRedirectUrl, type DynamicQrLinkPayload } from '~~/app/utils/dynamic-qr'
 import type { SavedQrPayload } from '~~/app/utils/saved-qr'
 import { creditPacks } from '~~/app/utils/credits'
@@ -195,10 +195,24 @@ export async function listCreditTransactions(sql: NeonSql, userId: string): Prom
   await ensureCreditTables(sql)
 
   const rows = await sql`
-    select id, type, credits, balance_after, description, lemon_squeezy_order_id, lemon_squeezy_variant_id, pdf_purchase_id, created_at
+    select
+      credit_transactions.id,
+      credit_transactions.type,
+      credit_transactions.credits,
+      credit_transactions.balance_after,
+      credit_transactions.description,
+      credit_transactions.lemon_squeezy_order_id,
+      credit_transactions.lemon_squeezy_variant_id,
+      credit_transactions.pdf_purchase_id,
+      credit_transactions.metadata,
+      credit_transactions.created_at,
+      saved_qr_codes.payload as saved_qr_payload
     from credit_transactions
-    where user_id = ${userId}
-    order by created_at desc
+    left join saved_qr_codes
+      on saved_qr_codes.pdf_purchase_id = credit_transactions.pdf_purchase_id
+      and saved_qr_codes.user_id = credit_transactions.user_id
+    where credit_transactions.user_id = ${userId}
+    order by credit_transactions.created_at desc
     limit 50
   `
 
@@ -331,6 +345,7 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
       : {})
   }
   const transactionMetadata = {
+    destinationUrl: input.dynamicLink?.destinationUrl || input.qrPayload.url,
     dynamicLink: input.dynamicLink
       ? {
           destinationUrl: input.dynamicLink.destinationUrl,
@@ -712,16 +727,35 @@ export async function getPurchasedPdfStorageKey(sql: NeonSql, userId: string, pd
 }
 
 function mapCreditTransactionRow(row: DbRow): CreditTransaction {
+  const metadata = getJsonObject(row.metadata)
+
   return {
     balanceAfter: getNumberField(row, 'balance_after'),
     createdAt: getStringField(row, 'created_at'),
     credits: getNumberField(row, 'credits'),
     description: getStringField(row, 'description'),
     id: getStringField(row, 'id'),
+    labelPurchase: mapLabelPurchaseDetails(row, metadata),
     lemonSqueezyOrderId: getNullableStringField(row, 'lemon_squeezy_order_id'),
     lemonSqueezyVariantId: getNullableStringField(row, 'lemon_squeezy_variant_id'),
     pdfPurchaseId: getNullableStringField(row, 'pdf_purchase_id'),
+    receiptUrl: getOptionalString(metadata.receiptUrl),
     type: getStringField(row, 'type') as CreditTransaction['type']
+  }
+}
+
+function mapLabelPurchaseDetails(row: DbRow, metadata: Record<string, unknown>): CreditTransactionLabelPurchase | null {
+  if (getStringField(row, 'type') !== 'pdf_purchase') {
+    return null
+  }
+
+  const savedQrPayload = getJsonObject(row.saved_qr_payload)
+  const dynamicLink = getJsonObjectOrNull(savedQrPayload.dynamicLink) ?? getJsonObjectOrNull(metadata.dynamicLink) ?? {}
+
+  return {
+    destinationUrl: getOptionalString(dynamicLink.destinationUrl) || getOptionalString(savedQrPayload.url) || getOptionalString(metadata.destinationUrl),
+    editable: dynamicLink.useDynamicUrl === true,
+    trackStats: dynamicLink.trackStatistics === true
   }
 }
 
@@ -737,6 +771,32 @@ function mapPurchasedPdfRow(row: DbRow): PurchasedPdf {
     templateId: getStringField(row, 'template_id'),
     templateLabel: getStringField(row, 'template_label')
   }
+}
+
+function getJsonObject(value: unknown): Record<string, unknown> {
+  return getJsonObjectOrNull(value) ?? {}
+}
+
+function getJsonObjectOrNull(value: unknown): Record<string, unknown> | null {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+
+      return getJsonObjectOrNull(parsed)
+    } catch {
+      return null
+    }
+  }
+
+  if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+
+  return null
+}
+
+function getOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : null
 }
 
 function getStringField(row: DbRow, key: string) {

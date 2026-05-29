@@ -8,15 +8,23 @@ export type CreditPack = {
   priceLabel: string
 }
 
+export type CreditTransactionLabelPurchase = {
+  destinationUrl: string | null
+  editable: boolean
+  trackStats: boolean
+}
+
 export type CreditTransaction = {
   id: string
   type: 'credit_purchase' | 'pdf_purchase' | 'qr_feature_purchase'
   credits: number
   balanceAfter: number
   description: string
+  labelPurchase?: CreditTransactionLabelPurchase | null
   lemonSqueezyOrderId: string | null
   lemonSqueezyVariantId: string | null
   pdfPurchaseId: string | null
+  receiptUrl: string | null
   createdAt: string
 }
 

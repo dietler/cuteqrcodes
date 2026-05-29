@@ -12,6 +12,11 @@ export type DynamicQrLinkResponse = {
   link: DynamicQrLinkPayload
 }
 
+export type DynamicQrSlugAvailabilityResponse = {
+  available: boolean
+  slug: string
+}
+
 export type DynamicQrScanSummary = {
   count: number
   label: string

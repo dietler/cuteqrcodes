@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useSession } from '~~/lib/auth-client'
-import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, normalizeDynamicQrSlug, type DynamicQrLinkPayload } from '~/utils/dynamic-qr'
+import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, isValidDynamicQrSlug, normalizeDynamicQrSlug, type DynamicQrLinkPayload, type DynamicQrLinkResponse, type DynamicQrSlugAvailabilityResponse } from '~/utils/dynamic-qr'
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type SavedQrPayload } from '~/utils/saved-qr'
@@ -129,6 +129,7 @@ type CurrentQrDraftPayload = SavedQrPayload & {
   activeTool?: QrTool | null
   centerIconSearch?: string
 }
+type DynamicLinkAvailabilityStatus = 'idle' | 'checking' | 'available' | 'unavailable' | 'error'
 
 const qrStore = useQrStore()
 const session = useSession()
@@ -138,6 +139,9 @@ const trackScanStatistics = ref(false)
 const dynamicLinkSlug = ref('')
 const isCustomizingDynamicLink = ref(false)
 const dynamicLinkError = ref('')
+const dynamicLinkAvailabilityStatus = ref<DynamicLinkAvailabilityStatus>('idle')
+const dynamicLinkAvailabilityMessage = ref('')
+const isSavingDynamicLink = ref(false)
 const activeDynamicLink = ref<DynamicQrLinkPayload | null>(null)
 const activeTool = ref<QrTool | null>(null)
 const selectedQrColor = ref<TailwindColor | null>(null)
@@ -180,8 +184,11 @@ let isClearingCurrentQrDraft = false
 const saveQrName = ref('')
 const saveQrTagsInput = ref('')
 const saveQrError = ref('')
+let dynamicLinkAvailabilityTimer: ReturnType<typeof setTimeout> | null = null
+let dynamicLinkAvailabilityRunId = 0
 const homepageDescriptionDismissedCookieName = 'cuteqrcodes_home_description_dismissed'
 const homepageDescriptionDismissedCookieMaxAge = 60 * 60 * 24 * 365
+const dynamicLinkAvailabilityCheckDelayMs = 350
 const homepageDescriptionDismissedCookie = useCookie(homepageDescriptionDismissedCookieName, {
   decode: value => value,
   encode: value => String(value),
@@ -200,6 +207,9 @@ const maxAdditionalTextSizeStep = 4
 const versionOneQrSize = 21
 const versionOneCenterIconCircleDiameter = 7
 const circleBorderCornerInsetRatio = (Math.SQRT2 - 1) / 2
+const sideLabelTextInsetRatio = 0.04
+const stackedLabelAdditionalTextGapRatio = 0.12
+const sideLabelAdditionalTextGapRatio = 0.18
 
 const labelFonts: LabelFont[] = [
   { label: 'Google Sans', value: 'google-sans', class: 'font-google-sans' },
@@ -528,6 +538,22 @@ const dynamicLinkCreditMessage = computed(() => {
     ? 'This costs 1 credit when the link is created. Printable PDFs include this cost at purchase.'
     : `This costs ${credits} credits when the link is created. Printable PDFs include this cost at purchase.`
 })
+const dynamicLinkAvailabilityMessageClass = computed(() => {
+  if (dynamicLinkAvailabilityStatus.value === 'available') {
+    return 'text-green-700 dark:text-green-300'
+  }
+
+  if (dynamicLinkAvailabilityStatus.value === 'unavailable' || dynamicLinkAvailabilityStatus.value === 'error') {
+    return 'text-error'
+  }
+
+  return 'text-muted'
+})
+const canSaveDynamicLinkUpdate = computed(() =>
+  isCustomizingDynamicLink.value
+  && dynamicLinkAvailabilityStatus.value === 'available'
+  && !isSavingDynamicLink.value
+  && (activeDynamicLink.value ? !isActiveDynamicLinkCurrent() : true))
 const generatedQr = computed(() => {
   if (!hasQrContent.value) {
     return {
@@ -647,7 +673,7 @@ const labelFontScale = computed(() => getFittedTextScale(labelTextWidth.value, l
 const additionalTextFontScale = computed(() => getFittedTextScale(additionalTextLineWidth.value, additionalTextSizeMultiplier.value))
 const labelFontSize = computed(() => baseLabelFontSize.value * labelFontScale.value)
 const additionalTextFontSize = computed(() => baseAdditionalTextFontSize.value * additionalTextFontScale.value)
-const canIncreaseLabelSize = computed(() => labelText.value.length > 0 && labelTextWidth.value * labelFontScale.value < qrOutputSize.value - 0.01)
+const canIncreaseLabelSize = computed(() => labelText.value.length > 0 && labelTextWidth.value * labelFontScale.value < fittedLabelTextWidth.value - 0.01)
 const canDecreaseLabelSize = computed(() => labelText.value.length > 0 && labelSizeStep.value > minTextSizeStep)
 const canIncreaseAdditionalTextSize = computed(() => {
   if (additionalTextLines.value.length === 0 || additionalTextSizeStep.value >= maxAdditionalTextSizeStep) {
@@ -661,7 +687,13 @@ const canIncreaseAdditionalTextSize = computed(() => {
 const canDecreaseAdditionalTextSize = computed(() => additionalTextLines.value.length > 0 && additionalTextSizeStep.value > minTextSizeStep)
 const additionalTextLineGap = computed(() => additionalTextLines.value.length > 1 ? additionalTextFontSize.value * 0.12 : 0)
 const additionalTextBlockHeight = computed(() => additionalTextLines.value.length ? additionalTextFontSize.value * additionalTextLines.value.length + additionalTextLineGap.value * (additionalTextLines.value.length - 1) : 0)
-const additionalTextGap = computed(() => labelText.value && additionalTextLines.value.length ? labelFontSize.value * 0.12 : 0)
+const additionalTextGap = computed(() => {
+  if (!labelText.value || !additionalTextLines.value.length) {
+    return 0
+  }
+
+  return labelFontSize.value * (labelIsSide.value ? sideLabelAdditionalTextGapRatio : stackedLabelAdditionalTextGapRatio)
+})
 const labelGap = computed(() => hasLabelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
 const labelBlockHeight = computed(() => {
   if (!hasLabelText.value) {
@@ -676,6 +708,8 @@ const topLabelGap = computed(() => labelIsTop.value ? labelGap.value : 0)
 const bottomLabelGap = computed(() => labelIsBottom.value ? labelGap.value : 0)
 const sideLabelWidth = computed(() => labelIsSide.value ? qrOutputSize.value : 0)
 const sideLabelGap = computed(() => labelIsSide.value ? labelGap.value : 0)
+const sideLabelTextInset = computed(() => labelIsSide.value ? qrOutputSize.value * sideLabelTextInsetRatio : 0)
+const fittedLabelTextWidth = computed(() => Math.max(1, qrOutputSize.value - sideLabelTextInset.value * 2))
 const sideContentHeight = computed(() => labelIsSide.value ? Math.max(qrOutputSize.value, labelBlockHeight.value) : qrOutputSize.value)
 const labelBottomTrim = computed(() => {
   if (!labelIsBottom.value || !hasBorder.value || labelHasDescender.value) {
@@ -1448,7 +1482,7 @@ function getFittedTextScale(textWidth: number, requestedScale: number) {
     return requestedScale
   }
 
-  return Math.min(requestedScale, qrOutputSize.value / textWidth)
+  return Math.min(requestedScale, fittedLabelTextWidth.value / textWidth)
 }
 
 async function updateTextMeasurements() {
@@ -1817,6 +1851,119 @@ function updateDynamicLinkSlug(value: string | number) {
   dynamicLinkSlug.value = normalizeDynamicQrSlug(String(value))
 }
 
+function resetDynamicLinkAvailability() {
+  dynamicLinkAvailabilityRunId += 1
+  dynamicLinkAvailabilityStatus.value = 'idle'
+  dynamicLinkAvailabilityMessage.value = ''
+
+  if (dynamicLinkAvailabilityTimer) {
+    clearTimeout(dynamicLinkAvailabilityTimer)
+    dynamicLinkAvailabilityTimer = null
+  }
+}
+
+function scheduleDynamicLinkAvailabilityCheck() {
+  resetDynamicLinkAvailability()
+
+  if (!isCustomizingDynamicLink.value || !hasDynamicQrFeature.value) {
+    return
+  }
+
+  const slug = normalizedDynamicLinkSlug.value
+
+  if (!slug) {
+    dynamicLinkAvailabilityMessage.value = 'Enter a custom link.'
+    return
+  }
+
+  if (!isValidDynamicQrSlug(slug)) {
+    dynamicLinkAvailabilityStatus.value = 'unavailable'
+    dynamicLinkAvailabilityMessage.value = 'Use lowercase letters, numbers, and hyphens.'
+    return
+  }
+
+  if (activeDynamicLink.value?.slug === slug) {
+    dynamicLinkAvailabilityStatus.value = 'available'
+    dynamicLinkAvailabilityMessage.value = 'This custom link is available for this QR code.'
+    return
+  }
+
+  const runId = dynamicLinkAvailabilityRunId
+  dynamicLinkAvailabilityStatus.value = 'checking'
+  dynamicLinkAvailabilityMessage.value = 'Checking availability...'
+  dynamicLinkAvailabilityTimer = setTimeout(() => {
+    void checkDynamicLinkSlugAvailability(runId, slug)
+  }, dynamicLinkAvailabilityCheckDelayMs)
+}
+
+async function checkDynamicLinkSlugAvailability(runId: number, slug: string) {
+  try {
+    const response = await $fetch<DynamicQrSlugAvailabilityResponse>('/api/qr/dynamic-links/availability', {
+      query: {
+        ...(activeDynamicLink.value?.id ? { existingLinkId: activeDynamicLink.value.id } : {}),
+        slug
+      }
+    })
+
+    if (runId !== dynamicLinkAvailabilityRunId || response.slug !== normalizedDynamicLinkSlug.value) {
+      return
+    }
+
+    dynamicLinkAvailabilityStatus.value = response.available ? 'available' : 'unavailable'
+    dynamicLinkAvailabilityMessage.value = response.available
+      ? 'This custom link is available.'
+      : 'That custom link is not available.'
+  } catch (error) {
+    if (runId !== dynamicLinkAvailabilityRunId) {
+      return
+    }
+
+    dynamicLinkAvailabilityStatus.value = 'error'
+    dynamicLinkAvailabilityMessage.value = getErrorMessage(error, 'Unable to check this custom link.')
+  }
+}
+
+async function saveDynamicLinkUpdate() {
+  if (!canSaveDynamicLinkUpdate.value) {
+    return
+  }
+
+  if (!activeDynamicLink.value) {
+    isCustomizingDynamicLink.value = false
+    return
+  }
+
+  isSavingDynamicLink.value = true
+  dynamicLinkError.value = ''
+
+  try {
+    const response = await $fetch<DynamicQrLinkResponse>('/api/qr/dynamic-links', {
+      body: {
+        destinationUrl: getDynamicDestinationUrl(),
+        existingLinkId: activeDynamicLink.value.id,
+        slug: normalizedDynamicLinkSlug.value,
+        trackStatistics: trackScanStatistics.value,
+        useDynamicUrl: useDynamicUrl.value
+      },
+      method: 'POST'
+    })
+
+    activeDynamicLink.value = response.link
+    dynamicLinkSlug.value = response.link.slug
+    isCustomizingDynamicLink.value = false
+    resetDynamicLinkAvailability()
+  } catch (error) {
+    dynamicLinkError.value = getErrorMessage(error, 'Unable to update this custom link.')
+
+    if (dynamicLinkError.value.toLowerCase().includes('taken')) {
+      dynamicLinkAvailabilityStatus.value = 'unavailable'
+      dynamicLinkAvailabilityMessage.value = 'That custom link is not available.'
+    }
+  } finally {
+    isSavingDynamicLink.value = false
+  }
+}
+
 function getDynamicDestinationUrl() {
   try {
     return new URL(qrStore.content).toString()
@@ -1970,6 +2117,7 @@ function applyDynamicLinkPayload(payload: SavedQrPayload['dynamicLink']) {
     dynamicLinkSlug.value = ''
     isCustomizingDynamicLink.value = false
     dynamicLinkError.value = ''
+    resetDynamicLinkAvailability()
     activeDynamicLink.value = null
     return
   }
@@ -1981,6 +2129,7 @@ function applyDynamicLinkPayload(payload: SavedQrPayload['dynamicLink']) {
   dynamicLinkSlug.value = slug
   isCustomizingDynamicLink.value = false
   dynamicLinkError.value = ''
+  resetDynamicLinkAvailability()
   activeDynamicLink.value = typeof payload.id === 'string' && payload.id
     ? {
         destinationUrl: typeof payload.destinationUrl === 'string' ? payload.destinationUrl : qrStore.url,
@@ -2044,6 +2193,7 @@ function resetCurrentQrState() {
   dynamicLinkSlug.value = ''
   isCustomizingDynamicLink.value = false
   dynamicLinkError.value = ''
+  resetDynamicLinkAvailability()
   activeDynamicLink.value = null
 }
 
@@ -2264,9 +2414,13 @@ watch(hasDynamicQrFeature, (enabled) => {
   }
 
   dynamicLinkError.value = ''
+  resetDynamicLinkAvailability()
 })
 watch([() => qrStore.url, useDynamicUrl, trackScanStatistics, dynamicLinkSlug], () => {
   dynamicLinkError.value = ''
+})
+watch([normalizedDynamicLinkSlug, isCustomizingDynamicLink, hasDynamicQrFeature, activeDynamicLink], () => {
+  scheduleDynamicLinkAvailabilityCheck()
 })
 watch([
   () => qrStore.url,
@@ -2319,6 +2473,7 @@ onBeforeRouteLeave(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', updateScrollStates)
   window.removeEventListener('pagehide', persistCurrentQrDraft)
+  resetDynamicLinkAvailability()
 })
 </script>
 
@@ -2452,6 +2607,7 @@ onUnmounted(() => {
             {{ dynamicLinkRedirectUrl }}
           </div>
           <UButton
+            v-if="!isCustomizingDynamicLink"
             class="justify-center"
             color="neutral"
             icon="i-lucide-pencil"
@@ -2465,7 +2621,7 @@ onUnmounted(() => {
 
         <div
           v-if="isCustomizingDynamicLink"
-          class="mt-3 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center"
+          class="mt-3 grid gap-2 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center"
         >
           <span class="font-mono text-xs text-muted">qrcodesonlabels.com/redirect/</span>
           <UInput
@@ -2477,7 +2633,26 @@ onUnmounted(() => {
             size="sm"
             @update:model-value="updateDynamicLinkSlug"
           />
+          <UButton
+            class="justify-center"
+            icon="i-lucide-save"
+            :disabled="!canSaveDynamicLinkUpdate"
+            :loading="isSavingDynamicLink"
+            size="sm"
+            @click="saveDynamicLinkUpdate"
+          >
+            Save Update
+          </UButton>
         </div>
+
+        <p
+          v-if="dynamicLinkAvailabilityMessage"
+          aria-live="polite"
+          class="mt-2 text-xs font-medium"
+          :class="dynamicLinkAvailabilityMessageClass"
+        >
+          {{ dynamicLinkAvailabilityMessage }}
+        </p>
 
         <p
           v-if="dynamicLinkError"

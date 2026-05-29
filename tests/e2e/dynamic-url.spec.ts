@@ -63,6 +63,7 @@ test('creates a paid dynamic tracking link when purchasing a printable PDF', asy
   })
   await routeLoggedInSession(page)
   await routeCreditsSummary(page)
+  await routeDynamicSlugAvailability(page)
   await page.route('**/api/qr/dynamic-links', async (route) => {
     dynamicRequest = route.request().postDataJSON() as DynamicLinkRequest
 
@@ -211,6 +212,7 @@ test('hides dynamic options until a URL is entered without clearing selected set
   await expectDifferentVisualRows(editableToggle, statsToggle)
   await expect(page.getByText('Use a Dynamic URL that I can update later')).toBeVisible()
   await expect(page.getByText('Track Statistics on when and where the QR Code is scanned')).toBeVisible()
+  await routeDynamicSlugAvailability(page)
   await page.getByRole('button', { name: 'Customize Link.' }).click()
   await page.getByPlaceholder('custom-slug').fill('menu-special')
   await expect(page.getByText(dynamicRedirectUrl)).toBeVisible()
@@ -232,6 +234,7 @@ test('saves dynamic link settings in a draft QR payload without creating the pai
   let dynamicRequest: DynamicLinkRequest | null = null
 
   await routeLoggedInSession(page)
+  await routeDynamicSlugAvailability(page)
   await page.route('**/api/qr/dynamic-links', async (route) => {
     dynamicRequest = route.request().postDataJSON() as DynamicLinkRequest
 
@@ -271,6 +274,85 @@ test('saves dynamic link settings in a draft QR payload without creating the pai
       useDynamicUrl: true
     }
   }))
+})
+
+test('checks custom link availability and saves existing link updates', async ({ page }) => {
+  let dynamicRequest: DynamicLinkRequest | null = null
+
+  await page.addInitScript(({ destinationUrl, dynamicRedirectUrl, storageKey }) => {
+    sessionStorage.setItem(storageKey, JSON.stringify({
+      additionalText: '',
+      additionalTextFont: 'google-sans',
+      additionalTextPlacement: 'below',
+      border: 'none',
+      centerIcon: 'none',
+      colorName: null,
+      colorStep: 500,
+      dynamicLink: {
+        destinationUrl,
+        id: 'dynamic-link-1',
+        redirectUrl: dynamicRedirectUrl,
+        slug: 'menu-special',
+        trackStatistics: true,
+        useDynamicUrl: true
+      },
+      label: '',
+      labelFont: 'google-sans',
+      labelPosition: 'top',
+      labelSizeStep: 0,
+      url: destinationUrl,
+      version: 1
+    }))
+  }, { destinationUrl, dynamicRedirectUrl, storageKey: 'cuteqrcodes.editQrPayload' })
+
+  await routeLoggedInSession(page)
+  await routeCreditsSummary(page)
+  await routeDynamicSlugAvailability(page, slug => slug !== 'taken-link')
+  await page.route('**/api/qr/dynamic-links', async (route) => {
+    dynamicRequest = route.request().postDataJSON() as DynamicLinkRequest
+
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        balance: 8,
+        link: {
+          destinationUrl,
+          id: 'dynamic-link-1',
+          redirectUrl: 'https://qrcodesonlabels.com/redirect/fresh-link',
+          slug: 'fresh-link',
+          trackStatistics: true,
+          useDynamicUrl: true
+        }
+      })
+    })
+  })
+
+  await page.goto('/')
+  await waitForBuilder(page)
+  await page.getByRole('button', { name: 'Customize Link.' }).click()
+
+  await expect(page.getByRole('button', { name: 'Customize Link.' })).toHaveCount(0)
+  const saveButton = page.getByRole('button', { name: 'Save Update' })
+
+  await page.getByPlaceholder('custom-slug').fill('taken-link')
+  await expect(page.getByText('That custom link is not available.')).toBeVisible()
+  await expect(saveButton).toBeDisabled()
+
+  await page.getByPlaceholder('custom-slug').fill('fresh-link')
+  await expect(page.getByText('This custom link is available.')).toBeVisible()
+  await expect(saveButton).toBeEnabled()
+  await saveButton.click()
+
+  await expect.poll(() => dynamicRequest).not.toBeNull()
+  expect(dynamicRequest).toEqual(expect.objectContaining({
+    destinationUrl,
+    existingLinkId: 'dynamic-link-1',
+    slug: 'fresh-link',
+    trackStatistics: true,
+    useDynamicUrl: true
+  }))
+  await expect(page.getByText('https://qrcodesonlabels.com/redirect/fresh-link')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Customize Link.' })).toBeVisible()
 })
 
 async function configureDynamicQr(page: Page) {
@@ -355,6 +437,21 @@ async function routeCreditsSummary(page: Page) {
       })
     })
   )
+}
+
+async function routeDynamicSlugAvailability(page: Page, isAvailable: (slug: string) => boolean = () => true) {
+  await page.route('**/api/qr/dynamic-links/availability**', route => {
+    const url = new URL(route.request().url())
+    const slug = url.searchParams.get('slug') || ''
+
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        available: isAvailable(slug),
+        slug
+      })
+    })
+  })
 }
 
 function createDynamicLinkResponse() {

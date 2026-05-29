@@ -50,8 +50,82 @@ test('automatically refreshes credits after returning from checkout', async ({ p
   await expect.poll(() => summaryRequests).toBeGreaterThanOrEqual(2)
 })
 
+test('shows label purchase URL and included features in credit history', async ({ page }) => {
+  await routeSession(page)
+
+  await page.route('**/api/credits/summary', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        balance: 94,
+        packs: [],
+        pdfs: [],
+        transactions: [{
+          balanceAfter: 94,
+          createdAt: '2026-05-28T23:15:00.000Z',
+          credits: -3,
+          description: '2" x 3" PDF purchase',
+          id: 'label-purchase-menu',
+          labelPurchase: {
+            destinationUrl: 'https://example.com/menu',
+            editable: true,
+            trackStats: true
+          },
+          lemonSqueezyOrderId: null,
+          lemonSqueezyVariantId: null,
+          pdfPurchaseId: 'pdf-menu',
+          type: 'pdf_purchase'
+        }]
+      })
+    })
+  )
+
+  await page.goto('/credits')
+
+  await expect(page.getByText('2" x 3" PDF purchase')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'QR code credit spend' })).toBeVisible()
+  await expect(page.getByText('https://example.com/menu')).toBeVisible()
+  await expect(page.getByText('Editable, Stats')).toBeVisible()
+})
+
+test('shows Lemon Squeezy receipt links for credit purchases', async ({ page }) => {
+  await routeSession(page)
+
+  await page.route('**/api/credits/summary', route =>
+    route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        balance: 1100,
+        packs: [],
+        pdfs: [],
+        transactions: [{
+          balanceAfter: 1100,
+          createdAt: '2026-05-28T23:00:00.000Z',
+          credits: 1000,
+          description: '1,000 credits purchase',
+          id: 'credit-purchase-1000',
+          lemonSqueezyOrderId: 'order-1000',
+          lemonSqueezyVariantId: 'variant-1000',
+          pdfPurchaseId: null,
+          receiptUrl: 'https://app.lemonsqueezy.com/my-orders/example?signature=test',
+          type: 'credit_purchase'
+        }]
+      })
+    })
+  )
+
+  await page.goto('/credits')
+
+  await expect(page.getByText('1,000 credits purchase')).toBeVisible()
+  await expect(page.getByRole('img', { name: 'Credit purchase' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'View receipt' })).toHaveAttribute(
+    'href',
+    'https://app.lemonsqueezy.com/my-orders/example?signature=test'
+  )
+})
+
 async function routeSession(page: Page) {
-  await page.route('**/api/auth/get-session', route =>
+  await page.route(/\/api\/auth\/get-session(?:\?|$)/, route =>
     route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({

@@ -503,6 +503,9 @@ test("my QR codes shows draft and purchased QR actions with tag filtering", asyn
   await expect(page.getByRole("heading", { name: "My QR Codes" }).first()).toBeVisible();
   await expect(page.getByText("Saved print link")).toBeVisible();
   await expect(page.getByText("Purchased menu QR")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "New QR Code Based on This One" }),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: "Download PDF" })).toHaveAttribute(
     "href",
     "/api/credits/pdfs/pdf-menu",

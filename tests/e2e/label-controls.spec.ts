@@ -1,20 +1,27 @@
 import { expect, test } from '@playwright/test'
 
+const sideLabelTextFitRatio = 0.92
+const sideLabelAdditionalTextGapRatio = 0.18
+
 test('aligns label panel controls', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com')
   await page.getByRole('button', { name: 'Label', exact: true }).click()
 
+  const primaryControls = page.getByTestId('rectangle-label-desktop-primary-controls')
+  const additionalControls = page.getByTestId('rectangle-label-desktop-additional-controls')
+
   await expect(page.getByRole('radio', { name: 'Top' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByRole('radiogroup', { name: 'Label position' }).locator('button').first()).toHaveText('Top')
 
   const metrics = await page.evaluate(() => {
-    function bounds(selector: string) {
-      const element = document.querySelector(selector)
+    function bounds(rootSelector: string, selector: string) {
+      const root = document.querySelector(rootSelector)
+      const element = root?.querySelector(selector)
 
       if (!element) {
-        throw new Error(`Missing element: ${selector}`)
+        throw new Error(`Missing element: ${rootSelector} ${selector}`)
       }
 
       const rect = element.getBoundingClientRect()
@@ -26,12 +33,12 @@ test('aligns label panel controls', async ({ page }) => {
     }
 
     return {
-      additionalDecrease: bounds('button[aria-label="Decrease additional text size"]'),
-      additionalFont: bounds('button[role="combobox"][aria-labelledby="qr-additional-font-label"]'),
-      additionalInput: bounds('#qr-additional-text'),
-      labelDecrease: bounds('button[aria-label="Decrease label size"]'),
-      labelFont: bounds('button[role="combobox"]:not([aria-labelledby])'),
-      labelInput: bounds('input[placeholder="Add a word"]')
+      additionalDecrease: bounds('[data-testid="rectangle-label-desktop-additional-controls"]', 'button[aria-label="Decrease additional text size"]'),
+      additionalFont: bounds('[data-testid="rectangle-label-desktop-additional-controls"]', 'button[role="combobox"][aria-labelledby="qr-additional-font-label"]'),
+      additionalInput: bounds('[data-testid="rectangle-label-desktop-additional-controls"]', '#qr-additional-text'),
+      labelDecrease: bounds('[data-testid="rectangle-label-desktop-primary-controls"]', 'button[aria-label="Decrease label size"]'),
+      labelFont: bounds('[data-testid="rectangle-label-desktop-primary-controls"]', 'button[role="combobox"]:not([aria-labelledby])'),
+      labelInput: bounds('[data-testid="rectangle-label-desktop-primary-controls"]', 'input[placeholder="Add a word"]')
     }
   })
 
@@ -45,6 +52,8 @@ test('aligns label panel controls', async ({ page }) => {
   expect(metrics.labelFont.top).toBeCloseTo(metrics.labelInput.top, 0)
   expect(metrics.additionalDecrease.top).toBeCloseTo(metrics.additionalInput.top, 0)
   expect(metrics.additionalFont.top).toBeCloseTo(metrics.additionalInput.top, 0)
+  await expect(primaryControls).toBeVisible()
+  await expect(additionalControls).toBeVisible()
 })
 
 test('positions side labels beside the QR code', async ({ page }) => {
@@ -52,8 +61,8 @@ test('positions side labels beside the QR code', async ({ page }) => {
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com/side-label-test')
   await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await page.locator('input[placeholder="Add a word"]').fill('A very long side label for width fitting')
-  await page.locator('#qr-additional-text').fill('Centered beside QR')
+  await page.getByTestId('rectangle-label-desktop-primary-controls').getByPlaceholder('Add a word').fill('A very long side label for width fitting')
+  await page.getByTestId('rectangle-label-desktop-additional-controls').locator('#qr-additional-text').fill('Centered beside QR')
   await page.waitForFunction(() => document.fonts?.ready)
 
   const leftPosition = page.getByRole('radio', { name: 'Left' })
@@ -71,6 +80,8 @@ test('positions side labels beside the QR code', async ({ page }) => {
   expect(leftMetrics.outputWidth).toBeCloseTo(leftMetrics.qrSize * 2 + leftMetrics.gap, 4)
   expect(leftMetrics.textBlockCenterY).toBeCloseTo(leftMetrics.qrCenterY, 4)
   expect(leftMetrics.maxTextWidth).toBeLessThanOrEqual(leftMetrics.qrSize + 0.01)
+  expect(leftMetrics.maxTextWidth).toBeLessThanOrEqual(leftMetrics.qrSize * sideLabelTextFitRatio + 0.01)
+  expect(leftMetrics.labelToAdditionalTextGap).toBeCloseTo(leftMetrics.labelFontSize * sideLabelAdditionalTextGapRatio, 4)
 
   await rightPosition.click()
 
@@ -82,6 +93,8 @@ test('positions side labels beside the QR code', async ({ page }) => {
   expect(rightMetrics.outputWidth).toBeCloseTo(rightMetrics.qrSize * 2 + rightMetrics.gap, 4)
   expect(rightMetrics.textBlockCenterY).toBeCloseTo(rightMetrics.qrCenterY, 4)
   expect(rightMetrics.maxTextWidth).toBeLessThanOrEqual(rightMetrics.qrSize + 0.01)
+  expect(rightMetrics.maxTextWidth).toBeLessThanOrEqual(rightMetrics.qrSize * sideLabelTextFitRatio + 0.01)
+  expect(rightMetrics.labelToAdditionalTextGap).toBeCloseTo(rightMetrics.labelFontSize * sideLabelAdditionalTextGapRatio, 4)
 })
 
 test('resizes long additional text visibly', async ({ page }) => {
@@ -89,21 +102,24 @@ test('resizes long additional text visibly', async ({ page }) => {
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
   await page.locator('input[type="url"]').fill('https://example.com/additional-text-size')
   await page.getByRole('button', { name: 'Label', exact: true }).click()
-  await page.locator('input[placeholder="Add a word"]').fill('Testing big')
-  await page.locator('#qr-additional-text').fill('and smaller because we love to have some smaller text as well here')
+  const primaryControls = page.getByTestId('rectangle-label-desktop-primary-controls')
+  const additionalControls = page.getByTestId('rectangle-label-desktop-additional-controls')
+
+  await primaryControls.getByPlaceholder('Add a word').fill('Testing big')
+  await additionalControls.locator('#qr-additional-text').fill('and smaller because we love to have some smaller text as well here')
   await page.evaluate(() => document.fonts?.ready)
 
   const before = await page.evaluate(getAdditionalTextMetrics)
 
-  await page.getByRole('button', { name: 'Increase additional text size' }).click()
+  await additionalControls.getByRole('button', { name: 'Increase additional text size' }).click()
 
   const afterIncrease = await page.evaluate(getAdditionalTextMetrics)
 
   expect(afterIncrease.fontSize).toBeGreaterThan(before.fontSize * 1.2)
   expect(afterIncrease.maxTextWidth).toBeLessThanOrEqual(afterIncrease.qrSize + 0.01)
 
-  await page.getByRole('button', { name: 'Decrease additional text size' }).click()
-  await page.getByRole('button', { name: 'Decrease additional text size' }).click()
+  await additionalControls.getByRole('button', { name: 'Decrease additional text size' }).click()
+  await additionalControls.getByRole('button', { name: 'Decrease additional text size' }).click()
 
   const afterDecrease = await page.evaluate(getAdditionalTextMetrics)
 
@@ -132,11 +148,12 @@ function getSideLabelMetrics() {
 
     return {
       bottom: y + height / 2,
+      text: element.textContent?.trim() ?? '',
       top: y - height / 2,
       width: element.getComputedTextLength(),
       x: Number(element.getAttribute('x'))
     }
-  })
+  }).sort((first, second) => first.top - second.top)
 
   const outputWidth = svg.viewBox.baseVal.width
   const qrSize = Number(qrSvg.getAttribute('width'))
@@ -145,6 +162,8 @@ function getSideLabelMetrics() {
 
   return {
     gap: outputWidth - qrSize * 2,
+    labelFontSize: textBounds[0]!.bottom - textBounds[0]!.top,
+    labelToAdditionalTextGap: textBounds.length > 1 ? textBounds[1]!.top - textBounds[0]!.bottom : 0,
     maxTextWidth: Math.max(...textBounds.map(bounds => bounds.width)),
     outputWidth,
     qrCenterY: qrY + qrSize / 2,
