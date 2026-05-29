@@ -221,14 +221,33 @@ async function handleLogout() {
       <NuxtPage />
     </UMain>
 
-    <footer class="border-t border-slate-200 bg-white py-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
-      <UContainer class="text-center">
-        Questions? Issues? Suggestions? E-mail me at
-        <a
-          class="font-medium text-primary hover:underline"
-          href="mailto:andy@qrcodesonlabels.com"
-        >andy@qrcodesonlabels.com</a>
-        and I'll get back to you ASAP.
+    <footer class="border-t border-slate-200 bg-white py-4 text-sm text-slate-700">
+      <UContainer class="flex flex-col items-center gap-2 text-center">
+        <p>
+          Questions? Issues? Suggestions? E-mail me at
+          <a
+            class="font-medium text-primary hover:underline"
+            href="mailto:andy@qrcodesonlabels.com"
+          >andy@qrcodesonlabels.com</a>
+          and I'll get back to you ASAP.
+        </p>
+        <p class="flex items-center justify-center gap-1.5">
+          <span>Made with</span>
+          <UIcon
+            aria-hidden="true"
+            class="size-4 text-rose-500"
+            name="i-lucide-heart"
+          />
+          <span class="sr-only">love</span>
+          <span>and</span>
+          <UIcon
+            aria-hidden="true"
+            class="size-4 text-sky-500"
+            name="i-lucide-atom"
+          />
+          <span class="sr-only">Nuxt</span>
+          <span>in Livermore, California</span>
+        </p>
       </UContainer>
     </footer>
   </UApp>
