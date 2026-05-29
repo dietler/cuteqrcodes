@@ -419,6 +419,7 @@ test("my QR codes shows draft and purchased QR actions with tag filtering", asyn
         useDynamicUrl?: boolean;
       }
     | null = null;
+  let tagUpdateRequest: { tags?: string[] } | null = null;
 
   await routeSavedPrintFixtures(page, {
     qrCode: {
@@ -458,6 +459,23 @@ test("my QR codes shows draft and purchased QR actions with tag filtering", asyn
   await page.route(`**/api/qr/saved/${purchasedQrCode.id}`, async (route) => {
     if (route.request().method() !== "PATCH") {
       await route.fallback();
+      return;
+    }
+
+    const body = route.request().postDataJSON() as { dynamicLink?: unknown; tags?: string[] };
+
+    if (Array.isArray(body.tags)) {
+      tagUpdateRequest = body;
+
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({
+          qrCode: {
+            ...purchasedQrCode,
+            tags: body.tags,
+          },
+        }),
+      });
       return;
     }
 
@@ -516,6 +534,20 @@ test("my QR codes shows draft and purchased QR actions with tag filtering", asyn
   await page.getByRole("button", { name: "paid" }).first().click();
   await expect(page.getByText("Saved print link")).toHaveCount(0);
   await expect(page.getByText("Purchased menu QR")).toBeVisible();
+
+  await page.getByRole("button", { name: "Remove menu" }).click();
+  const removeTagDialog = page.getByRole("dialog", { name: "Remove Tag" });
+  await expect(removeTagDialog).toBeVisible();
+  await expect(removeTagDialog).toContainText(
+    'Remove "menu" from "Purchased menu QR"?',
+  );
+  await removeTagDialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(removeTagDialog).toHaveCount(0);
+  expect(tagUpdateRequest).toBeNull();
+
+  await page.getByRole("button", { name: "Remove menu" }).click();
+  await removeTagDialog.getByRole("button", { name: "Remove Tag" }).click();
+  await expect.poll(() => tagUpdateRequest).toEqual({ tags: ["paid"] });
 
   await page.getByRole("button", { name: "Edit URL" }).click();
   await page.getByRole("textbox", { name: "URL" }).fill("https://example.com/new-menu");

@@ -5,6 +5,11 @@ import { createLabelPrintPayloadFromSavedQr, labelPrintPayloadStorageKey } from 
 import type { DynamicQrLinkResponse, DynamicQrStats } from '~/utils/dynamic-qr'
 import { editQrPayloadStorageKey, type SavedQrCode, type SavedQrSummary } from '~/utils/saved-qr'
 
+type TagRemovalTarget = {
+  qrCode: SavedQrCode
+  tag: string
+}
+
 const session = useSession()
 const qrCodes = ref<SavedQrCode[]>([])
 const selectedTag = ref('')
@@ -15,6 +20,8 @@ const isDeleteDialogOpen = ref(false)
 const isDeleting = ref(false)
 const tagInputs = ref<Record<string, string>>({})
 const activeTagUpdateId = ref('')
+const tagRemovalTarget = ref<TagRemovalTarget | null>(null)
+const isRemoveTagDialogOpen = ref(false)
 const qrCodeToEditUrl = ref<SavedQrCode | null>(null)
 const isEditUrlDialogOpen = ref(false)
 const editUrlValue = ref('')
@@ -37,6 +44,14 @@ const filteredQrCodes = computed(() => {
 const draftQrCodes = computed(() => filteredQrCodes.value.filter(qrCode => qrCode.status === 'draft'))
 const purchasedQrCodes = computed(() => filteredQrCodes.value.filter(qrCode => qrCode.status === 'purchased'))
 const hasQrCodes = computed(() => qrCodes.value.length > 0)
+const isRemovingTag = computed(() =>
+  Boolean(tagRemovalTarget.value && activeTagUpdateId.value === tagRemovalTarget.value.qrCode.id)
+)
+const removeTagDialogDescription = computed(() => {
+  const tag = tagRemovalTarget.value?.tag || 'selected'
+
+  return `Remove the "${tag}" tag from this QR code?`
+})
 
 onMounted(() => {
   if (isLoggedIn.value) {
@@ -52,6 +67,12 @@ watch(isLoggedIn, (loggedIn) => {
 
   qrCodes.value = []
   selectedTag.value = ''
+})
+
+watch(isRemoveTagDialogOpen, (isOpen) => {
+  if (!isOpen && !isRemovingTag.value) {
+    tagRemovalTarget.value = null
+  }
 })
 
 async function loadSavedQrCodes() {
@@ -133,12 +154,43 @@ async function addTags(qrCode: SavedQrCode) {
   }
 }
 
-async function removeTag(qrCode: SavedQrCode, tagToRemove: string) {
+function openRemoveTagDialog(qrCode: SavedQrCode, tag: string) {
   if (activeTagUpdateId.value) {
     return
   }
 
-  await updateTags(qrCode, qrCode.tags.filter(tag => !tagsMatch(tag, tagToRemove)))
+  tagRemovalTarget.value = {
+    qrCode,
+    tag
+  }
+  isRemoveTagDialogOpen.value = true
+}
+
+async function confirmRemoveTag() {
+  const target = tagRemovalTarget.value
+
+  if (!target || isRemovingTag.value) {
+    return
+  }
+
+  const wasUpdated = await updateTags(
+    target.qrCode,
+    target.qrCode.tags.filter(tag => !tagsMatch(tag, target.tag))
+  )
+
+  if (wasUpdated) {
+    isRemoveTagDialogOpen.value = false
+    tagRemovalTarget.value = null
+  }
+}
+
+function cancelRemoveTag() {
+  if (isRemovingTag.value) {
+    return
+  }
+
+  isRemoveTagDialogOpen.value = false
+  tagRemovalTarget.value = null
 }
 
 async function updateTags(qrCode: SavedQrCode, tags: string[]) {
@@ -154,8 +206,10 @@ async function updateTags(qrCode: SavedQrCode, tags: string[]) {
     })
 
     replaceQrCode(response.qrCode)
+    return true
   } catch (error) {
     pageError.value = getErrorMessage(error, 'Unable to update tags.')
+    return false
   } finally {
     activeTagUpdateId.value = ''
   }
@@ -488,7 +542,7 @@ function getErrorMessage(error: unknown, fallback: string) {
                         icon="i-lucide-x"
                         size="xs"
                         variant="ghost"
-                        @click="removeTag(qrCode, tag)"
+                        @click="openRemoveTagDialog(qrCode, tag)"
                       />
                     </span>
                   </div>
@@ -624,7 +678,7 @@ function getErrorMessage(error: unknown, fallback: string) {
                         icon="i-lucide-x"
                         size="xs"
                         variant="ghost"
-                        @click="removeTag(qrCode, tag)"
+                        @click="openRemoveTagDialog(qrCode, tag)"
                       />
                     </span>
                   </div>
@@ -683,6 +737,39 @@ function getErrorMessage(error: unknown, fallback: string) {
             @click="confirmDeleteQrCode"
           >
             Delete
+          </UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal
+      v-model:open="isRemoveTagDialogOpen"
+      title="Remove Tag"
+      :description="removeTagDialogDescription"
+      :dismissible="!isRemovingTag"
+    >
+      <template #body>
+        <p class="text-sm text-muted">
+          Remove "{{ tagRemovalTarget?.tag }}" from "{{ tagRemovalTarget?.qrCode.name }}"?
+        </p>
+      </template>
+
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            color="neutral"
+            :disabled="isRemovingTag"
+            variant="subtle"
+            @click="cancelRemoveTag"
+          >
+            Cancel
+          </UButton>
+          <UButton
+            color="error"
+            :loading="isRemovingTag"
+            @click="confirmRemoveTag"
+          >
+            Remove Tag
           </UButton>
         </div>
       </template>
