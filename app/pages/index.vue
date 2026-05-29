@@ -143,6 +143,9 @@ type QrImageExport = {
   svg: string
   width: number
 }
+type QrImageExportOptions = {
+  qrPixelSize?: number
+}
 
 const qrStore = useQrStore()
 const session = useSession()
@@ -211,6 +214,7 @@ let sampleQrPreviousClearAt = 0
 const homepageDescriptionDismissedCookieName = 'cuteqrcodes_home_description_dismissed'
 const homepageDescriptionDismissedCookieMaxAge = 60 * 60 * 24 * 365
 const dynamicLinkAvailabilityCheckDelayMs = 350
+const imageDownloadQrPixelSize = 500
 const sampleQrSlideHoldMs = 5000
 const sampleQrSlideTransitionMs = 900
 const sampleQrSlideCycleMs = sampleQrSlideHoldMs + sampleQrSlideTransitionMs
@@ -468,12 +472,12 @@ const centerIconOptions = [noCenterIconOption, ...getCenterIconOptions(centerIco
 const selectedCenterIconOption = computed(() => centerIconOptions.find(icon => icon.value === selectedCenterIcon.value) ?? noCenterIconOption)
 const hasCenterIcon = computed(() => selectedCenterIconOption.value.src.length > 0)
 
-const sampleQrImageModules = import.meta.glob('../../public/samples/*.{png,jpg,jpeg,webp,gif,svg}', {
+const sampleQrImageModules = import.meta.glob('../../public/samples/*.svg', {
   eager: true,
   import: 'default',
   query: '?url'
 }) as Record<string, string>
-const sampleQrImages: SampleQrImage[] = Object.entries(sampleQrImageModules)
+const orderedSampleQrImages: SampleQrImage[] = Object.entries(sampleQrImageModules)
   .sort(([firstPath], [secondPath]) => firstPath.localeCompare(secondPath))
   .map(([path, src]) => {
     const name = getSampleQrImageName(path)
@@ -485,6 +489,7 @@ const sampleQrImages: SampleQrImage[] = Object.entries(sampleQrImageModules)
       testId: `sample-qr-image-${getSampleQrImageId(path)}`
     }
   })
+const sampleQrImages = ref<SampleQrImage[]>([])
 
 const noBorderStyle: BorderStyle = {
   label: 'No border',
@@ -559,7 +564,7 @@ const shouldShowHomepageDescription = computed(() => homepageDescriptionDismisse
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
 const hasDynamicQrFeature = computed(() => useDynamicUrl.value || trackScanStatistics.value)
 const shouldShowDynamicQrControls = computed(() => hasQrContent.value)
-const shouldShowSampleQrCarousel = computed(() => !hasQrContent.value && sampleQrImages.length > 0)
+const shouldShowSampleQrCarousel = computed(() => !hasQrContent.value && sampleQrImages.value.length > 0)
 const dynamicLinkCreditCost = computed(() => Number(useDynamicUrl.value) + Number(trackScanStatistics.value))
 const normalizedDynamicLinkSlug = computed(() => normalizeDynamicQrSlug(dynamicLinkSlug.value))
 const dynamicLinkRedirectUrl = computed(() => createDynamicQrRedirectUrl(normalizedDynamicLinkSlug.value || 'guid'))
@@ -1263,6 +1268,20 @@ function getSampleQrImageId(path: string) {
     .replace(/^-|-$/g, '') || 'sample'
 }
 
+function shuffleSampleQrImages(images: SampleQrImage[]) {
+  const shuffledImages = [...images]
+
+  for (let index = shuffledImages.length - 1; index > 0; index--) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    const image = shuffledImages[index]!
+
+    shuffledImages[index] = shuffledImages[swapIndex]!
+    shuffledImages[swapIndex] = image
+  }
+
+  return shuffledImages
+}
+
 function getSampleQrSlideState(index: number) {
   if (previousSampleQrIndex.value === index) {
     return 'exiting'
@@ -1284,7 +1303,7 @@ function startSampleQrCarousel() {
   sampleQrPreviousClearAt = 0
   settleSampleQrSlide()
 
-  if (sampleQrImages.length > 1) {
+  if (sampleQrImages.value.length > 1) {
     requestSampleQrAnimationFrame()
   }
 }
@@ -1328,7 +1347,7 @@ function requestSampleQrAnimationFrame() {
 function updateSampleQrCarousel(now: number) {
   sampleQrAnimationFrame = null
 
-  if (!shouldShowSampleQrCarousel.value || sampleQrImages.length < 2) {
+  if (!shouldShowSampleQrCarousel.value || sampleQrImages.value.length < 2) {
     return
   }
 
@@ -1357,7 +1376,7 @@ function getSampleQrIndexForTime(now: number) {
     return 0
   }
 
-  return (1 + Math.floor((elapsed - sampleQrSlideHoldMs) / sampleQrSlideCycleMs)) % sampleQrImages.length
+  return (1 + Math.floor((elapsed - sampleQrSlideHoldMs) / sampleQrSlideCycleMs)) % sampleQrImages.value.length
 }
 
 function isCenterIconCategorySelected(category: CenterIconCategory) {
@@ -1932,7 +1951,7 @@ async function downloadQrImage(format: DownloadImageFormat) {
   imageDownloadError.value = ''
 
   try {
-    const imageExport = await createQrImageExport()
+    const imageExport = await createQrImageExport({ qrPixelSize: imageDownloadQrPixelSize })
     const filename = `${getQrImageFileBaseName()}.${format}`
 
     if (format === 'svg') {
@@ -2515,7 +2534,7 @@ async function createLabelPrintPayload(): Promise<LabelPrintPayload> {
   }
 }
 
-async function createQrImageExport(): Promise<QrImageExport> {
+async function createQrImageExport(options: QrImageExportOptions = {}): Promise<QrImageExport> {
   const sourceSvg = outputSvgElement.value
 
   if (!sourceSvg) {
@@ -2523,20 +2542,35 @@ async function createQrImageExport(): Promise<QrImageExport> {
   }
 
   const clonedSvg = sourceSvg.cloneNode(true) as SVGSVGElement
+  const exportScale = getQrImageExportScale(options)
+  const exportWidth = getQrImageExportDimension(outputSvgWidth.value, exportScale)
+  const exportHeight = getQrImageExportDimension(outputSvgHeight.value, exportScale)
 
   clonedSvg.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
-  clonedSvg.setAttribute('width', `${outputSvgWidth.value}`)
-  clonedSvg.setAttribute('height', `${outputSvgHeight.value}`)
+  clonedSvg.setAttribute('width', `${exportWidth}`)
+  clonedSvg.setAttribute('height', `${exportHeight}`)
 
   inlineComputedSvgStyles(sourceSvg, clonedSvg)
   await embedUsedSvgFontFaces(clonedSvg)
   await inlineSvgImages(clonedSvg)
 
   return {
-    height: outputSvgHeight.value,
+    height: exportHeight,
     svg: new XMLSerializer().serializeToString(clonedSvg),
-    width: outputSvgWidth.value
+    width: exportWidth
   }
+}
+
+function getQrImageExportScale(options: QrImageExportOptions) {
+  if (!options.qrPixelSize || options.qrPixelSize <= 0) {
+    return 1
+  }
+
+  return options.qrPixelSize / Math.max(qrOutputSize.value, 1)
+}
+
+function getQrImageExportDimension(value: number, scale: number) {
+  return scale === 1 ? value : Number((value * scale).toFixed(4))
 }
 
 async function createPngBlobFromSvg(imageExport: QrImageExport) {
@@ -2544,11 +2578,10 @@ async function createPngBlobFromSvg(imageExport: QrImageExport) {
 
   try {
     const image = await loadImage(imageUrl)
-    const scale = getPngExportScale(imageExport)
     const canvas = document.createElement('canvas')
 
-    canvas.width = Math.max(1, Math.ceil(imageExport.width * scale))
-    canvas.height = Math.max(1, Math.ceil(imageExport.height * scale))
+    canvas.width = Math.max(1, Math.round(imageExport.width))
+    canvas.height = Math.max(1, Math.round(imageExport.height))
 
     const context = canvas.getContext('2d')
 
@@ -2583,12 +2616,6 @@ function loadImage(src: string) {
     image.onerror = () => reject(new Error('Unable to render the QR code image.'))
     image.src = src
   })
-}
-
-function getPngExportScale(imageExport: QrImageExport) {
-  const longEdge = Math.max(imageExport.width, imageExport.height, 1)
-
-  return Math.max(1, Math.ceil(2048 / longEdge))
 }
 
 function downloadBlob(blob: Blob, filename: string) {
@@ -2685,9 +2712,7 @@ onMounted(async () => {
     restoreCurrentQrDraftFromStorage()
   }
 
-  if (shouldShowSampleQrCarousel.value) {
-    startSampleQrCarousel()
-  }
+  sampleQrImages.value = shuffleSampleQrImages(orderedSampleQrImages)
 
   await nextTick()
   updateScrollStates()

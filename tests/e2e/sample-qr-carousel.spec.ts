@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 test('cycles sample QR images below the empty URL box', async ({ page }) => {
+  await page.addInitScript(() => {
+    Math.random = () => 0
+  })
+
   await page.goto('/')
   await page.waitForFunction(() => '_value' in document.querySelector('input[type="url"]'))
 
@@ -17,8 +21,25 @@ test('cycles sample QR images below the empty URL box', async ({ page }) => {
 
   expect(sampleImageCount).toBeGreaterThanOrEqual(3)
   await expect(carousel).toHaveAttribute('data-sample-count', String(sampleImageCount))
-  await expect(page.getByTestId('sample-qr-image-childrens-fairyland')).toHaveAttribute('src', /\/samples\/childrens-fairyland\.png/)
-  await expect(page.getByTestId('sample-qr-image-childrens-fairyland')).toHaveAttribute('data-state', /^(active|entering)$/)
+  const sampleSources = await sampleImages.evaluateAll(images => images.map(image => image.getAttribute('src') ?? ''))
+  const sortedSampleSources = [...sampleSources].sort((firstSource, secondSource) => firstSource.localeCompare(secondSource))
+  const expectedShuffledSources = [...sortedSampleSources]
+
+  for (let index = expectedShuffledSources.length - 1; index > 0; index--) {
+    const image = expectedShuffledSources[index]
+
+    expectedShuffledSources[index] = expectedShuffledSources[0]
+    expectedShuffledSources[0] = image
+  }
+
+  expect(sampleSources.every(src => src.startsWith('/samples/') && src.endsWith('.svg'))).toBe(true)
+  expect(sampleSources).toEqual(expectedShuffledSources)
+  expect(sampleSources).not.toEqual(sortedSampleSources)
+  await expect(page.getByTestId('sample-qr-image-childrens-fairyland')).toHaveAttribute('src', /\/samples\/childrens-fairyland\.svg/)
+  const activeSampleImage = page.locator('[data-testid^="sample-qr-image-"][data-state="active"], [data-testid^="sample-qr-image-"][data-state="entering"]')
+
+  await expect(activeSampleImage).toHaveCount(1)
+  await expect(activeSampleImage).toHaveAttribute('src', /\/samples\/.+\.svg/)
 
   await expect.poll(async () => carousel.getAttribute('data-active-index'), {
     timeout: 7500

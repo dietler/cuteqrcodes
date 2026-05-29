@@ -522,7 +522,7 @@ test("my QR codes shows draft and purchased QR actions with tag filtering", asyn
   await expect(page.getByText("Saved print link")).toBeVisible();
   await expect(page.getByText("Purchased menu QR")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "New QR Code Based on This One" }),
+    page.getByRole("button", { name: "Edit QR Code" }),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Copy To New QR Code" }),

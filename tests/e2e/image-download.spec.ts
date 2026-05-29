@@ -36,6 +36,8 @@ test('downloads generated QR artwork as SVG or PNG from the builder', async ({ p
   expect(svgText).toContain('xmlns="http://www.w3.org/2000/svg"')
   expect(svgText).toContain('width=')
   expect(svgText).toContain('height=')
+  expect(getSvgDimension(svgText, 'width')).toBe(500)
+  expect(getSvgDimension(svgText, 'height')).toBe(500)
 
   await downloadButton.click()
 
@@ -52,4 +54,12 @@ test('downloads generated QR artwork as SVG or PNG from the builder', async ({ p
   const pngBytes = await readFile(pngPath!)
 
   expect(Array.from(pngBytes.subarray(0, 8))).toEqual([137, 80, 78, 71, 13, 10, 26, 10])
+  expect(pngBytes.readUInt32BE(16)).toBe(500)
+  expect(pngBytes.readUInt32BE(20)).toBe(500)
 })
+
+function getSvgDimension(svgText: string, attribute: 'height' | 'width') {
+  const match = svgText.match(new RegExp(`\\s${attribute}="([^"]+)"`))
+
+  return match ? Number(match[1]) : Number.NaN
+}

@@ -487,14 +487,14 @@ function getErrorMessage(error: unknown, fallback: string) {
                 </div>
                 <div class="grid gap-2 sm:grid-cols-3">
                   <UButton
-                    class="justify-center whitespace-normal text-center leading-tight"
+                    class="justify-center"
                     color="neutral"
-                    icon="i-lucide-copy"
+                    icon="i-lucide-pencil"
                     size="sm"
                     variant="subtle"
                     @click="editQrCode(qrCode)"
                   >
-                    New QR Code Based on This One
+                    Edit QR Code
                   </UButton>
                   <UButton
                     class="justify-center"
