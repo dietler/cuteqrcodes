@@ -199,6 +199,7 @@ const mobileLabelSectionUi = {
   label: 'text-base font-bold min-[620px]:text-sm min-[620px]:font-medium'
 }
 const mobileLabelSectionBoxClasses = 'rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950 min-[620px]:rounded-none min-[620px]:border-0 min-[620px]:bg-transparent min-[620px]:p-0 min-[620px]:shadow-none'
+const colorControlBoxClasses = 'rounded-lg border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-950'
 const selectedColorStep = ref(500)
 const selectedGradientStyle = ref<GradientStyle>('none')
 const selectedGradientDirection = ref<GradientDirection>('left-to-right')
@@ -267,7 +268,8 @@ const tailwindColorSteps = [100, 200, 300, 400, 500, 600, 700, 800, 900]
 const blackColorName = 'Black'
 const whiteColorName = 'White'
 const colorStepSliderUi = {
-  range: 'bg-[var(--qr-step-slider-color)]'
+  range: 'bg-[var(--qr-step-slider-color)]',
+  thumb: 'ring-[var(--qr-step-slider-color)] focus-visible:outline-[var(--qr-step-slider-color)]'
 }
 const additionalTextLineLength = 40
 const preferredAdditionalTextLineLength = 24
@@ -770,6 +772,7 @@ const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
 }))
 const hasCircleLabelText = computed(() => isCircleShape.value && Object.values(circleLabelTexts.value).some(text => text.length > 0))
 const hasLabelText = computed(() => !isCircleShape.value && (labelText.value.length > 0 || additionalText.value.length > 0 || hasLabelLogo.value))
+const canShowLabelColorControls = computed(() => hasLabelText.value)
 const hasRectangleLabelBackground = computed(() => hasLabelText.value && Boolean(selectedLabelBackgroundColorName.value))
 const hasLabelBackgroundStepControl = computed(() => isLabelBackgroundColorStepAdjustable(selectedLabelBackgroundColorName.value))
 const hasLabelTextStepControl = computed(() => isPaletteColorStepAdjustable(selectedLabelTextColorName.value))
@@ -1094,7 +1097,7 @@ const textLinearGradientCoordinates = computed(() => getLinearGradientCoordinate
 const textRadialGradientCoordinates = computed(() => getRadialGradientCoordinates(textGradientBox.value))
 
 async function selectTool(tool: QrTool) {
-  if (tool === 'labelColors' && isCircleShape.value) {
+  if (tool === 'labelColors' && !canShowLabelColorControls.value) {
     return
   }
 
@@ -3115,7 +3118,7 @@ function normalizeActiveTool(value: unknown): QrTool | null {
     return 'colors'
   }
 
-  if (value === 'labelColors' && isCircleShape.value) {
+  if (value === 'labelColors' && !canShowLabelColorControls.value) {
     return 'label'
   }
 
@@ -3397,6 +3400,11 @@ watch([activeTool, centerIconSearchTerm, activeCenterIconCategory], () => {
 watch(hasQrContent, (hasContent) => {
   if (!hasContent) {
     activeTool.value = null
+  }
+})
+watch(canShowLabelColorControls, (canShow) => {
+  if (!canShow && activeTool.value === 'labelColors') {
+    activeTool.value = hasQrContent.value ? 'label' : null
   }
 })
 watch(shouldShowSampleQrCarousel, (shouldShow) => {
@@ -3761,7 +3769,7 @@ onUnmounted(() => {
                 {{ isCircleShape ? 'Label' : 'Label & Logo' }}
               </UButton>
               <UButton
-                v-if="!isCircleShape"
+                v-if="canShowLabelColorControls"
                 aria-label="Label color controls"
                 :aria-pressed="activeTool === 'labelColors'"
                 :color="activeTool === 'labelColors' ? 'primary' : 'neutral'"
@@ -3822,8 +3830,11 @@ onUnmounted(() => {
           v-else-if="activeTool === 'colors'"
           class="space-y-5"
         >
-          <section class="space-y-2">
-            <h3 class="text-sm font-medium text-highlighted">
+          <section
+            :class="[colorControlBoxClasses, 'space-y-3']"
+            data-testid="qr-color-control-panel"
+          >
+            <h3 class="text-base font-bold text-highlighted">
               QR Code Color
             </h3>
             <div class="relative">
@@ -3921,7 +3932,7 @@ onUnmounted(() => {
 
         <div
           v-else-if="activeTool === 'gradient'"
-          class="space-y-5 rounded-lg border border-default bg-default p-4"
+          class="space-y-5"
         >
           <div class="space-y-2">
             <span class="text-sm font-medium text-highlighted">Gradient</span>
@@ -3964,9 +3975,10 @@ onUnmounted(() => {
 
           <div
             v-if="gradientNeedsColors"
-            class="space-y-2"
+            :class="[colorControlBoxClasses, 'space-y-3']"
+            data-testid="gradient-second-color-control-panel"
           >
-            <span class="text-sm font-medium text-highlighted">2nd Color</span>
+            <span class="text-base font-bold text-highlighted">2nd Color</span>
             <div
               :class="mobileScrollDesktopWrapClasses"
               data-testid="gradient-second-color-selector"
@@ -4046,9 +4058,10 @@ onUnmounted(() => {
 
           <div
             v-if="gradientNeedsColors"
-            class="space-y-2"
+            :class="[colorControlBoxClasses, 'space-y-3']"
+            data-testid="gradient-third-color-control-panel"
           >
-            <span class="text-sm font-medium text-highlighted">3rd Color</span>
+            <span class="text-base font-bold text-highlighted">3rd Color</span>
             <div
               :class="mobileScrollDesktopWrapClasses"
               data-testid="gradient-third-color-selector"
@@ -4765,8 +4778,11 @@ onUnmounted(() => {
           v-else-if="activeTool === 'labelColors' && !isCircleShape"
           class="space-y-5"
         >
-          <section class="space-y-2">
-            <h3 class="text-sm font-medium text-highlighted">
+          <section
+            :class="[colorControlBoxClasses, 'space-y-3']"
+            data-testid="label-background-color-control-panel"
+          >
+            <h3 class="text-base font-bold text-highlighted">
               Background Color
             </h3>
             <div
@@ -4863,8 +4879,11 @@ onUnmounted(() => {
             </div>
           </section>
 
-          <section class="space-y-2">
-            <h3 class="text-sm font-medium text-highlighted">
+          <section
+            :class="[colorControlBoxClasses, 'space-y-3']"
+            data-testid="label-text-color-control-panel"
+          >
+            <h3 class="text-base font-bold text-highlighted">
               Text Color
             </h3>
             <div
@@ -5636,9 +5655,10 @@ onUnmounted(() => {
           class="flex flex-col items-center justify-center gap-3"
         >
           <div
-            class="flex w-full max-w-[min(86svw,68svh)] flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+            class="grid w-full max-w-[min(86svw,68svh)] grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center"
+            data-testid="qr-builder-action-row"
           >
-            <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div class="justify-self-center sm:col-start-1 sm:justify-self-start">
               <UDropdownMenu
                 :content="{ align: 'start' }"
                 :items="downloadImageMenuItems"
@@ -5654,19 +5674,21 @@ onUnmounted(() => {
                   Download Image
                 </UButton>
               </UDropdownMenu>
-
-              <UButton
-                v-if="isLoggedIn"
-                color="neutral"
-                icon="i-lucide-save"
-                variant="subtle"
-                @click="handleSaveButtonClick"
-              >
-                Save Draft QR Code
-              </UButton>
             </div>
 
             <UButton
+              v-if="isLoggedIn"
+              class="justify-self-center sm:col-start-2"
+              color="neutral"
+              icon="i-lucide-save"
+              variant="subtle"
+              @click="handleSaveButtonClick"
+            >
+              Save Draft QR Code
+            </UButton>
+
+            <UButton
+              class="justify-self-center sm:col-start-3 sm:justify-self-end"
               color="neutral"
               :disabled="isPreparingLabelPrint"
               :loading="isPreparingLabelPrint"

@@ -33,8 +33,25 @@ test('keeps the account menu and builder save button for logged-in users', async
 
   await page.locator('input[type="url"]').fill('https://example.com')
 
-  await expect(page.getByRole('button', { name: 'Save Draft QR Code', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Print to Labels', exact: true })).toBeVisible()
+  const downloadButton = page.getByRole('button', { name: 'Download Image' })
+  const saveButton = page.getByRole('button', { name: 'Save Draft QR Code', exact: true })
+  const printButton = page.getByRole('button', { name: 'Print to Labels', exact: true })
+
+  await expect(saveButton).toBeVisible()
+  await expect(printButton).toBeVisible()
+
+  const actionRowBox = await page.getByTestId('qr-builder-action-row').boundingBox()
+  const downloadButtonBox = await downloadButton.boundingBox()
+  const saveButtonBox = await saveButton.boundingBox()
+  const printButtonBox = await printButton.boundingBox()
+
+  if (!actionRowBox || !downloadButtonBox || !saveButtonBox || !printButtonBox) {
+    throw new Error('Missing QR builder action row layout.')
+  }
+
+  expect(downloadButtonBox.x).toBeLessThan(saveButtonBox.x)
+  expect(printButtonBox.x).toBeGreaterThan(saveButtonBox.x + saveButtonBox.width)
+  expect(saveButtonBox.x + saveButtonBox.width / 2).toBeCloseTo(actionRowBox.x + actionRowBox.width / 2, 0)
 })
 
 async function waitForBuilder(page: Page) {

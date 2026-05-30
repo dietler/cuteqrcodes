@@ -525,6 +525,10 @@ test('uploads a rectangle label logo and positions it around the label text', as
   await page.locator('input[type="url"]').fill('https://example.com/rectangle-label-logo')
 
   await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Label color controls' })).toHaveCount(0)
+
+  await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
+  await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
 
   const labelButtonBox = await page.getByRole('button', { name: 'Label & Logo', exact: true }).boundingBox()
   const labelColorsButton = page.getByRole('button', { name: 'Label color controls' })
@@ -533,9 +537,6 @@ test('uploads a rectangle label logo and positions it around the label text', as
   await expect(page.getByRole('button', { name: 'Logo', exact: true })).toHaveCount(0)
   expect(labelColorsButtonBox?.x ?? 0).toBeGreaterThan(labelButtonBox?.x ?? 0)
   expect((labelColorsButtonBox?.x ?? 0) - ((labelButtonBox?.x ?? 0) + (labelButtonBox?.width ?? 0))).toBeLessThan(8)
-
-  await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
-  await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
 
   await expect(page.getByTestId('rectangle-label-logo-controls')).toBeVisible()
   const logoControlOrder = await getSectionTopPositions(page, [
@@ -980,10 +981,11 @@ async function getRectangleLabelLogoControlsLayout(page: Page) {
 async function expectStepSliderColor(page: Page, testId: string, expectedCssValue: string) {
   const sliderColorState = await page.getByTestId(testId).evaluate((slider, expectedValue) => {
     const range = slider.querySelector('[data-slot="range"]') as HTMLElement | null
+    const thumb = slider.querySelector('[data-slot="thumb"]') as HTMLElement | null
     const probe = document.createElement('div')
 
-    if (!range) {
-      throw new Error(`Missing slider range for ${testId}.`)
+    if (!range || !thumb) {
+      throw new Error(`Missing slider color elements for ${testId}.`)
     }
 
     probe.style.backgroundColor = expectedValue
@@ -996,12 +998,14 @@ async function expectStepSliderColor(page: Page, testId: string, expectedCssValu
     return {
       expectedColor,
       rangeColor: getComputedStyle(range).backgroundColor,
-      sliderVariable: getComputedStyle(slider).getPropertyValue('--qr-step-slider-color').trim()
+      sliderVariable: getComputedStyle(slider).getPropertyValue('--qr-step-slider-color').trim(),
+      thumbShadow: getComputedStyle(thumb).boxShadow
     }
   }, expectedCssValue)
 
   expect(sliderColorState.sliderVariable).not.toBe('')
   expect(sliderColorState.rangeColor).toBe(sliderColorState.expectedColor)
+  expect(sliderColorState.thumbShadow).toContain(sliderColorState.expectedColor)
 }
 
 async function getStackedRectangleLabelSpacing(page: Page) {
