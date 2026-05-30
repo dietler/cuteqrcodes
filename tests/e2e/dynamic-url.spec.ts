@@ -256,9 +256,9 @@ test('saves dynamic link settings in a draft QR payload without creating the pai
   await waitForBuilder(page)
   await configureDynamicQr(page)
 
-  await page.getByRole('button', { name: 'Save Draft QR Code', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Save Draft QR Code' })).toBeVisible()
-  await page.getByRole('dialog').getByRole('button', { name: 'Save Draft QR Code', exact: true }).click()
+  await page.getByRole('button', { name: 'Save Draft', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'Save Draft' })).toBeVisible()
+  await page.getByRole('dialog').getByRole('button', { name: 'Save Draft', exact: true }).click()
   await expect.poll(() => savedRequest).not.toBeNull()
 
   expect(dynamicRequest).toBeNull()

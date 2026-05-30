@@ -6,6 +6,7 @@ import { createDynamicQrRedirectUrl, createRandomDynamicQrSlug, isValidDynamicQr
 import { labelPrintPayloadStorageKey, type LabelPrintPayload } from '~/utils/label-print'
 import { createQrCode, createQrSvgPath } from '~/utils/qr'
 import { currentQrDraftStorageKey, editQrPayloadStorageKey, type CircleLabelOrientation, type CircleLabelPlacement, type CircleLabelPayload, type LabelLogoPayload, type LabelLogoPosition, type SavedQrPayload } from '~/utils/saved-qr'
+import { isAdminEmail } from '~/utils/admin'
 import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from '~/utils/svg-export'
 
 type QrTool = 'shape' | 'colors' | 'gradient' | 'label' | 'labelColors' | 'icon' | 'border'
@@ -613,6 +614,7 @@ const tailwindColors: TailwindColor[] = [
 const hasQrContent = computed(() => qrStore.content.length > 0)
 const shouldShowHomepageDescription = computed(() => homepageDescriptionDismissedCookie.value !== '1')
 const isLoggedIn = computed(() => Boolean(session.value.data?.user))
+const isAdmin = computed(() => isAdminEmail(session.value.data?.user.email))
 const hasDynamicQrFeature = computed(() => useDynamicUrl.value || trackScanStatistics.value)
 const shouldShowDynamicQrControls = computed(() => hasQrContent.value)
 const shouldShowSampleQrCarousel = computed(() => !hasQrContent.value && sampleQrImages.value.length > 0)
@@ -668,7 +670,16 @@ const downloadImageMenuItems = computed(() => [
     onSelect: () => {
       void downloadQrImage('svg')
     }
-  }
+  },
+  ...(isAdmin.value
+    ? [{
+        label: 'Export',
+        icon: 'i-lucide-file-json-2',
+        onSelect: () => {
+          downloadQrSettingsExport()
+        }
+      }]
+    : [])
 ])
 const generatedQr = computed(() => {
   if (!hasQrContent.value) {
@@ -2536,6 +2547,27 @@ async function downloadQrImage(format: DownloadImageFormat) {
   }
 }
 
+function downloadQrSettingsExport() {
+  if (!generatedQr.value.code || isDownloadingImage.value) {
+    return
+  }
+
+  isDownloadingImage.value = true
+  imageDownloadError.value = ''
+
+  try {
+    const payload = createSavedQrPayload()
+    const json = `${JSON.stringify(payload, null, 2)}\n`
+    const filename = `${getQrImageFileBaseName()}-settings.json`
+
+    downloadBlob(new Blob([json], { type: 'application/json;charset=utf-8' }), filename)
+  } catch (error) {
+    imageDownloadError.value = getErrorMessage(error, 'Unable to export this QR code settings file.')
+  } finally {
+    isDownloadingImage.value = false
+  }
+}
+
 async function handleSaveButtonClick() {
   await openSaveDialog()
 }
@@ -3523,7 +3555,7 @@ onUnmounted(() => {
           >
             Register
           </NuxtLink>
-          for an account to Save Draft QR Code designs.
+          for an account to save draft designs.
         </p>
         <button
           aria-label="Dismiss homepage description"
@@ -5684,7 +5716,7 @@ onUnmounted(() => {
               variant="subtle"
               @click="handleSaveButtonClick"
             >
-              Save Draft QR Code
+              Save Draft
             </UButton>
 
             <UButton
@@ -5713,7 +5745,7 @@ onUnmounted(() => {
 
     <UModal
       v-model:open="isSaveDialogOpen"
-      title="Save Draft QR Code"
+      title="Save Draft"
       description="Name this draft QR code."
       :dismissible="!isSavingQr"
     >
@@ -5765,7 +5797,7 @@ onUnmounted(() => {
             :loading="isSavingQr"
             @click="saveCurrentQr"
           >
-            Save Draft QR Code
+            Save Draft
           </UButton>
         </div>
       </template>

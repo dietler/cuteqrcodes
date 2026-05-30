@@ -14,7 +14,7 @@ test('shows logged-out header auth buttons instead of the account avatar', async
 
   await page.locator('input[type="url"]').fill('https://example.com')
 
-  await expect(page.getByRole('button', { name: 'Save Draft QR Code', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Save Draft', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Login to Save Drafts' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Print to Labels', exact: true })).toBeVisible()
 })
@@ -34,7 +34,7 @@ test('keeps the account menu and builder save button for logged-in users', async
   await page.locator('input[type="url"]').fill('https://example.com')
 
   const downloadButton = page.getByRole('button', { name: 'Download Image' })
-  const saveButton = page.getByRole('button', { name: 'Save Draft QR Code', exact: true })
+  const saveButton = page.getByRole('button', { name: 'Save Draft', exact: true })
   const printButton = page.getByRole('button', { name: 'Print to Labels', exact: true })
 
   await expect(saveButton).toBeVisible()
