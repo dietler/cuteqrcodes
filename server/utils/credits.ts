@@ -5,7 +5,7 @@ import { creditPacks } from '~~/app/utils/credits'
 import { ensureDynamicQrTables, getDynamicQrFeatureCost, mapDynamicQrLinkRow, type DynamicQrLinkInput } from '~~/server/utils/dynamic-qr'
 import { ensureSavedQrTables, mapSavedQrRow } from '~~/server/utils/saved-qr'
 import type { H3Event } from 'h3'
-import { getCloudflareEnv } from '~~/server/utils/runtime-env'
+import { getCloudflareEnv, getRuntimeEnv } from '~~/server/utils/runtime-env'
 
 type NeonSql = ReturnType<typeof useNeon>
 
@@ -51,62 +51,24 @@ let creditTablesReady: Promise<void> | null = null
 
 export async function ensureCreditTables(sql: NeonSql) {
   creditTablesReady ??= (async () => {
-    await sql`
-      create table if not exists user_credit_balances (
-        user_id text primary key references "user"(id) on delete cascade,
-        balance integer not null default 0 check (balance >= 0),
-        updated_at timestamptz not null default now()
-      )
+    const rows = await sql`
+      select
+        to_regclass('public.user_credit_balances') as user_credit_balances,
+        to_regclass('public.purchased_pdfs') as purchased_pdfs,
+        to_regclass('public.credit_transactions') as credit_transactions
     `
-    await sql`
-      create table if not exists purchased_pdfs (
-        id text primary key,
-        user_id text not null references "user"(id) on delete cascade,
-        template_id text not null,
-        template_label text not null,
-        qr_title text not null,
-        storage_key text not null unique,
-        size_bytes integer not null check (size_bytes > 0),
-        created_at timestamptz not null default now()
-      )
-    `
-    await sql`create index if not exists purchased_pdfs_user_id_idx on purchased_pdfs(user_id, created_at desc)`
-    await sql`
-      create table if not exists credit_transactions (
-        id text primary key,
-        user_id text not null references "user"(id) on delete cascade,
-        type text not null check (type in ('credit_purchase', 'pdf_purchase', 'qr_feature_purchase')),
-        credits integer not null check (credits <> 0),
-        balance_after integer not null check (balance_after >= 0),
-        description text not null,
-        lemon_squeezy_order_id text unique,
-        lemon_squeezy_variant_id text,
-        pdf_purchase_id text references purchased_pdfs(id) on delete set null,
-        metadata jsonb not null default '{}'::jsonb,
-        created_at timestamptz not null default now()
-      )
-    `
-    await sql`
-      do $$
-      begin
-        if exists (
-          select 1
-          from pg_constraint
-          where conname = 'credit_transactions_type_check'
-            and conrelid = 'credit_transactions'::regclass
-        ) then
-          alter table credit_transactions drop constraint credit_transactions_type_check;
-        end if;
+    const readiness = rows[0] ?? {}
 
-        alter table credit_transactions
-          add constraint credit_transactions_type_check
-          check (type in ('credit_purchase', 'pdf_purchase', 'qr_feature_purchase'));
-      exception
-        when duplicate_object then null;
-      end $$;
-    `
-    await sql`create index if not exists credit_transactions_user_id_idx on credit_transactions(user_id, created_at desc)`
-  })()
+    if (!readiness.user_credit_balances || !readiness.purchased_pdfs || !readiness.credit_transactions) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Credit tables are not ready. Apply database/credits-schema.sql before serving requests.'
+      })
+    }
+  })().catch((error) => {
+    creditTablesReady = null
+    throw error
+  })
 
   return creditTablesReady
 }
@@ -115,10 +77,18 @@ export async function getCreditBalance(sql: NeonSql, userId: string) {
   await ensureCreditTables(sql)
 
   const rows = await sql`
-    insert into user_credit_balances (user_id, balance)
-    values (${userId}, 0)
-    on conflict (user_id) do update set user_id = excluded.user_id
-    returning balance
+    with inserted_balance as (
+      insert into user_credit_balances (user_id, balance)
+      values (${userId}, 0)
+      on conflict (user_id) do nothing
+      returning balance
+    )
+    select balance from inserted_balance
+    union all
+    select balance
+    from user_credit_balances
+    where user_id = ${userId}
+    limit 1
   `
 
   return getNumberField(rows[0]!, 'balance')
@@ -137,18 +107,18 @@ export function getCreditPack(packId: unknown): CreditPack {
   return pack
 }
 
-export function getCreditPackByVariantId(variantId: unknown) {
+export function getCreditPackByVariantId(event: H3Event, variantId: unknown) {
   const normalizedVariantId = String(variantId || '')
 
   if (!normalizedVariantId) {
     return null
   }
 
-  return creditPacks.find(pack => process.env[creditPackVariantEnvNames[pack.id]] === normalizedVariantId) ?? null
+  return creditPacks.find(pack => getRuntimeEnv(event, creditPackVariantEnvNames[pack.id]) === normalizedVariantId) ?? null
 }
 
-export function getCreditPackVariantId(pack: CreditPack) {
-  const variantId = process.env[creditPackVariantEnvNames[pack.id]]
+export function getCreditPackVariantId(event: H3Event, pack: CreditPack) {
+  const variantId = getRuntimeEnv(event, creditPackVariantEnvNames[pack.id])
 
   if (!variantId) {
     throw createError({
@@ -160,9 +130,9 @@ export function getCreditPackVariantId(pack: CreditPack) {
   return variantId
 }
 
-export function getLemonSqueezyConfig() {
-  const apiKey = process.env.LEMON_SQUEEZY_API_KEY || ''
-  const storeId = process.env.LEMON_SQUEEZY_STORE_ID || ''
+export function getLemonSqueezyConfig(event: H3Event) {
+  const apiKey = getRuntimeEnv(event, 'LEMON_SQUEEZY_API_KEY')
+  const storeId = getRuntimeEnv(event, 'LEMON_SQUEEZY_STORE_ID')
 
   if (!apiKey || !storeId) {
     throw createError({
@@ -174,7 +144,7 @@ export function getLemonSqueezyConfig() {
   return {
     apiKey,
     storeId,
-    testMode: process.env.LEMON_SQUEEZY_TEST_MODE === 'true'
+    testMode: getRuntimeEnv(event, 'LEMON_SQUEEZY_TEST_MODE') === 'true'
   }
 }
 
@@ -235,6 +205,7 @@ export async function listPurchasedPdfs(sql: NeonSql, userId: string): Promise<P
 
 export async function grantCreditsForOrder({
   credits,
+  event,
   lemonSqueezyOrderId,
   lemonSqueezyVariantId,
   metadata,
@@ -242,13 +213,14 @@ export async function grantCreditsForOrder({
   userId
 }: {
   credits: number
+  event: H3Event
   lemonSqueezyOrderId: string
   lemonSqueezyVariantId: string
   metadata: unknown
   pack: CreditPack
   userId: string
 }) {
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   await ensureCreditTables(sql)
 
@@ -298,7 +270,7 @@ export async function grantCreditsForOrder({
 }
 
 export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) {
-  const sql = useNeon()
+  const sql = useNeon(event)
   const bucket = getPdfBucket(event)
   await Promise.all([
     ensureCreditTables(sql),
@@ -312,6 +284,14 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
   const existingDynamicLink = input.dynamicLink?.existingLinkId
     ? await getPdfPurchaseDynamicQrLink(sql, input.userId, input.dynamicLink.existingLinkId)
     : null
+
+  if (input.dynamicLink?.existingLinkId && !existingDynamicLink) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Dynamic QR link not found.'
+    })
+  }
+
   const dynamicCreditsToCharge = input.dynamicLink
     ? getDynamicQrFeatureCost(input.dynamicLink, existingDynamicLink)
     : 0
@@ -329,8 +309,12 @@ export async function savePurchasedPdf(event: H3Event, input: PdfPurchaseInput) 
   const dynamicLinkId = input.dynamicLink?.existingLinkId || crypto.randomUUID()
   const purchasedQrId = crypto.randomUUID()
   const storageKey = `purchased-pdfs/${input.userId}/${pdfId}.pdf`
+  const sanitizedQrPayload = { ...input.qrPayload }
+
+  delete sanitizedQrPayload.dynamicLink
+
   const purchasedQrPayload: SavedQrPayload = {
-    ...input.qrPayload,
+    ...sanitizedQrPayload,
     ...(input.dynamicLink
       ? {
           dynamicLink: {

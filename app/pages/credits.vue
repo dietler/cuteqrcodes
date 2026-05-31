@@ -121,6 +121,10 @@ async function purchaseCredits(pack: CreditPack) {
 }
 
 function startCheckoutReturnRefresh() {
+  if (isProcessingCheckoutReturn.value) {
+    return
+  }
+
   stopCheckoutReturnRefresh()
 
   isProcessingCheckoutReturn.value = true
@@ -158,6 +162,12 @@ async function pollCheckoutReturnSummary(runId: number, attempt: number) {
   if (attempt >= checkoutPollingAttempts || !isCheckoutSuccess.value) {
     clearPendingCheckout()
     finishCheckoutReturnRefresh(runId)
+
+    return
+  }
+
+  if (attempt === 1) {
+    void pollCheckoutReturnSummary(runId, attempt + 1)
 
     return
   }

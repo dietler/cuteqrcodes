@@ -11,7 +11,7 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const sql = useNeon()
+  const sql = useNeon(event)
   const storageKey = await getPurchasedPdfStorageKey(sql, session.user.id, id)
 
   if (!storageKey) {

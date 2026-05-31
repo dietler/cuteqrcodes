@@ -19,6 +19,7 @@
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
+    "test:server": "bun test tests/server tests/unit",
     "typecheck": "nuxt typecheck",
     "test:e2e": "node ./node_modules/@playwright/test/cli.js test"
   },

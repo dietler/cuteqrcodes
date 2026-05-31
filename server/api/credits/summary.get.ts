@@ -4,7 +4,7 @@ import { getCreditBalance, listCreditTransactions, listPurchasedPdfs } from '~~/
 
 export default defineEventHandler(async (event): Promise<CreditsSummary> => {
   const session = await requireUserSession(event)
-  const sql = useNeon()
+  const sql = useNeon(event)
   const [balance, transactions, pdfs] = await Promise.all([
     getCreditBalance(sql, session.user.id),
     listCreditTransactions(sql, session.user.id),

@@ -12,7 +12,7 @@ type DynamicLinkBody = {
 export default defineEventHandler(async (event): Promise<DynamicQrLinkResponse> => {
   const session = await requireUserSession(event)
   const body = await readBody<DynamicLinkBody>(event)
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   return createOrUpdateDynamicQrLink(sql, {
     destinationUrl: normalizeDestinationUrl(body?.destinationUrl),

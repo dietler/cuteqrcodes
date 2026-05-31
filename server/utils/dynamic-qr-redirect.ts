@@ -3,7 +3,7 @@ import { getDynamicQrLinkBySlug, getDynamicQrScanSource, normalizeDynamicQrSlugF
 
 export async function handleDynamicQrRedirect(event: H3Event) {
   const slug = normalizeDynamicQrSlugForServer(getRouterParam(event, 'slug') || '')
-  const sql = useNeon()
+  const sql = useNeon(event)
   const link = await getDynamicQrLinkBySlug(sql, slug)
 
   if (!link) {

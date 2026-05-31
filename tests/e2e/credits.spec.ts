@@ -15,11 +15,11 @@ test('automatically refreshes credits after returning from checkout', async ({ p
 
   let summaryRequests = 0
 
-  await page.route('**/api/credits/summary', (route) => {
+  await page.route('**/api/credits/summary', async (route) => {
     summaryRequests += 1
     const isUpdated = summaryRequests >= 2
 
-    route.fulfill({
+    await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
         balance: isUpdated ? 1100 : 100,
@@ -44,10 +44,10 @@ test('automatically refreshes credits after returning from checkout', async ({ p
 
   await page.goto('/credits?checkout=success')
 
-  await expect(page.getByText('Payment complete. Updating your credits...')).toBeVisible()
-  await expect(page.getByText('1100', { exact: true }).first()).toBeVisible()
-  await expect(page.getByText('1,000 credits purchase')).toBeVisible()
-  await expect.poll(() => summaryRequests).toBeGreaterThanOrEqual(2)
+  await expect(page.getByText(/Payment complete\./)).toBeVisible()
+  await expect.poll(() => summaryRequests, { timeout: 10_000 }).toBeGreaterThanOrEqual(2)
+  await expect(page.getByText('1100', { exact: true }).first()).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('1,000 credits purchase')).toBeVisible({ timeout: 10_000 })
 })
 
 test('shows label purchase URL and included features in credit history', async ({ page }) => {

@@ -96,6 +96,7 @@ type CenterIconCategory = {
 
 type BorderLine = {
   inset: number
+  opacity?: number
   strokeWidth: number
   wave?: BorderWave
 }
@@ -111,6 +112,8 @@ type BorderStyle = {
   value: BorderValue
   lines: BorderLine[]
   contentGap: number
+  circleLines?: BorderLine[]
+  circleOuterOffset?: number
   modulePattern?: ModuleBorderPattern
   moduleRows?: ModuleBorderRow[]
 }
@@ -572,6 +575,13 @@ const rainbowModuleBorderRows: ModuleBorderRow[] = [
   { offset: 4, opacity: 0.5 },
   { offset: 5, opacity: 0.25 }
 ]
+const circleFadeBorderOuterOffset = 3
+const circleFadeBorderLines: BorderLine[] = [
+  { inset: circleFadeBorderOuterOffset + 0.25, opacity: 1, strokeWidth: 0.5 },
+  { inset: circleFadeBorderOuterOffset - 0.75, opacity: 0.75, strokeWidth: 0.5 },
+  { inset: circleFadeBorderOuterOffset - 1.75, opacity: 0.5, strokeWidth: 0.5 },
+  { inset: circleFadeBorderOuterOffset - 2.75, opacity: 0.25, strokeWidth: 0.5 }
+]
 const qrFadeModuleBorderOuterRowCount = getModuleBorderOuterRowCount(qrFadeModuleBorderRows)
 const rainbowModuleBorderOuterRowCount = getModuleBorderOuterRowCount(rainbowModuleBorderRows)
 const moduleBorderMaximumRunLength = 4
@@ -626,6 +636,8 @@ const borderStyles: BorderStyle[] = [
     label: 'Fade',
     value: 'rainbow',
     lines: [{ inset: rainbowModuleBorderOuterRowCount - 0.5, strokeWidth: 1 }],
+    circleLines: circleFadeBorderLines,
+    circleOuterOffset: circleFadeBorderOuterOffset,
     contentGap: 1,
     modulePattern: 'solid',
     moduleRows: rainbowModuleBorderRows
@@ -640,7 +652,7 @@ const borderStyles: BorderStyle[] = [
   }
 ]
 const selectedBorder = ref<BorderValue>('none')
-const circleExcludedBorderValues = new Set<BorderValue>(['random-squares', 'rainbow'])
+const circleExcludedBorderValues = new Set<BorderValue>(['random-squares'])
 
 const tailwindColors: TailwindColor[] = [
   { name: 'Red', bgClass: 'bg-red-400', fillClass: 'fill-red-400', strokeClass: 'stroke-red-400', textClass: 'text-red-400' },
@@ -679,14 +691,14 @@ const dynamicLinkRedirectUrl = computed(() => createDynamicQrRedirectUrl(normali
 const qrContent = computed(() => hasDynamicQrFeature.value ? dynamicLinkRedirectUrl.value : qrStore.content)
 const dynamicLinkFeatureDescription = computed(() => {
   if (useDynamicUrl.value && trackScanStatistics.value) {
-    return 'Your QR code will scan to this redirect link. We will send visitors to the URL above, let you update that destination later, and record scan time plus IP-based location.'
+    return 'Your QR code will scan to this redirect link. We will send visitors to the URL above, let you update that destination later, and record scan time plus approximate location.'
   }
 
   if (useDynamicUrl.value) {
     return 'Your QR code will scan to this redirect link. We will send visitors to the URL above, and you will be able to update that destination later.'
   }
 
-  return 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus IP-based location.'
+  return 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus approximate location.'
 })
 const dynamicLinkCreditMessage = computed(() => {
   const credits = dynamicLinkCreditCost.value
@@ -835,12 +847,15 @@ const selectedBorderStyle = computed(() => {
 
   return borderStyles.find(border => border.value === selectedBorder.value) ?? noBorderStyle
 })
-const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
-const isModulePatternBorder = computed(() => Boolean(selectedBorderStyle.value.modulePattern))
+const selectedBorderRenderLines = computed(() => isCircleShape.value && selectedBorderStyle.value.circleLines ? selectedBorderStyle.value.circleLines : selectedBorderStyle.value.lines)
+const hasCircleLineOverride = computed(() => isCircleShape.value && Boolean(selectedBorderStyle.value.circleLines))
+const hasBorder = computed(() => selectedBorderRenderLines.value.length > 0)
+const isModulePatternBorder = computed(() => Boolean(selectedBorderStyle.value.modulePattern) && !hasCircleLineOverride.value)
 const hasModulePatternBorder = computed(() => hasBorder.value && isModulePatternBorder.value)
 const selectedModuleBorderPattern = computed(() => selectedBorderStyle.value.modulePattern ?? 'qr')
 const selectedModuleBorderRows = computed(() => getModuleBorderRows(selectedBorderStyle.value))
 const selectedModuleBorderOuterRowCount = computed(() => getModuleBorderOuterRowCount(selectedModuleBorderRows.value))
+const selectedCircleBorderOuterOffset = computed(() => hasCircleLineOverride.value ? selectedBorderStyle.value.circleOuterOffset ?? 0 : 0)
 const hasLabelLogo = computed(() => labelLogoDataUrl.value.length > 0)
 const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
   bottom: circleLabelBottom.value.trim(),
@@ -866,7 +881,7 @@ const rectangleLabelTextClass = computed(() => selectedLabelTextColorName.value 
 const rectangleLabelTextFillPaint = computed(() => selectedLabelTextColorName.value ? null : textFillPaint.value)
 const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value && !hasModulePatternBorder.value)
 const hasCircleInset = computed(() => isCircleShape.value)
-const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(getBorderLineInnerEdge)) : 0)
+const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderRenderLines.value.map(getBorderLineInnerEdge)) : 0)
 const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
 const labelIsTop = computed(() => hasLabelText.value && selectedLabelPosition.value === 'top')
 const labelIsBottom = computed(() => hasLabelText.value && selectedLabelPosition.value === 'bottom')
@@ -875,7 +890,7 @@ const labelIsRight = computed(() => hasLabelText.value && selectedLabelPosition.
 const labelIsSide = computed(() => labelIsLeft.value || labelIsRight.value)
 const borderContentInset = computed(() => {
   if (hasCircleInset.value) {
-    const circleCornerInset = qrSvgSize.value * circleBorderCornerInsetRatio
+    const circleCornerInset = qrSvgSize.value * circleBorderCornerInsetRatio + selectedCircleBorderOuterOffset.value
     const inset = Math.max(
       isModulePatternBorder.value ? circleCornerInset + selectedModuleBorderOuterRowCount.value + Math.SQRT1_2 : circleCornerInset,
       circleBorderInnerEdge.value + selectedBorderStyle.value.contentGap
@@ -1153,12 +1168,12 @@ const labelLogoY = computed(() => {
 
   return labelStackStartY.value
 })
-const selectedBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
+const selectedBorderLines = computed(() => selectedBorderRenderLines.value.map(line => ({
   ...line,
   height: outputSvgHeight.value - line.inset * 2,
   width: outputSvgWidth.value - line.inset * 2
 })))
-const selectedCircleBorderLines = computed(() => selectedBorderStyle.value.lines.map(line => ({
+const selectedCircleBorderLines = computed(() => selectedBorderRenderLines.value.map(line => ({
   ...line,
   cx: qrOutputX.value + qrOutputSize.value / 2,
   cy: qrOutputY.value + qrOutputSize.value / 2,
@@ -2573,6 +2588,14 @@ function getModuleBorderPreviewSquares(border: BorderStyle) {
   return createModuleBorderPreviewSquares(border, isCircleShape.value)
 }
 
+function hasModuleBorderPreview(border: BorderStyle) {
+  return Boolean(border.modulePattern) && !(isCircleShape.value && border.circleLines)
+}
+
+function getBorderPreviewLines(border: BorderStyle) {
+  return isCircleShape.value && border.circleLines ? border.circleLines : border.lines
+}
+
 function createModuleBorderPreviewSquares(border: BorderStyle, isCircle: boolean) {
   const modules = createModuleBorderPreviewModules(8)
   const pattern = border.modulePattern ?? 'qr'
@@ -2843,27 +2866,37 @@ function getCircleBorderRadius(line: BorderLine) {
   return outputCircleRadius.value - line.inset - waveAmplitude
 }
 
-function getPreviewPath(line: BorderLine) {
+function getPreviewPath(line: BorderLine, border?: BorderStyle) {
+  const inset = getPreviewLineInset(line, border)
+
   if (isWavyBorderLine(line)) {
     const amplitude = line.wave.amplitude * 1.5
 
     if (isCircleShape.value) {
-      return createWavyCirclePreviewPath(line, amplitude)
+      return createWavyCirclePreviewPath({ ...line, inset }, amplitude)
     }
 
-    return createWavyRectanglePreviewPath(line, amplitude)
+    return createWavyRectanglePreviewPath({ ...line, inset }, amplitude)
   }
 
   if (isCircleShape.value) {
-    const start = 4 + line.inset * 2
+    const start = 4 + inset * 2
     const radius = 24 - start
 
     return `M${start} 24A${radius} ${radius} 0 0 1 24 ${start}`
   }
 
-  const start = 4 + line.inset * 2
+  const start = 4 + inset * 2
 
   return `M${start} 24V${start}H24`
+}
+
+function getPreviewLineInset(line: BorderLine, border?: BorderStyle) {
+  if (isCircleShape.value && border?.circleLines?.includes(line)) {
+    return line.inset - Math.max(0, (border.circleOuterOffset ?? 0) - 1)
+  }
+
+  return line.inset
 }
 
 function createWavyRectanglePreviewPath(line: BorderLine & { wave: BorderWave }, amplitude: number) {
@@ -5822,7 +5855,7 @@ onUnmounted(() => {
                 viewBox="0 0 28 28"
                 xmlns="http://www.w3.org/2000/svg"
               >
-                <template v-if="border.modulePattern">
+                <template v-if="hasModuleBorderPreview(border)">
                   <rect
                     v-for="square in getModuleBorderPreviewSquares(border)"
                     :key="`preview-${square.key}`"
@@ -5837,12 +5870,13 @@ onUnmounted(() => {
                 </template>
                 <template v-else>
                   <path
-                    v-for="line in border.lines"
+                    v-for="line in getBorderPreviewLines(border)"
                     :key="`${border.value}-${line.inset}`"
-                    :d="getPreviewPath(line)"
+                    :d="getPreviewPath(line, border)"
                     stroke="currentColor"
                     :stroke-linecap="getPreviewStrokeLineCap(line)"
                     :stroke-linejoin="getBorderStrokeLineJoin(line) ?? 'miter'"
+                    :stroke-opacity="line.opacity"
                     :stroke-width="getPreviewStrokeWidth(line)"
                   />
                 </template>
@@ -6021,6 +6055,7 @@ onUnmounted(() => {
                       :stroke="borderStrokePaint ?? undefined"
                       :stroke-linecap="getBorderStrokeLineCap(line)"
                       :stroke-linejoin="getBorderStrokeLineJoin(line)"
+                      :stroke-opacity="line.opacity"
                       :stroke-width="line.strokeWidth"
                     />
                     <circle
@@ -6032,6 +6067,7 @@ onUnmounted(() => {
                       :r="line.radius"
                       :class="borderStrokePaint ? undefined : qrStrokeClass"
                       :stroke="borderStrokePaint ?? undefined"
+                      :stroke-opacity="line.opacity"
                       :stroke-width="line.strokeWidth"
                     />
                   </template>
@@ -6251,6 +6287,7 @@ onUnmounted(() => {
                       :stroke="borderStrokePaint ?? undefined"
                       :stroke-linecap="getBorderStrokeLineCap(line)"
                       :stroke-linejoin="getBorderStrokeLineJoin(line)"
+                      :stroke-opacity="line.opacity"
                       :stroke-width="line.strokeWidth"
                     />
                     <rect
@@ -6263,6 +6300,7 @@ onUnmounted(() => {
                       :y="line.inset"
                       :class="borderStrokePaint ? undefined : qrStrokeClass"
                       :stroke="borderStrokePaint ?? undefined"
+                      :stroke-opacity="line.opacity"
                       :stroke-width="line.strokeWidth"
                     />
                   </template>

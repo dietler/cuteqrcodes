@@ -14,7 +14,7 @@ export default defineEventHandler(async (event): Promise<DynamicQrStats> => {
     })
   }
 
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   await ensureDynamicQrTables(sql)
 

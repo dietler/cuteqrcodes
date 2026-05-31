@@ -5,6 +5,7 @@ import type { H3Event } from 'h3'
 type NeonSql = ReturnType<typeof useNeon>
 
 type DbRow = Record<string, unknown>
+const dynamicQrScanRetentionDays = 395
 
 type DynamicQrScanSource = {
   city: string | null
@@ -31,37 +32,23 @@ let dynamicQrTablesReady: Promise<void> | null = null
 
 export async function ensureDynamicQrTables(sql: NeonSql) {
   dynamicQrTablesReady ??= (async () => {
-    await sql`
-      create table if not exists dynamic_qr_links (
-        id text primary key,
-        user_id text not null references "user"(id) on delete cascade,
-        slug text not null unique,
-        destination_url text not null,
-        is_dynamic boolean not null default false,
-        tracks_statistics boolean not null default false,
-        created_at timestamptz not null default now(),
-        updated_at timestamptz not null default now()
-      )
+    const rows = await sql`
+      select
+        to_regclass('public.dynamic_qr_links') as dynamic_qr_links,
+        to_regclass('public.dynamic_qr_scans') as dynamic_qr_scans
     `
-    await sql`create index if not exists dynamic_qr_links_user_id_idx on dynamic_qr_links(user_id, created_at desc)`
-    await sql`
-      create table if not exists dynamic_qr_scans (
-        id text primary key,
-        link_id text not null references dynamic_qr_links(id) on delete cascade,
-        ip_address text,
-        country text,
-        region text,
-        city text,
-        latitude text,
-        longitude text,
-        timezone text,
-        user_agent text,
-        referrer text,
-        scanned_at timestamptz not null default now()
-      )
-    `
-    await sql`create index if not exists dynamic_qr_scans_link_id_idx on dynamic_qr_scans(link_id, scanned_at desc)`
-  })()
+    const readiness = rows[0] ?? {}
+
+    if (!readiness.dynamic_qr_links || !readiness.dynamic_qr_scans) {
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Dynamic QR tables are not ready. Apply database/dynamic-qr-schema.sql before serving requests.'
+      })
+    }
+  })().catch((error) => {
+    dynamicQrTablesReady = null
+    throw error
+  })
 
   return dynamicQrTablesReady
 }
@@ -133,6 +120,14 @@ export async function createOrUpdateDynamicQrLink(sql: NeonSql, input: DynamicQr
   const existingLink = input.existingLinkId
     ? await getEditableDynamicQrLink(sql, input.userId, input.existingLinkId)
     : null
+
+  if (input.existingLinkId && !existingLink) {
+    throw createError({
+      statusCode: 404,
+      statusMessage: 'Dynamic QR link not found.'
+    })
+  }
+
   const creditsToCharge = getDynamicQrFeatureCost(input, existingLink)
 
   if (existingLink) {
@@ -186,6 +181,11 @@ export async function recordDynamicQrScan(sql: NeonSql, linkId: string, source: 
       ${source.referrer}
     )
   `
+  await sql`
+    delete from dynamic_qr_scans
+    where link_id = ${linkId}
+      and scanned_at < now() - (${dynamicQrScanRetentionDays} * interval '1 day')
+  `
 }
 
 export function getDynamicQrScanSource(event: H3Event): DynamicQrScanSource {
@@ -194,7 +194,7 @@ export function getDynamicQrScanSource(event: H3Event): DynamicQrScanSource {
   return {
     city: getNullableRequestField(cf?.city),
     country: getNullableRequestField(getRequestHeader(event, 'cf-ipcountry') || cf?.country),
-    ipAddress: getClientIpAddress(event),
+    ipAddress: null,
     latitude: getNullableRequestField(cf?.latitude),
     longitude: getNullableRequestField(cf?.longitude),
     region: getNullableRequestField(cf?.region),
@@ -398,16 +398,6 @@ export function mapDynamicQrLinkRow(row: DbRow): DynamicQrLinkPayload {
     trackStatistics: getBooleanField(row, 'tracks_statistics'),
     useDynamicUrl: getBooleanField(row, 'is_dynamic')
   }
-}
-
-function getClientIpAddress(event: H3Event) {
-  const forwardedFor = getRequestHeader(event, 'x-forwarded-for')?.split(',')[0]?.trim()
-
-  return getNullableRequestField(
-    getRequestHeader(event, 'cf-connecting-ip')
-    || forwardedFor
-    || getRequestHeader(event, 'x-real-ip')
-  )
 }
 
 function getCloudflareRequestCf(event: H3Event) {

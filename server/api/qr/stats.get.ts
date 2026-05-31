@@ -17,7 +17,7 @@ export default defineEventHandler(async (event): Promise<DynamicQrAggregateStats
   const session = await requireUserSession(event)
   const range = normalizeStatsRange(getQuery(event).range)
   const rangeHours = statsRangeHours[range]
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   await Promise.all([
     ensureDynamicQrTables(sql),

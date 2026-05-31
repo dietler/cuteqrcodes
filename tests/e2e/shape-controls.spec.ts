@@ -86,10 +86,10 @@ test('wraps style selectors on desktop while preserving mobile scrolling', async
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Circle' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await expect(page.getByTestId('border-style-selector').locator('[role="radio"]')).toHaveCount(6)
+  await expect(page.getByTestId('border-style-selector').locator('[role="radio"]')).toHaveCount(7)
   expect(await page.getByTestId('border-style-selector').locator('[role="radio"]').evaluateAll(buttons =>
     buttons.map(button => button.textContent?.trim())
-  )).toEqual(['None', 'Small', 'Medium', 'Large', 'Double', 'Wavy'])
+  )).toEqual(['None', 'Small', 'Medium', 'Large', 'Double', 'Wavy', 'Fade'])
 
   await page.setViewportSize({ width: 320, height: 720 })
 
@@ -333,7 +333,7 @@ test('draws QR-like fade border rows around the full QR composition', async ({ p
   await page.getByRole('radio', { name: 'Circle' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
   await expect(page.getByRole('radio', { name: 'QR Fade' })).toHaveCount(0)
-  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toBeVisible()
   await expect(page.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.locator('[data-testid="qr-module-border"]')).toHaveCount(0)
 
@@ -390,10 +390,29 @@ test('draws solid rainbow border rows around the full QR composition', async ({ 
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Circle' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByRole('radio', { name: 'QR Fade' })).toHaveCount(0)
-  await expect(page.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true')
   await expect(page.locator('[data-testid="qr-module-border"]')).toHaveCount(0)
+
+  const circlePreviewState = await getCircleFadePreviewState(page)
+
+  expect(circlePreviewState).toEqual({
+    opacities: [0.25, 0.5, 0.75, 1],
+    pathCount: 4,
+    rectCount: 0
+  })
+
+  const circleState = await getCircleFadeBorderState(page)
+
+  expect(circleState.moduleBorderCount).toBe(0)
+  expect(circleState.rectangleBorderCount).toBe(0)
+  expect(circleState.strokeWidths).toEqual([0.5])
+  expect(circleState.opacities).toEqual([1, 0.75, 0.5, 0.25])
+  expect(circleState.outerEdgeRadii[0]).toBeCloseTo(circleState.qrCornerDistance, 4)
+  expect(circleState.outerEdgeRadii[1] - circleState.outerEdgeRadii[0]).toBeCloseTo(1, 4)
+  expect(circleState.outerEdgeRadii[2] - circleState.outerEdgeRadii[1]).toBeCloseTo(1, 4)
+  expect(circleState.outerEdgeRadii[3] - circleState.outerEdgeRadii[2]).toBeCloseTo(1, 4)
+  expect(circleState.bufferAmount).toBeCloseTo(circleState.expectedBufferAmount, 4)
 })
 
 test('rounds the preview frame and background in circle mode', async ({ page }) => {
@@ -1067,6 +1086,61 @@ async function getModuleBorderPreviewState(page: Page, borderLabel = 'QR Fade') 
       })).sort((first, second) => first.offset - second.offset)
     }
   }, borderLabel)
+}
+
+async function getCircleFadePreviewState(page: Page) {
+  return page.evaluate(() => {
+    const button = Array.from(document.querySelectorAll('[role="radio"]'))
+      .find(element => element.getAttribute('aria-label') === 'Fade') as HTMLElement | undefined
+
+    if (!button) {
+      throw new Error('Missing Fade preview.')
+    }
+
+    const paths = Array.from(button.querySelectorAll('path')) as SVGPathElement[]
+
+    return {
+      opacities: paths
+        .map(path => Number(path.getAttribute('stroke-opacity') ?? '1'))
+        .sort((first, second) => first - second),
+      pathCount: paths.length,
+      rectCount: button.querySelectorAll('rect').length
+    }
+  })
+}
+
+async function getCircleFadeBorderState(page: Page) {
+  return page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
+    const buffer = svg?.querySelector('[data-testid="qr-circle-border-buffer"]') as SVGRectElement | null
+    const circles = Array.from(svg?.querySelectorAll('circle[data-testid^="qr-circle-border-"]') ?? []) as SVGCircleElement[]
+
+    if (!svg || !qrSvg || !buffer || circles.length === 0) {
+      throw new Error('Missing generated circular Fade border.')
+    }
+
+    const sortedCircles = circles
+      .map(circle => ({
+        opacity: Number(circle.getAttribute('stroke-opacity') ?? '1'),
+        outerEdgeRadius: Number(circle.getAttribute('r')) + Number(circle.getAttribute('stroke-width')) / 2,
+        strokeWidth: Number(circle.getAttribute('stroke-width'))
+      }))
+      .sort((first, second) => first.outerEdgeRadius - second.outerEdgeRadius)
+    const qrSize = Number(qrSvg.getAttribute('width'))
+    const qrX = Number(qrSvg.getAttribute('x'))
+
+    return {
+      bufferAmount: qrX - Number(buffer.getAttribute('x')),
+      expectedBufferAmount: Math.max(0.33, qrSize * 0.012),
+      moduleBorderCount: svg.querySelectorAll('[data-testid="qr-module-border"]').length,
+      opacities: sortedCircles.map(circle => circle.opacity),
+      outerEdgeRadii: sortedCircles.map(circle => circle.outerEdgeRadius),
+      qrCornerDistance: Math.hypot(qrSize / 2, qrSize / 2),
+      rectangleBorderCount: svg.querySelectorAll('[data-testid^="qr-rectangle-border-"]').length,
+      strokeWidths: Array.from(new Set(sortedCircles.map(circle => circle.strokeWidth))).sort((first, second) => first - second)
+    }
+  })
 }
 
 async function getModuleBorderState(page: Page) {

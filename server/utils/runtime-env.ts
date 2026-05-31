@@ -26,17 +26,3 @@ export function getRuntimeEnv(event: H3Event, key: string) {
 
   return process.env[key] || ''
 }
-
-export function populateProcessEnvFromRuntime(event: H3Event) {
-  const cloudflareEnv = getCloudflareEnv(event)
-
-  if (!cloudflareEnv) {
-    return
-  }
-
-  for (const [key, value] of Object.entries(cloudflareEnv)) {
-    if (typeof value === 'string' && typeof process.env[key] === 'undefined') {
-      process.env[key] = value
-    }
-  }
-}

@@ -1,7 +1,8 @@
 import { labelTemplates } from '~~/app/utils/label-print'
 import { savePurchasedPdf } from '~~/server/utils/credits'
 import { normalizeDestinationUrl, normalizeDynamicQrSlugForServer, type DynamicQrLinkInput } from '~~/server/utils/dynamic-qr'
-import { normalizeSavedQrPayload } from '~~/server/utils/saved-qr'
+import { assertContentLengthLimit } from '~~/server/utils/request-limits'
+import { normalizePreviewDimension, normalizePreviewSvg, normalizeSavedQrPayload } from '~~/server/utils/saved-qr'
 
 type PdfPurchaseBody = {
   dynamicLink?: {
@@ -22,28 +23,23 @@ type PdfPurchaseBody = {
 
 export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event)
+  assertContentLengthLimit(event, 15_000_000, 'PDF purchase request is too large.')
+
   const body = await readBody<PdfPurchaseBody>(event)
   const templateId = typeof body?.templateId === 'string' ? body.templateId : ''
   const template = labelTemplates.find(item => item.id === templateId)
   const qrTitle = normalizeQrTitle(body?.qrTitle)
   const pdfBase64 = typeof body?.pdfBase64 === 'string' ? body.pdfBase64 : ''
   const dynamicLink = normalizePurchaseDynamicLink(body?.dynamicLink, session.user.id)
-  const previewSvg = typeof body?.previewSvg === 'string' ? body.previewSvg : ''
-  const previewWidth = typeof body?.previewWidth === 'number' ? body.previewWidth : 0
-  const previewHeight = typeof body?.previewHeight === 'number' ? body.previewHeight : 0
+  const previewSvg = normalizePreviewSvg(body?.previewSvg)
+  const previewWidth = normalizePreviewDimension(body?.previewWidth, 'QR code preview width')
+  const previewHeight = normalizePreviewDimension(body?.previewHeight, 'QR code preview height')
   const qrPayload = normalizeSavedQrPayload(body?.qrPayload)
 
   if (!template) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Label template is required.'
-    })
-  }
-
-  if (!previewSvg || !previewWidth || !previewHeight) {
-    throw createError({
-      statusCode: 400,
-      statusMessage: 'QR code preview is invalid.'
     })
   }
 
@@ -96,6 +92,13 @@ function decodePdfBase64(pdfBase64: string) {
     throw createError({
       statusCode: 400,
       statusMessage: 'PDF data is required.'
+    })
+  }
+
+  if (pdfBase64.length > 14_000_000) {
+    throw createError({
+      statusCode: 413,
+      statusMessage: 'PDF is too large.'
     })
   }
 

@@ -18,9 +18,9 @@ export default defineEventHandler(async (event) => {
   const session = await requireUserSession(event)
   const body = await readBody<CheckoutBody>(event)
   const pack = getCreditPack(body?.packId)
-  const variantId = getCreditPackVariantId(pack)
+  const variantId = getCreditPackVariantId(event, pack)
   const variantNumber = Number(variantId)
-  const config = getLemonSqueezyConfig()
+  const config = getLemonSqueezyConfig(event)
   const origin = getRequestURL(event).origin
   const returnPath = typeof body?.returnTo === 'string' && body.returnTo.startsWith('/') ? body.returnTo : '/credits'
   const redirectUrl = `${origin}/credits?checkout=success&returnTo=${encodeURIComponent(returnPath)}`

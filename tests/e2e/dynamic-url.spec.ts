@@ -3,7 +3,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test'
 const labelPrintPayloadStorageKey = 'cuteqrcodes.labelPrintPayload'
 const destinationUrl = 'https://example.com/menu'
 const dynamicRedirectUrl = 'https://qrcodesonlabels.com/r/menu-special'
-const trackStatsOnlyDescription = 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus IP-based location.'
+const trackStatsOnlyDescription = 'Your QR code will scan to this redirect link. We will send visitors to the URL above and record scan time plus approximate location.'
 
 type DynamicLinkRequest = {
   destinationUrl?: string

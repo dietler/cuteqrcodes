@@ -1,5 +1,5 @@
 import type { DynamicQrLinkPayload } from '~~/app/utils/dynamic-qr'
-import { ensureDynamicQrTables } from '~~/server/utils/dynamic-qr'
+import { ensureDynamicQrTables, mapDynamicQrLinkRow } from '~~/server/utils/dynamic-qr'
 import { ensureSavedQrTables, mapSavedQrRow, normalizeTags } from '~~/server/utils/saved-qr'
 
 type UpdateSavedQrBody = {
@@ -20,10 +20,10 @@ export default defineEventHandler(async (event) => {
   }
 
   const tags = Object.hasOwn(body || {}, 'tags') ? normalizeTags(body?.tags) : undefined
-  const dynamicLink = Object.hasOwn(body || {}, 'dynamicLink')
+  let dynamicLink = Object.hasOwn(body || {}, 'dynamicLink')
     ? normalizeDynamicLink(body?.dynamicLink)
     : undefined
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   await Promise.all([
     ensureDynamicQrTables(sql),
@@ -47,7 +47,7 @@ export default defineEventHandler(async (event) => {
 
   if (dynamicLink) {
     const linkRows = await sql`
-      select id
+      select id, user_id, slug, destination_url, is_dynamic, tracks_statistics, created_at, updated_at
       from dynamic_qr_links
       where id = ${dynamicLink.id}
         and user_id = ${session.user.id}
@@ -60,6 +60,8 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'Dynamic QR link not found.'
       })
     }
+
+    dynamicLink = mapDynamicQrLinkRow(linkRows[0]!)
   }
 
   if (typeof tags !== 'undefined' && dynamicLink) {
@@ -125,19 +127,19 @@ export default defineEventHandler(async (event) => {
 function normalizeDynamicLink(value: unknown): DynamicQrLinkPayload {
   const link = value as Partial<DynamicQrLinkPayload> | undefined
 
-  if (!link
-    || typeof link.destinationUrl !== 'string'
-    || typeof link.id !== 'string'
-    || typeof link.redirectUrl !== 'string'
-    || typeof link.slug !== 'string'
-    || typeof link.trackStatistics !== 'boolean'
-    || typeof link.useDynamicUrl !== 'boolean'
-  ) {
+  if (!link || typeof link.id !== 'string' || !link.id) {
     throw createError({
       statusCode: 400,
       statusMessage: 'Dynamic QR link is invalid.'
     })
   }
 
-  return link as DynamicQrLinkPayload
+  return {
+    destinationUrl: '',
+    id: link.id,
+    redirectUrl: '',
+    slug: '',
+    trackStatistics: false,
+    useDynamicUrl: false
+  }
 }

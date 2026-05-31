@@ -4,7 +4,7 @@ import { ensureSavedQrTables, mapSavedQrRow } from '~~/server/utils/saved-qr'
 
 export default defineEventHandler(async (event): Promise<SavedQrSummary> => {
   const session = await requireUserSession(event)
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   await Promise.all([
     ensureDynamicQrTables(sql),

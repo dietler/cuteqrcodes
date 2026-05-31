@@ -6,7 +6,7 @@ export default defineEventHandler(async (event): Promise<DynamicQrSlugAvailabili
   const query = getQuery(event)
   const slug = normalizeDynamicQrSlugForServer(query.slug)
   const existingLinkId = typeof query.existingLinkId === 'string' ? query.existingLinkId : ''
-  const sql = useNeon()
+  const sql = useNeon(event)
 
   await ensureDynamicQrTables(sql)
 

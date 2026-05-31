@@ -1,12 +1,13 @@
 import { neon } from '@neondatabase/serverless'
-import { createError } from 'h3'
+import { createError, type H3Event } from 'h3'
+import { getRuntimeEnv } from '~~/server/utils/runtime-env'
 
-export function getDatabaseUrl() {
-  return process.env.DATABASE_URL || ''
+export function getDatabaseUrl(event?: H3Event) {
+  return event ? getRuntimeEnv(event, 'DATABASE_URL') : process.env.DATABASE_URL || ''
 }
 
-export function requireDatabaseUrl() {
-  const databaseUrl = getDatabaseUrl()
+export function requireDatabaseUrl(event?: H3Event) {
+  const databaseUrl = getDatabaseUrl(event)
 
   if (!databaseUrl) {
     throw createError({
@@ -18,6 +19,6 @@ export function requireDatabaseUrl() {
   return databaseUrl
 }
 
-export function useNeon() {
-  return neon(requireDatabaseUrl())
+export function useNeon(event?: H3Event) {
+  return neon(requireDatabaseUrl(event))
 }
