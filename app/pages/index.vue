@@ -11,7 +11,7 @@ import { embedUsedSvgFontFaces, inlineComputedSvgStyles, inlineSvgImages } from 
 
 type QrTool = 'shape' | 'colors' | 'gradient' | 'label' | 'labelColors' | 'icon' | 'border'
 type QrShape = 'rectangle' | 'circle'
-type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double' | 'wavy'
+type BorderValue = 'none' | 'hairline' | 'thin' | 'thick' | 'double' | 'wavy' | 'random-squares' | 'rainbow'
 type CenterIconValue = string
 type AdditionalTextPlacement = 'above' | 'below'
 type LabelPosition = 'top' | 'left' | 'right' | 'bottom'
@@ -111,6 +111,24 @@ type BorderStyle = {
   value: BorderValue
   lines: BorderLine[]
   contentGap: number
+  modulePattern?: ModuleBorderPattern
+  moduleRows?: ModuleBorderRow[]
+}
+
+type ModuleBorderPattern = 'qr' | 'solid'
+
+type ModuleBorderRow = {
+  offset: number
+  opacity: number
+}
+
+type ModuleBorderSquare = {
+  key: string
+  opacity: number
+  row: number
+  size: number
+  x: number
+  y: number
 }
 
 type GradientBox = {
@@ -543,8 +561,28 @@ const orderedSampleQrImages: SampleQrImage[] = Object.entries(sampleQrImageModul
   })
 const sampleQrImages = ref<SampleQrImage[]>([])
 
+const qrFadeModuleBorderRows: ModuleBorderRow[] = [
+  { offset: 2, opacity: 0.75 },
+  { offset: 3, opacity: 0.5 },
+  { offset: 4, opacity: 0.25 }
+]
+const rainbowModuleBorderRows: ModuleBorderRow[] = [
+  { offset: 2, opacity: 1 },
+  { offset: 3, opacity: 0.75 },
+  { offset: 4, opacity: 0.5 },
+  { offset: 5, opacity: 0.25 }
+]
+const qrFadeModuleBorderOuterRowCount = getModuleBorderOuterRowCount(qrFadeModuleBorderRows)
+const rainbowModuleBorderOuterRowCount = getModuleBorderOuterRowCount(rainbowModuleBorderRows)
+const moduleBorderMaximumRunLength = 4
+const moduleBorderMaskByOffset: Record<number, number> = {
+  2: 7,
+  3: 6,
+  4: 4
+}
+
 const noBorderStyle: BorderStyle = {
-  label: 'No border',
+  label: 'None',
   value: 'none',
   lines: [],
   contentGap: 0
@@ -552,25 +590,25 @@ const noBorderStyle: BorderStyle = {
 const borderStyles: BorderStyle[] = [
   noBorderStyle,
   {
-    label: 'Hairline border',
+    label: 'Small',
     value: 'hairline',
     lines: [{ inset: 0.25, strokeWidth: 0.5 }],
     contentGap: 1
   },
   {
-    label: 'Thin border',
+    label: 'Medium',
     value: 'thin',
     lines: [{ inset: 0.5, strokeWidth: 1 }],
     contentGap: 1
   },
   {
-    label: 'Thick border',
+    label: 'Large',
     value: 'thick',
     lines: [{ inset: 1, strokeWidth: 2 }],
     contentGap: 1
   },
   {
-    label: 'Double border',
+    label: 'Double',
     value: 'double',
     lines: [
       { inset: 0.5, strokeWidth: 1 },
@@ -579,13 +617,30 @@ const borderStyles: BorderStyle[] = [
     contentGap: 1
   },
   {
-    label: 'Wavy border',
+    label: 'Wavy',
     value: 'wavy',
     lines: [{ inset: 0.75, strokeWidth: 0.5, wave: { amplitude: 0.425, cornerRadius: 2.4, length: 4 } }],
     contentGap: 1.25
+  },
+  {
+    label: 'Fade',
+    value: 'rainbow',
+    lines: [{ inset: rainbowModuleBorderOuterRowCount - 0.5, strokeWidth: 1 }],
+    contentGap: 1,
+    modulePattern: 'solid',
+    moduleRows: rainbowModuleBorderRows
+  },
+  {
+    label: 'QR Fade',
+    value: 'random-squares',
+    lines: [{ inset: qrFadeModuleBorderOuterRowCount - 0.5, strokeWidth: 1 }],
+    contentGap: 1,
+    modulePattern: 'qr',
+    moduleRows: qrFadeModuleBorderRows
   }
 ]
 const selectedBorder = ref<BorderValue>('none')
+const circleExcludedBorderValues = new Set<BorderValue>(['random-squares', 'rainbow'])
 
 const tailwindColors: TailwindColor[] = [
   { name: 'Red', bgClass: 'bg-red-400', fillClass: 'fill-red-400', strokeClass: 'stroke-red-400', textClass: 'text-red-400' },
@@ -771,9 +826,21 @@ const additionalTextLines = computed(() => wrapAdditionalText(additionalText.val
 const longestAdditionalTextLine = computed(() => additionalTextLines.value.reduce((longest, line) => line.length > longest.length ? line : longest, ''))
 const selectedLabelFontClass = computed(() => labelFonts.find(font => font.value === selectedLabelFont.value)?.class ?? fallbackLabelFont.class)
 const selectedAdditionalTextFontClass = computed(() => labelFonts.find(font => font.value === selectedAdditionalTextFont.value)?.class ?? fallbackLabelFont.class)
-const selectedBorderStyle = computed(() => borderStyles.find(border => border.value === selectedBorder.value) ?? noBorderStyle)
-const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
 const isCircleShape = computed(() => selectedQrShape.value === 'circle')
+const selectableBorderStyles = computed(() => isCircleShape.value ? borderStyles.filter(border => !isCircleExcludedBorder(border.value)) : borderStyles)
+const selectedBorderStyle = computed(() => {
+  if (isCircleShape.value && isCircleExcludedBorder(selectedBorder.value)) {
+    return noBorderStyle
+  }
+
+  return borderStyles.find(border => border.value === selectedBorder.value) ?? noBorderStyle
+})
+const hasBorder = computed(() => selectedBorderStyle.value.lines.length > 0)
+const isModulePatternBorder = computed(() => Boolean(selectedBorderStyle.value.modulePattern))
+const hasModulePatternBorder = computed(() => hasBorder.value && isModulePatternBorder.value)
+const selectedModuleBorderPattern = computed(() => selectedBorderStyle.value.modulePattern ?? 'qr')
+const selectedModuleBorderRows = computed(() => getModuleBorderRows(selectedBorderStyle.value))
+const selectedModuleBorderOuterRowCount = computed(() => getModuleBorderOuterRowCount(selectedModuleBorderRows.value))
 const hasLabelLogo = computed(() => labelLogoDataUrl.value.length > 0)
 const circleLabelTexts = computed<Record<CircleLabelPlacement, string>>(() => ({
   bottom: circleLabelBottom.value.trim(),
@@ -797,7 +864,7 @@ const gradientThirdColorStepSliderStyle = computed(() => getColorStepSliderStyle
 const labelBackgroundFillClass = computed(() => selectedLabelBackgroundColorName.value ? getPaletteColorClass(selectedLabelBackgroundColorName.value, 'fill', getLabelBackgroundColorRenderStep(selectedLabelBackgroundColorName.value)) : 'fill-transparent')
 const rectangleLabelTextClass = computed(() => selectedLabelTextColorName.value ? getPaletteColorClass(selectedLabelTextColorName.value, 'text', selectedLabelTextColorStep.value) : qrTextClass.value)
 const rectangleLabelTextFillPaint = computed(() => selectedLabelTextColorName.value ? null : textFillPaint.value)
-const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value)
+const hasCircleBorder = computed(() => hasBorder.value && isCircleShape.value && !hasModulePatternBorder.value)
 const hasCircleInset = computed(() => isCircleShape.value)
 const circleBorderInnerEdge = computed(() => hasBorder.value ? Math.max(...selectedBorderStyle.value.lines.map(getBorderLineInnerEdge)) : 0)
 const labelHasDescender = computed(() => /[gjpqy]/.test(`${labelText.value}${additionalText.value}`))
@@ -808,7 +875,13 @@ const labelIsRight = computed(() => hasLabelText.value && selectedLabelPosition.
 const labelIsSide = computed(() => labelIsLeft.value || labelIsRight.value)
 const borderContentInset = computed(() => {
   if (hasCircleInset.value) {
-    return Math.max(qrSvgSize.value * circleBorderCornerInsetRatio, circleBorderInnerEdge.value + selectedBorderStyle.value.contentGap)
+    const circleCornerInset = qrSvgSize.value * circleBorderCornerInsetRatio
+    const inset = Math.max(
+      isModulePatternBorder.value ? circleCornerInset + selectedModuleBorderOuterRowCount.value + Math.SQRT1_2 : circleCornerInset,
+      circleBorderInnerEdge.value + selectedBorderStyle.value.contentGap
+    )
+
+    return isModulePatternBorder.value ? Math.ceil(inset) : inset
   }
 
   if (!hasBorder.value) {
@@ -911,7 +984,17 @@ const labelLogoSize = computed(() => {
 const labelLogoWidth = computed(() => labelLogoSize.value.width)
 const labelLogoHeight = computed(() => labelLogoSize.value.height)
 const labelLogoGap = computed(() => hasLabelLogo.value && hasLabelTextGroup.value ? labelFontSize.value * labelLogoTextGapRatio : 0)
-const labelGap = computed(() => hasLabelText.value ? hasBorder.value ? selectedBorderStyle.value.contentGap : 1 : 0)
+const labelGap = computed(() => {
+  if (!hasLabelText.value) {
+    return 0
+  }
+
+  if (!hasBorder.value) {
+    return 1
+  }
+
+  return selectedBorderStyle.value.contentGap
+})
 const labelBackgroundPadding = computed(() => hasRectangleLabelBackground.value ? labelGap.value : 0)
 const labelBlockHeight = computed(() => {
   if (!hasLabelText.value) {
@@ -962,6 +1045,34 @@ const outputSvgHeight = computed(() => {
   return borderContentInset.value + topLabelHeight.value + topLabelGap.value + qrOutputSize.value + bottomLabelGap.value + bottomLabelHeight.value + outputBottomInset.value - labelBottomTrim.value
 })
 const outputViewBox = computed(() => generatedQr.value.code ? `0 0 ${outputSvgWidth.value} ${outputSvgHeight.value}` : '0 0 1 1')
+const moduleBorderSquares = computed<ModuleBorderSquare[]>(() => {
+  if (!hasModulePatternBorder.value || !generatedQr.value.code) {
+    return []
+  }
+
+  if (isCircleShape.value) {
+    const qrCornerRadius = Math.hypot(qrOutputSize.value / 2, qrOutputSize.value / 2)
+
+    return createCircleModuleBorderSquares({
+      centerX: outputSvgWidth.value / 2,
+      centerY: outputSvgHeight.value / 2,
+      contentRadius: Math.max(1, qrCornerRadius),
+      modules: generatedQr.value.code.modules,
+      pattern: selectedModuleBorderPattern.value,
+      rows: selectedModuleBorderRows.value
+    })
+  }
+
+  return createModuleBorderSquares({
+    height: Math.max(1, outputSvgHeight.value - borderContentInset.value * 2),
+    modules: generatedQr.value.code.modules,
+    pattern: selectedModuleBorderPattern.value,
+    rows: selectedModuleBorderRows.value,
+    width: Math.max(1, outputSvgWidth.value - borderContentInset.value * 2),
+    x: borderContentInset.value,
+    y: borderContentInset.value
+  })
+})
 const outputCircleRadius = computed(() => Math.min(outputSvgWidth.value, outputSvgHeight.value) / 2)
 const qrPreviewCardClass = computed(() => [
   'w-full max-w-[min(86svw,68svh)]',
@@ -1364,6 +1475,7 @@ function selectQrShape(shape: QrShape) {
 
   transferLabelTextForShape(shape)
   selectedQrShape.value = shape
+  selectedBorder.value = getShapeCompatibleBorderValue(shape, selectedBorder.value)
 
   if (shape === 'circle' && activeTool.value === 'labelColors') {
     activeTool.value = 'label'
@@ -1390,7 +1502,20 @@ function transferLabelTextForShape(shape: QrShape) {
 }
 
 function selectBorder(border: BorderStyle) {
+  if (isCircleShape.value && isCircleExcludedBorder(border.value)) {
+    selectedBorder.value = 'none'
+    return
+  }
+
   selectedBorder.value = border.value
+}
+
+function isCircleExcludedBorder(border: BorderValue) {
+  return circleExcludedBorderValues.has(border)
+}
+
+function getShapeCompatibleBorderValue(shape: QrShape, border: BorderValue) {
+  return shape === 'circle' && isCircleExcludedBorder(border) ? 'none' : border
 }
 
 function selectLabelPosition(option: LabelPositionOption) {
@@ -2302,6 +2427,416 @@ function getBorderLineInnerEdge(line: BorderLine) {
   return line.inset + line.strokeWidth / 2 + (line.wave?.amplitude ?? 0) * 2
 }
 
+function createModuleBorderSquares({
+  height,
+  modules,
+  pattern,
+  rows,
+  width,
+  x,
+  y
+}: {
+  height: number
+  modules: boolean[][]
+  pattern: ModuleBorderPattern
+  rows: ModuleBorderRow[]
+  width: number
+  x: number
+  y: number
+}) {
+  const moduleCount = Math.max(1, modules.length)
+  const contentHeight = Math.max(1, Math.round(height))
+  const contentWidth = Math.max(1, Math.round(width))
+  const squares: ModuleBorderSquare[] = []
+
+  rows.forEach((row) => {
+    const cells = createModuleBorderRingCells(row.offset, contentWidth, contentHeight, x, y)
+    const renderedCells = createRenderedModuleBorderCells(cells, modules, moduleCount, row, pattern)
+
+    for (const cell of renderedCells) {
+      if (!cell.dark) {
+        continue
+      }
+
+      squares.push({
+        key: `${row.offset}:${cell.localX}:${cell.localY}`,
+        opacity: row.opacity,
+        row: row.offset,
+        size: 1,
+        x: cell.x,
+        y: cell.y
+      })
+    }
+  })
+
+  return squares
+}
+
+function createCircleModuleBorderSquares({
+  centerX,
+  centerY,
+  contentRadius,
+  modules,
+  pattern,
+  rows
+}: {
+  centerX: number
+  centerY: number
+  contentRadius: number
+  modules: boolean[][]
+  pattern: ModuleBorderPattern
+  rows: ModuleBorderRow[]
+}) {
+  const contentX = centerX - contentRadius
+  const contentY = centerY - contentRadius
+  const moduleCount = Math.max(1, modules.length)
+  const squares: ModuleBorderSquare[] = []
+
+  rows.forEach((row) => {
+    const radius = contentRadius + row.offset
+    const segmentCount = Math.max(24, Math.ceil(radius * Math.PI * 4))
+    const seenCells = new Set<string>()
+    const cells: Array<{ localX: number, localY: number, x: number, y: number }> = []
+
+    for (let index = 0; index < segmentCount; index += 1) {
+      const angle = Math.PI * 2 * (index / segmentCount)
+      const cellX = Math.round(centerX + Math.cos(angle) * radius - 0.5)
+      const cellY = Math.round(centerY + Math.sin(angle) * radius - 0.5)
+      const key = `${cellX}:${cellY}`
+
+      if (seenCells.has(key)) {
+        continue
+      }
+
+      seenCells.add(key)
+      cells.push({
+        localX: cellX - Math.round(contentX),
+        localY: cellY - Math.round(contentY),
+        x: cellX,
+        y: cellY
+      })
+    }
+
+    const renderedCells = createRenderedModuleBorderCells(cells, modules, moduleCount, row, pattern)
+
+    for (const cell of renderedCells) {
+      if (!cell.dark) {
+        continue
+      }
+
+      squares.push({
+        key: `${row.offset}:${cell.localX}:${cell.localY}`,
+        opacity: row.opacity,
+        row: row.offset,
+        size: 1,
+        x: cell.x,
+        y: cell.y
+      })
+    }
+  })
+
+  return squares
+}
+
+function createRenderedModuleBorderCells(
+  cells: Array<{ localX: number, localY: number, x: number, y: number }>,
+  modules: boolean[][],
+  moduleCount: number,
+  row: ModuleBorderRow,
+  pattern: ModuleBorderPattern
+) {
+  const renderedCells = cells.map((cell, index) => ({
+    ...cell,
+    dark: pattern === 'solid' || getQrLikeModuleBorderCell(modules, moduleCount, row.offset, cell, index)
+  }))
+
+  return pattern === 'solid' ? renderedCells : balanceModuleBorderRingRuns(renderedCells)
+}
+
+function createModuleBorderPreviewModules(size: number) {
+  return Array.from({ length: size }, (_, y) => {
+    return Array.from({ length: size }, (_, x) => {
+      return shouldApplyModuleBorderMask(7, x, y) !== shouldApplyModuleBorderMask(3, x + 2, y + 1)
+    })
+  })
+}
+
+function getModuleBorderRows(border: BorderStyle) {
+  return border.moduleRows ?? qrFadeModuleBorderRows
+}
+
+function getModuleBorderOuterRowCount(rows: ModuleBorderRow[]) {
+  return Math.max(...rows.map(row => row.offset))
+}
+
+function getModuleBorderPreviewSquares(border: BorderStyle) {
+  return createModuleBorderPreviewSquares(border, isCircleShape.value)
+}
+
+function createModuleBorderPreviewSquares(border: BorderStyle, isCircle: boolean) {
+  const modules = createModuleBorderPreviewModules(8)
+  const pattern = border.modulePattern ?? 'qr'
+  const rows = getModuleBorderRows(border)
+  const outerRowCount = getModuleBorderOuterRowCount(rows)
+
+  return isCircle
+    ? createCircleModuleBorderPreviewSquares(modules, pattern, rows, outerRowCount)
+    : createRectangleModuleBorderPreviewSquares(modules, pattern, rows, outerRowCount)
+}
+
+function createRectangleModuleBorderPreviewSquares(modules: boolean[][], pattern: ModuleBorderPattern, rows: ModuleBorderRow[], outerRowCount: number) {
+  const x = 9
+  const y = 9
+  const size = 12
+
+  const squares = createModuleBorderSquares({
+    height: size,
+    modules,
+    pattern,
+    rows,
+    width: size,
+    x,
+    y
+  })
+    .filter(square => square.x === x - square.row || square.y === y - square.row)
+    .map(square => ({
+      ...square,
+      opacity: getModuleBorderPreviewOpacity(square.row, square.opacity, pattern)
+    }))
+
+  addModuleBorderPreviewSquare(
+    squares,
+    outerRowCount,
+    x + size + outerRowCount - 1,
+    y - outerRowCount,
+    getModuleBorderPreviewOpacity(outerRowCount, 0.25, pattern)
+  )
+  addModuleBorderPreviewSquare(
+    squares,
+    outerRowCount,
+    x - outerRowCount,
+    y + size + outerRowCount - 1,
+    getModuleBorderPreviewOpacity(outerRowCount, 0.25, pattern)
+  )
+
+  return squares
+}
+
+function createCircleModuleBorderPreviewSquares(modules: boolean[][], pattern: ModuleBorderPattern, rows: ModuleBorderRow[], outerRowCount: number) {
+  const centerX = 24
+  const centerY = 24
+  const contentX = 9
+  const contentY = 9
+  const baseRadius = 15
+  const moduleCount = Math.max(1, modules.length)
+  const squares: ModuleBorderSquare[] = []
+
+  rows.forEach((row) => {
+    const radius = baseRadius + row.offset
+    const segmentCount = Math.ceil(radius * Math.PI)
+    const seenCells = new Set<string>()
+    const cells: Array<{ localX: number, localY: number, x: number, y: number }> = []
+
+    for (let index = 0; index <= segmentCount; index += 1) {
+      const angle = Math.PI + Math.PI / 2 * (index / segmentCount)
+      const cellX = Math.round(centerX + Math.cos(angle) * radius)
+      const cellY = Math.round(centerY + Math.sin(angle) * radius)
+      const key = `${cellX}:${cellY}`
+
+      if (seenCells.has(key)) {
+        continue
+      }
+
+      seenCells.add(key)
+      cells.push({
+        localX: cellX - contentX,
+        localY: cellY - contentY,
+        x: cellX,
+        y: cellY
+      })
+    }
+
+    const renderedCells = createRenderedModuleBorderCells(cells, modules, moduleCount, row, pattern)
+
+    for (const cell of renderedCells) {
+      if (!cell.dark) {
+        continue
+      }
+
+      squares.push({
+        key: `${row.offset}:${cell.localX}:${cell.localY}`,
+        opacity: getModuleBorderPreviewOpacity(row.offset, row.opacity, pattern),
+        row: row.offset,
+        size: 1,
+        x: cell.x,
+        y: cell.y
+      })
+    }
+  })
+
+  addModuleBorderPreviewSquare(
+    squares,
+    outerRowCount,
+    centerX - baseRadius - outerRowCount,
+    centerY,
+    getModuleBorderPreviewOpacity(outerRowCount, 0.25, pattern)
+  )
+  addModuleBorderPreviewSquare(
+    squares,
+    outerRowCount,
+    centerX,
+    centerY - baseRadius - outerRowCount,
+    getModuleBorderPreviewOpacity(outerRowCount, 0.25, pattern)
+  )
+
+  return squares
+}
+
+function addModuleBorderPreviewSquare(squares: ModuleBorderSquare[], row: number, x: number, y: number, opacity: number) {
+  if (squares.some(square => square.row === row && square.x === x && square.y === y)) {
+    return
+  }
+
+  squares.push({
+    key: `preview-anchor:${row}:${x}:${y}`,
+    opacity,
+    row,
+    size: 1,
+    x,
+    y
+  })
+}
+
+function getModuleBorderPreviewOpacity(row: number, opacity: number, pattern: ModuleBorderPattern) {
+  if (pattern === 'solid') {
+    return opacity
+  }
+
+  switch (row) {
+    case 2:
+      return 1
+    case 3:
+      return 0.75
+    case 4:
+      return 0.5
+    default:
+      return 1
+  }
+}
+
+function createModuleBorderRingCells(offset: number, contentWidth: number, contentHeight: number, x: number, y: number) {
+  const cells: Array<{ localX: number, localY: number, x: number, y: number }> = []
+  const left = Math.round(x - offset)
+  const top = Math.round(y - offset)
+  const right = Math.round(x + contentWidth + offset - 1)
+  const bottom = Math.round(y + contentHeight + offset - 1)
+
+  for (let cellX = left; cellX <= right; cellX += 1) {
+    cells.push({
+      localX: cellX - Math.round(x),
+      localY: top - Math.round(y),
+      x: cellX,
+      y: top
+    })
+  }
+
+  for (let cellY = top + 1; cellY <= bottom; cellY += 1) {
+    cells.push({
+      localX: right - Math.round(x),
+      localY: cellY - Math.round(y),
+      x: right,
+      y: cellY
+    })
+  }
+
+  for (let cellX = right - 1; cellX >= left; cellX -= 1) {
+    cells.push({
+      localX: cellX - Math.round(x),
+      localY: bottom - Math.round(y),
+      x: cellX,
+      y: bottom
+    })
+  }
+
+  for (let cellY = bottom - 1; cellY > top; cellY -= 1) {
+    cells.push({
+      localX: left - Math.round(x),
+      localY: cellY - Math.round(y),
+      x: left,
+      y: cellY
+    })
+  }
+
+  return cells
+}
+
+function getQrLikeModuleBorderCell(
+  modules: boolean[][],
+  moduleCount: number,
+  offset: number,
+  cell: { localX: number, localY: number, x: number, y: number },
+  index: number
+) {
+  const sourceX = getPositiveModulo(cell.localX, moduleCount)
+  const sourceY = getPositiveModulo(cell.localY, moduleCount)
+  const sourceModule = modules[sourceY]?.[sourceX] ?? false
+  const mask = shouldApplyModuleBorderMask(moduleBorderMaskByOffset[offset] ?? 7, sourceX + cell.x + index, sourceY + cell.y)
+
+  return sourceModule !== mask
+}
+
+function balanceModuleBorderRingRuns<T extends { dark: boolean }>(cells: T[]) {
+  let runColor: boolean | undefined
+  let runLength = 0
+
+  return cells.map((cell) => {
+    let dark = cell.dark
+
+    if (runColor === dark && runLength >= moduleBorderMaximumRunLength) {
+      dark = !dark
+    }
+
+    if (runColor === dark) {
+      runLength += 1
+    } else {
+      runColor = dark
+      runLength = 1
+    }
+
+    return {
+      ...cell,
+      dark
+    }
+  })
+}
+
+function shouldApplyModuleBorderMask(mask: number, x: number, y: number): boolean {
+  switch (mask) {
+    case 0:
+      return (x + y) % 2 === 0
+    case 1:
+      return y % 2 === 0
+    case 2:
+      return x % 3 === 0
+    case 3:
+      return (x + y) % 3 === 0
+    case 4:
+      return (Math.floor(x / 3) + Math.floor(y / 2)) % 2 === 0
+    case 5:
+      return ((x * y) % 2) + ((x * y) % 3) === 0
+    case 6:
+      return (((x * y) % 2) + ((x * y) % 3)) % 2 === 0
+    case 7:
+      return (((x + y) % 2) + ((x * y) % 3)) % 2 === 0
+    default:
+      return false
+  }
+}
+
+function getPositiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor
+}
+
 function getCircleBorderRadius(line: BorderLine) {
   const waveAmplitude = line.wave?.amplitude ?? 0
 
@@ -2954,8 +3489,11 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   additionalTextSizeStep.value = clampAdditionalTextSizeStep(payload.additionalTextSizeStep)
   applyLabelLogoPayload(payload.labelLogo)
   selectedCenterIcon.value = centerIconOptions.some(icon => icon.value === payload.centerIcon) ? payload.centerIcon : 'none'
-  selectedBorder.value = borderStyles.some(border => border.value === payload.border) ? payload.border as BorderValue : 'none'
-  selectedQrShape.value = isQrShape(payload.shape) ? payload.shape : 'rectangle'
+  const nextQrShape = isQrShape(payload.shape) ? payload.shape : 'rectangle'
+  const nextBorder = borderStyles.some(border => border.value === payload.border) ? payload.border as BorderValue : 'none'
+
+  selectedQrShape.value = nextQrShape
+  selectedBorder.value = getShapeCompatibleBorderValue(nextQrShape, nextBorder)
   applyCircleLabelsPayload(payload.circleLabels)
   activeCenterIconCategory.value = null
 }
@@ -3464,6 +4002,13 @@ watch([() => qrStore.url, useDynamicUrl, trackScanStatistics, dynamicLinkSlug], 
 })
 watch([normalizedDynamicLinkSlug, isCustomizingDynamicLink, hasDynamicQrFeature, activeDynamicLink], () => {
   scheduleDynamicLinkAvailabilityCheck()
+})
+watch([selectedQrShape, selectedBorder] as const, ([shape, border]) => {
+  const compatibleBorder = getShapeCompatibleBorderValue(shape, border)
+
+  if (compatibleBorder !== border) {
+    selectedBorder.value = compatibleBorder
+  }
 })
 watch([
   () => qrStore.url,
@@ -5252,33 +5797,58 @@ onUnmounted(() => {
           role="radiogroup"
         >
           <button
-            v-for="border in borderStyles"
+            v-for="border in selectableBorderStyles"
             :key="border.value"
             :aria-label="border.label"
             :aria-checked="selectedBorder === border.value"
-            class="grid size-14 shrink-0 place-items-center rounded-xl border transition"
+            class="flex min-w-24 shrink-0 flex-col items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition"
             :class="selectedBorder === border.value ? 'border-primary bg-primary text-inverted' : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:border-slate-700 dark:hover:bg-slate-900'"
             role="radio"
             type="button"
             @click="selectBorder(border)"
           >
-            <svg
-              aria-hidden="true"
-              class="size-9"
-              fill="none"
-              viewBox="0 0 28 28"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                v-for="line in border.lines"
-                :key="`${border.value}-${line.inset}`"
-                :d="getPreviewPath(line)"
-                stroke="currentColor"
-                :stroke-linecap="getPreviewStrokeLineCap(line)"
-                :stroke-linejoin="getBorderStrokeLineJoin(line) ?? 'miter'"
-                :stroke-width="getPreviewStrokeWidth(line)"
+            <span class="grid size-10 place-items-center">
+              <UIcon
+                v-if="border.value === 'none'"
+                aria-hidden="true"
+                class="size-5"
+                name="i-lucide-ban"
               />
-            </svg>
+              <svg
+                v-else
+                aria-hidden="true"
+                class="size-9"
+                fill="none"
+                viewBox="0 0 28 28"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <template v-if="border.modulePattern">
+                  <rect
+                    v-for="square in getModuleBorderPreviewSquares(border)"
+                    :key="`preview-${square.key}`"
+                    :data-preview-row="square.row"
+                    fill="currentColor"
+                    :fill-opacity="square.opacity"
+                    :height="square.size"
+                    :width="square.size"
+                    :x="square.x"
+                    :y="square.y"
+                  />
+                </template>
+                <template v-else>
+                  <path
+                    v-for="line in border.lines"
+                    :key="`${border.value}-${line.inset}`"
+                    :d="getPreviewPath(line)"
+                    stroke="currentColor"
+                    :stroke-linecap="getPreviewStrokeLineCap(line)"
+                    :stroke-linejoin="getBorderStrokeLineJoin(line) ?? 'miter'"
+                    :stroke-width="getPreviewStrokeWidth(line)"
+                  />
+                </template>
+              </svg>
+            </span>
+            <span>{{ border.label }}</span>
           </button>
         </div>
 
@@ -5474,6 +6044,33 @@ onUnmounted(() => {
                     :y="circleBorderBufferRect.y"
                   />
                 </g>
+                <g
+                  v-if="hasModulePatternBorder"
+                  data-testid="qr-module-border"
+                  shape-rendering="crispEdges"
+                >
+                  <rect
+                    v-for="square in moduleBorderSquares"
+                    :key="`module-border-${square.key}`"
+                    :data-testid="`qr-module-border-square-${square.row}`"
+                    :class="borderStrokePaint ? undefined : qrFillClass"
+                    :fill="borderStrokePaint ?? undefined"
+                    :fill-opacity="square.opacity"
+                    :height="square.size"
+                    :width="square.size"
+                    :x="square.x"
+                    :y="square.y"
+                  />
+                </g>
+                <rect
+                  v-if="hasModulePatternBorder && isCircleShape"
+                  class="fill-white"
+                  data-testid="qr-circle-border-buffer"
+                  :height="circleBorderBufferRect.height"
+                  :width="circleBorderBufferRect.width"
+                  :x="circleBorderBufferRect.x"
+                  :y="circleBorderBufferRect.y"
+                />
                 <g shape-rendering="crispEdges">
                   <svg
                     :height="qrOutputSize"
@@ -5640,7 +6237,7 @@ onUnmounted(() => {
                     {{ getCircleLabelText(control.value) }}
                   </textPath>
                 </text>
-                <template v-if="!isCircleShape">
+                <template v-if="!isCircleShape && !hasModulePatternBorder">
                   <template
                     v-for="line in selectedBorderLines"
                     :key="`${selectedBorder}-${line.inset}`"

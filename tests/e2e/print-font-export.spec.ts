@@ -67,7 +67,7 @@ test('embeds selected web fonts in the print-label SVG payload', async ({ page }
   await page.getByTestId('rectangle-label-desktop-primary-controls').getByRole('combobox').click()
   await page.getByRole('option', { name: 'Roboto Condensed' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await page.getByRole('radio', { name: 'Thin border' }).click()
+  await page.getByRole('radio', { name: 'Medium' }).click()
   await page.waitForFunction(() => document.fonts?.ready)
   await page.getByRole('button', { name: 'Print to Labels', exact: true }).click()
   await page.waitForURL('**/print-labels')

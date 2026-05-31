@@ -749,7 +749,7 @@ test("expands circle shaped QR artwork from the builder to fit circular labels",
   await page.getByRole("button", { name: "Shape" }).click();
   await page.getByRole("radio", { name: "Circle" }).click();
   await page.getByRole("button", { exact: true, name: "Border" }).click();
-  await page.getByRole("radio", { name: "Thin border" }).click();
+  await page.getByRole("radio", { name: "Medium" }).click();
   await page.getByRole("button", { exact: true, name: "Print to Labels" }).click();
   await page.waitForURL("**/print-labels");
 

@@ -24,7 +24,7 @@ test('applies separate QR gradients after choosing a non-black first color', asy
   await page.getByRole('radio', { name: 'Use Link as the center icon' }).click()
 
   await page.getByRole('button', { name: 'Border' }).click()
-  await page.getByRole('radio', { name: 'Hairline border' }).click()
+  await page.getByRole('radio', { name: 'Small' }).click()
 
   await page.getByRole('button', { name: 'Gradient' }).click()
   await expect(page.getByRole('button', { name: 'No Gradient' })).toBeVisible()

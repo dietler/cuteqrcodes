@@ -72,6 +72,24 @@ test('wraps style selectors on desktop while preserving mobile scrolling', async
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
   await expectDesktopWrappingSelector(page, 'border-style-selector')
+  await expect(page.getByTestId('border-style-selector').locator('[role="radio"]')).toHaveCount(8)
+  expect(await page.getByTestId('border-style-selector').locator('[role="radio"]').evaluateAll(buttons =>
+    buttons.map(button => button.getAttribute('aria-label'))
+  )).toEqual(['None', 'Small', 'Medium', 'Large', 'Double', 'Wavy', 'Fade', 'QR Fade'])
+  expect(await page.getByTestId('border-style-selector').locator('[role="radio"]').evaluateAll(buttons =>
+    buttons.map(button => button.textContent?.trim())
+  )).toEqual(['None', 'Small', 'Medium', 'Large', 'Double', 'Wavy', 'Fade', 'QR Fade'])
+  expect(await page.getByTestId('border-style-selector').locator('[role="radio"]').evaluateAll(buttons =>
+    buttons.map(button => button.querySelector(':scope > span')?.className ?? '')
+  )).toEqual(Array.from({ length: 8 }, () => 'grid size-10 place-items-center'))
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Circle' }).click()
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await expect(page.getByTestId('border-style-selector').locator('[role="radio"]')).toHaveCount(6)
+  expect(await page.getByTestId('border-style-selector').locator('[role="radio"]').evaluateAll(buttons =>
+    buttons.map(button => button.textContent?.trim())
+  )).toEqual(['None', 'Small', 'Medium', 'Large', 'Double', 'Wavy'])
 
   await page.setViewportSize({ width: 320, height: 720 })
 
@@ -130,9 +148,9 @@ test('draws circle borders with a buffered QR overlap', async ({ page }) => {
   await page.getByRole('radio', { name: 'Circle' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
 
-  await expect(page.getByRole('radio', { name: 'Thin border' }).locator('path')).toHaveAttribute('d', /A/)
+  await expect(page.getByRole('radio', { name: 'Medium' }).locator('path')).toHaveAttribute('d', /A/)
 
-  await page.getByRole('radio', { name: 'Thin border' }).click()
+  await page.getByRole('radio', { name: 'Medium' }).click()
   await expect(page.getByTestId('qr-circle-border-0.5')).toBeVisible()
   await expect(page.getByTestId('qr-circle-border-buffer')).toBeVisible()
 
@@ -187,8 +205,8 @@ test('draws wavy borders in rectangle and circle mode', async ({ page }) => {
   await page.locator('input[type="url"]').fill('https://example.com/wavy-border')
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await expect(page.getByRole('radio', { name: 'Wavy border' })).toBeVisible()
-  await page.getByRole('radio', { name: 'Wavy border' }).click()
+  await expect(page.getByRole('radio', { name: 'Wavy' })).toBeVisible()
+  await page.getByRole('radio', { name: 'Wavy' }).click()
 
   const rectanglePreviewState = await getWavyBorderPreviewState(page)
 
@@ -275,6 +293,109 @@ test('draws wavy borders in rectangle and circle mode', async ({ page }) => {
   expect(circlePreviewState.pathCommands).toBeLessThan(90)
 })
 
+test('draws QR-like fade border rows around the full QR composition', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/qr-fade-border')
+
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await expect(page.getByRole('radio', { name: 'QR Fade' })).toBeVisible()
+
+  const previewState = await getModuleBorderPreviewState(page)
+
+  expect(previewState.pathCount).toBe(0)
+  expect(previewState.rectCount).toBeGreaterThan(20)
+  expect(previewState.rectangleCornerOnly).toBe(true)
+  expect(previewState.hasInteriorArcCells).toBe(false)
+  expect(previewState.bounds.width).toBeCloseTo(previewState.bounds.height, 4)
+  expect(previewState.bounds.width).toBeGreaterThanOrEqual(20)
+  expect(previewState.opacities).toEqual([0.5, 0.75, 1])
+
+  await page.getByRole('radio', { name: 'QR Fade' }).click()
+
+  const state = await getModuleBorderState(page)
+
+  expect(state.circleBorderCount).toBe(0)
+  expect(state.rectangleBorderCount).toBe(0)
+  expect(state.rowAttributeMatchesOffset).toBe(true)
+  expect(state.squareOutsideQrCount).toBe(state.squareCount)
+  expect(state.squareSizes).toEqual([state.moduleSize])
+  expect(state.rows.map(row => row.offset)).toEqual([2, 3, 4])
+  expect(state.rows.map(row => row.opacity)).toEqual([0.75, 0.5, 0.25])
+  expect(state.rows.every(row => row.count > 0)).toBe(true)
+  expect(state.maxSameRun).toBeLessThanOrEqual(4)
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Circle' }).click()
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await expect(page.getByRole('radio', { name: 'QR Fade' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('[data-testid="qr-module-border"]')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Rectangle/Square' }).click()
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await page.getByRole('radio', { name: 'QR Fade' }).click()
+
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Label' }).fill('Bakery Label')
+
+  const labeledState = await getModuleBorderLabelWrapState(page)
+
+  expect(labeledState.topBorderY).toBeLessThan(labeledState.labelTop)
+  expect(labeledState.labelBottom).toBeLessThan(labeledState.qrY)
+})
+
+test('draws solid rainbow border rows around the full QR composition', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/rainbow-border')
+
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toBeVisible()
+
+  const previewState = await getModuleBorderPreviewState(page, 'Fade')
+
+  expect(previewState.pathCount).toBe(0)
+  expect(previewState.rectCount).toBeGreaterThan(100)
+  expect(previewState.rectangleCornerOnly).toBe(true)
+  expect(previewState.hasInteriorArcCells).toBe(false)
+  expect(previewState.bounds.width).toBeCloseTo(previewState.bounds.height, 4)
+  expect(previewState.bounds.width).toBeLessThan(24)
+  expect(previewState.opacities).toEqual([0.25, 0.5, 0.75, 1])
+  expect(previewState.rows.map(row => row.offset)).toEqual([2, 3, 4, 5])
+
+  await page.getByRole('radio', { exact: true, name: 'Fade' }).click()
+
+  const state = await getModuleBorderState(page)
+
+  expect(state.circleBorderCount).toBe(0)
+  expect(state.rectangleBorderCount).toBe(0)
+  expect(state.rowAttributeMatchesOffset).toBe(true)
+  expect(state.squareOutsideQrCount).toBe(state.squareCount)
+  expect(state.squareSizes).toEqual([state.moduleSize])
+  expect(state.rows.map(row => row.offset)).toEqual([2, 3, 4, 5])
+  expect(state.rows.map(row => row.opacity)).toEqual([1, 0.75, 0.5, 0.25])
+  expect(state.rows.every(row => row.count === row.expectedCount)).toBe(true)
+
+  await page.getByRole('button', { name: 'Shape' }).click()
+  await page.getByRole('radio', { name: 'Circle' }).click()
+  await page.getByRole('button', { name: 'Border', exact: true }).click()
+  await expect(page.getByRole('radio', { exact: true, name: 'Fade' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: 'QR Fade' })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.locator('[data-testid="qr-module-border"]')).toHaveCount(0)
+})
+
 test('rounds the preview frame and background in circle mode', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => {
@@ -285,7 +406,7 @@ test('rounds the preview frame and background in circle mode', async ({ page }) 
   await page.locator('input[type="url"]').fill('https://example.com/circle-frame')
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await page.getByRole('radio', { name: 'Thin border' }).click()
+  await page.getByRole('radio', { name: 'Medium' }).click()
 
   const rectangleFrame = await page.evaluate(getPreviewFrameState)
 
@@ -398,7 +519,7 @@ test('colors rectangle label background and text with border-matched QR spacing'
   await page.getByRole('textbox', { name: 'Label' }).fill('WINGEN')
   await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await page.getByRole('radio', { name: 'Thin border' }).click()
+  await page.getByRole('radio', { name: 'Medium' }).click()
   await page.getByRole('button', { name: 'Colors' }).click()
   await expect(page.getByTestId('label-background-color-selector')).toHaveCount(0)
   await page.getByRole('button', { name: 'Label color controls' }).click()
@@ -762,7 +883,7 @@ test('renders circle label text on curved paths', async ({ page }) => {
   await page.getByRole('button', { name: 'Shape' }).click()
   await page.getByRole('radio', { name: 'Circle' }).click()
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await page.getByRole('radio', { name: 'Thin border' }).click()
+  await page.getByRole('radio', { name: 'Medium' }).click()
   await page.getByRole('button', { name: 'Label', exact: true }).click()
 
   await expect(page.getByRole('radiogroup', { name: 'Label position' })).toHaveCount(0)
@@ -857,7 +978,7 @@ async function getSectionBoxStates(page: Page, testIds: string[]) {
 }
 
 async function getWavyBorderPreviewState(page: Page) {
-  return getBorderPreviewState(page, 'Wavy border')
+  return getBorderPreviewState(page, 'Wavy')
 }
 
 async function getBorderPreviewState(page: Page, label: string) {
@@ -888,6 +1009,210 @@ async function getBorderPreviewState(page: Page, label: string) {
       pathCount: paths.length
     }
   }, label)
+}
+
+async function getModuleBorderPreviewState(page: Page, borderLabel = 'QR Fade') {
+  return page.evaluate((borderLabel) => {
+    const button = Array.from(document.querySelectorAll('[role="radio"]'))
+      .find(element => element.getAttribute('aria-label') === borderLabel) as HTMLElement | undefined
+
+    if (!button) {
+      throw new Error(`Missing ${borderLabel} preview.`)
+    }
+
+    const rects = Array.from(button.querySelectorAll('rect')) as SVGRectElement[]
+    const rowGroups = new Map<number, Array<{ x: number, y: number }>>()
+
+    for (const rect of rects) {
+      const row = Number(rect.getAttribute('data-preview-row'))
+      const group = rowGroups.get(row) ?? []
+
+      group.push({
+        x: Number(rect.getAttribute('x')),
+        y: Number(rect.getAttribute('y'))
+      })
+      rowGroups.set(row, group)
+    }
+
+    const rectangleCornerOnly = Array.from(rowGroups.values()).every((group) => {
+      const minX = Math.min(...group.map(rect => rect.x))
+      const minY = Math.min(...group.map(rect => rect.y))
+
+      return group.every(rect => rect.x === minX || rect.y === minY)
+    })
+    const hasInteriorArcCells = Array.from(rowGroups.values()).some((group) => {
+      const minX = Math.min(...group.map(rect => rect.x))
+      const minY = Math.min(...group.map(rect => rect.y))
+
+      return group.some(rect => rect.x > minX && rect.y > minY)
+    })
+    const minX = Math.min(...rects.map(rect => Number(rect.getAttribute('x'))))
+    const minY = Math.min(...rects.map(rect => Number(rect.getAttribute('y'))))
+    const maxX = Math.max(...rects.map(rect => Number(rect.getAttribute('x')) + Number(rect.getAttribute('width'))))
+    const maxY = Math.max(...rects.map(rect => Number(rect.getAttribute('y')) + Number(rect.getAttribute('height'))))
+
+    return {
+      bounds: {
+        height: maxY - minY,
+        width: maxX - minX
+      },
+      hasInteriorArcCells,
+      opacities: Array.from(new Set(rects.map(rect => Number(rect.getAttribute('fill-opacity'))))).sort((first, second) => first - second),
+      pathCount: button.querySelectorAll('path').length,
+      rectCount: rects.length,
+      rectangleCornerOnly,
+      rows: Array.from(rowGroups, ([offset, row]) => ({
+        count: row.length,
+        offset
+      })).sort((first, second) => first.offset - second.offset)
+    }
+  }, borderLabel)
+}
+
+async function getModuleBorderState(page: Page) {
+  return page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
+    const border = svg?.querySelector('[data-testid="qr-module-border"]') as SVGGElement | null
+
+    if (!svg || !qrSvg || !border) {
+      throw new Error('Missing generated module border.')
+    }
+
+    const qrX = Number(qrSvg.getAttribute('x'))
+    const qrY = Number(qrSvg.getAttribute('y'))
+    const qrWidth = Number(qrSvg.getAttribute('width'))
+    const qrHeight = Number(qrSvg.getAttribute('height'))
+    const qrViewBoxWidth = Number(qrSvg.getAttribute('viewBox')?.split(' ')[2] ?? 1)
+    const qrRight = qrX + qrWidth
+    const qrBottom = qrY + qrHeight
+    const rects = Array.from(border.querySelectorAll('rect')) as SVGRectElement[]
+    const rowMap = new Map<number, { count: number, opacity: number }>()
+    const darkCellKeys = new Set(rects.map(rect => `${Math.round(Number(rect.getAttribute('x')))}:${Math.round(Number(rect.getAttribute('y')))}`))
+
+    let rowAttributeMatchesOffset = true
+    let squareOutsideQrCount = 0
+
+    for (const rect of rects) {
+      const x = Number(rect.getAttribute('x'))
+      const y = Number(rect.getAttribute('y'))
+      const width = Number(rect.getAttribute('width'))
+      const height = Number(rect.getAttribute('height'))
+      const opacity = Number(rect.getAttribute('fill-opacity'))
+      const dataTestId = rect.getAttribute('data-testid') ?? ''
+      const rowAttribute = Number(dataTestId.match(/(\d+)$/)?.[1] ?? 0)
+      const offset = Math.max(
+        qrX - x,
+        qrY - y,
+        x + width - qrRight,
+        y + height - qrBottom
+      )
+      const roundedOffset = Math.round(offset)
+      const isOutsideQr = x + width <= qrX || x >= qrRight || y + height <= qrY || y >= qrBottom
+      const row = rowMap.get(roundedOffset) ?? { count: 0, opacity }
+
+      row.count += 1
+      row.opacity = opacity
+      rowMap.set(roundedOffset, row)
+      rowAttributeMatchesOffset &&= rowAttribute === roundedOffset
+
+      if (isOutsideQr) {
+        squareOutsideQrCount += 1
+      }
+    }
+
+    function getRingCells(offset: number) {
+      const left = Math.round(qrX - offset)
+      const top = Math.round(qrY - offset)
+      const right = Math.round(qrRight + offset - 1)
+      const bottom = Math.round(qrBottom + offset - 1)
+      const cells: boolean[] = []
+
+      for (let x = left; x <= right; x += 1) {
+        cells.push(darkCellKeys.has(`${x}:${top}`))
+      }
+
+      for (let y = top + 1; y <= bottom; y += 1) {
+        cells.push(darkCellKeys.has(`${right}:${y}`))
+      }
+
+      for (let x = right - 1; x >= left; x -= 1) {
+        cells.push(darkCellKeys.has(`${x}:${bottom}`))
+      }
+
+      for (let y = bottom - 1; y > top; y -= 1) {
+        cells.push(darkCellKeys.has(`${left}:${y}`))
+      }
+
+      return cells
+    }
+
+    function getMaxSameRun(cells: boolean[]) {
+      let maxRun = 0
+      let currentRun = 0
+      let currentValue: boolean | undefined
+
+      for (const cell of cells) {
+        if (cell === currentValue) {
+          currentRun += 1
+        } else {
+          currentValue = cell
+          currentRun = 1
+        }
+
+        maxRun = Math.max(maxRun, currentRun)
+      }
+
+      return maxRun
+    }
+
+    function getExpectedRectangleRingCellCount(offset: number) {
+      return 2 * qrWidth + 2 * qrHeight + 8 * offset - 4
+    }
+
+    return {
+      circleBorderCount: svg.querySelectorAll('[data-testid^="qr-circle-border-"]').length,
+      maxSameRun: Math.max(...[2, 3, 4].map(offset => getMaxSameRun(getRingCells(offset)))),
+      moduleSize: qrWidth / qrViewBoxWidth,
+      rectangleBorderCount: svg.querySelectorAll('[data-testid^="qr-rectangle-border-"]').length,
+      rowAttributeMatchesOffset,
+      rows: Array.from(rowMap, ([offset, row]) => ({
+        count: row.count,
+        expectedCount: getExpectedRectangleRingCellCount(offset),
+        offset,
+        opacity: row.opacity
+      })).sort((first, second) => first.offset - second.offset),
+      squareCount: rects.length,
+      squareOutsideQrCount,
+      squareSizes: Array.from(new Set(rects.map(rect => Number(rect.getAttribute('width'))))).sort()
+    }
+  })
+}
+
+async function getModuleBorderLabelWrapState(page: Page) {
+  return page.evaluate(() => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
+    const border = svg?.querySelector('[data-testid="qr-module-border"]') as SVGGElement | null
+    const renderedTexts = Array.from(svg?.querySelectorAll('text') ?? [])
+      .filter(element => element.getAttribute('opacity') !== '0')
+    const label = renderedTexts.find(element => element.textContent?.trim() === 'Bakery Label')
+    const borderRects = Array.from(border?.querySelectorAll('rect') ?? []) as SVGRectElement[]
+
+    if (!svg || !qrSvg || !border || !label || borderRects.length === 0) {
+      throw new Error('Missing labeled QR Fade elements.')
+    }
+
+    const labelY = Number(label.getAttribute('y'))
+    const labelFontSize = Number(label.getAttribute('font-size'))
+
+    return {
+      labelBottom: labelY + labelFontSize / 2,
+      labelTop: labelY - labelFontSize / 2,
+      qrY: Number(qrSvg.getAttribute('y')),
+      topBorderY: Math.min(...borderRects.map(rect => Number(rect.getAttribute('y'))))
+    }
+  })
 }
 
 async function getWavyRectangleBorderState(page: Page) {

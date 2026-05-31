@@ -62,7 +62,7 @@ test('keeps the current QR draft across navigation and clears it only from the C
   await expect(page.getByRole('button', { name: 'Use Black for the QR code' })).toHaveAttribute('aria-pressed', 'true')
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await expect(page.getByRole('radio', { name: 'No border' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radio', { name: 'None' })).toHaveAttribute('aria-checked', 'true')
 })
 
 async function waitForBuilder(page: Page) {
@@ -88,7 +88,7 @@ async function createDraftQr(page: Page) {
   await page.locator('#qr-additional-text').fill(draftAdditionalText)
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await page.getByRole('radio', { name: 'Thin border' }).click()
+  await page.getByRole('radio', { name: 'Medium' }).click()
 
   await page.getByRole('button', { name: 'Icon' }).click()
   await page.getByRole('button', { name: 'Open Website icons' }).click()
@@ -111,7 +111,7 @@ async function expectDraftControls(page: Page, expectedUrl: string) {
   await expect(page.getByRole('button', { name: 'Use Blue as the 2nd gradient color' })).toHaveAttribute('aria-pressed', 'true')
 
   await page.getByRole('button', { name: 'Border', exact: true }).click()
-  await expect(page.getByRole('radio', { name: 'Thin border' })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('radio', { name: 'Medium' })).toHaveAttribute('aria-checked', 'true')
 
   await page.getByRole('button', { name: 'Icon' }).click()
 
