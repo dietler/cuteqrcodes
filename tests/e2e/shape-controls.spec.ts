@@ -697,6 +697,85 @@ test('keeps rectangle label background steps across colors but disconnects black
   await expect(page.getByTestId('qr-label-background')).toHaveClass(/fill-red-500/)
 })
 
+test('adds rectangle padding around label content', async ({ page }) => {
+  const longLabel = 'A very long rectangle label for padding'
+
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/rectangle-label-padding')
+
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Label' }).fill(longLabel)
+  await page.locator('#qr-additional-text').fill('Bakery & Restaurant')
+
+  const paddingControls = page.getByTestId('rectangle-label-padding-controls')
+
+  await expect(paddingControls).toBeVisible()
+  await expect(paddingControls.getByText('Padding', { exact: true })).toBeVisible()
+  await expect(paddingControls.getByText('Vertical', { exact: true })).toBeVisible()
+  await expect(paddingControls.getByText('Horizontal', { exact: true })).toBeVisible()
+  await expect(paddingControls.getByRole('button', { name: 'Decrease vertical label padding' })).toBeDisabled()
+  await expect(paddingControls.getByRole('button', { name: 'Decrease horizontal label padding' })).toBeDisabled()
+
+  await page.getByRole('button', { name: 'Label color controls' }).click()
+  await page
+    .getByTestId('label-background-color-selector')
+    .getByRole('button', { name: 'Use Yellow as the label background color' })
+    .click()
+
+  const baseState = await getRectangleLabelPaddingState(page, longLabel)
+
+  await page.getByRole('button', { name: 'Label & Logo', exact: true }).click()
+  await paddingControls.getByRole('button', { name: 'Increase horizontal label padding' }).click()
+
+  const horizontalState = await getRectangleLabelPaddingState(page, longLabel)
+
+  expect(horizontalState.backgroundWidth).toBeCloseTo(baseState.backgroundWidth, 4)
+  expect(horizontalState.qrX).toBeCloseTo(baseState.qrX, 4)
+  expect(horizontalState.svgWidth).toBeCloseTo(baseState.svgWidth, 4)
+  expect(horizontalState.labelFontSize).toBeLessThan(baseState.labelFontSize)
+
+  await paddingControls.getByRole('button', { name: 'Increase vertical label padding' }).click()
+
+  const paddedState = await getRectangleLabelPaddingState(page, longLabel)
+
+  expect(paddedState.backgroundHeight).toBeCloseTo(horizontalState.backgroundHeight + 2, 4)
+  expect(paddedState.qrY).toBeCloseTo(horizontalState.qrY + 2, 4)
+  expect(paddedState.svgHeight).toBeCloseTo(horizontalState.svgHeight + 2, 4)
+
+  await paddingControls.getByRole('button', { name: 'Decrease horizontal label padding' }).click()
+  await paddingControls.getByRole('button', { name: 'Decrease vertical label padding' }).click()
+
+  const restoredState = await getRectangleLabelPaddingState(page, longLabel)
+
+  expect(restoredState.backgroundWidth).toBeCloseTo(baseState.backgroundWidth, 4)
+  expect(restoredState.backgroundHeight).toBeCloseTo(baseState.backgroundHeight, 4)
+  expect(restoredState.qrX).toBeCloseTo(baseState.qrX, 4)
+  expect(restoredState.qrY).toBeCloseTo(baseState.qrY, 4)
+  await expect(paddingControls.getByRole('button', { name: 'Decrease vertical label padding' })).toBeDisabled()
+  await expect(paddingControls.getByRole('button', { name: 'Decrease horizontal label padding' })).toBeDisabled()
+
+  await page.getByTestId('rectangle-label-position-controls').getByRole('radio', { name: 'Right' }).click()
+
+  const sideBaseState = await getRectangleLabelPaddingState(page, longLabel)
+
+  await paddingControls.getByRole('button', { name: 'Increase horizontal label padding' }).click()
+  await paddingControls.getByRole('button', { name: 'Increase vertical label padding' }).click()
+
+  const sidePaddedState = await getRectangleLabelPaddingState(page, longLabel)
+
+  expect(sidePaddedState.backgroundHeight).toBeCloseTo(sideBaseState.backgroundHeight, 4)
+  expect(sidePaddedState.backgroundWidth).toBeCloseTo(sideBaseState.backgroundWidth, 4)
+  expect(sidePaddedState.qrX).toBeCloseTo(sideBaseState.qrX, 4)
+  expect(sidePaddedState.qrY).toBeCloseTo(sideBaseState.qrY, 4)
+  expect(sidePaddedState.svgHeight).toBeCloseTo(sideBaseState.svgHeight, 4)
+  expect(sidePaddedState.svgWidth).toBeCloseTo(sideBaseState.svgWidth, 4)
+})
+
 test('uploads a rectangle label logo and positions it around the label text', async ({ page }) => {
   await page.setViewportSize({ width: 1000, height: 900 })
   await page.goto('/')
@@ -845,12 +924,14 @@ test('uses sectioned mobile label controls for rectangle and circle labels', asy
     'rectangle-label-position-controls',
     'rectangle-label-mobile-section-label',
     'rectangle-label-mobile-section-additional',
-    'rectangle-label-logo-controls'
+    'rectangle-label-logo-controls',
+    'rectangle-label-padding-controls'
   ])
 
   expect(mobileRectangleOrder['rectangle-label-position-controls']).toBeLessThan(mobileRectangleOrder['rectangle-label-mobile-section-label'])
   expect(mobileRectangleOrder['rectangle-label-mobile-section-label']).toBeLessThan(mobileRectangleOrder['rectangle-label-mobile-section-additional'])
   expect(mobileRectangleOrder['rectangle-label-mobile-section-additional']).toBeLessThan(mobileRectangleOrder['rectangle-label-logo-controls'])
+  expect(mobileRectangleOrder['rectangle-label-logo-controls']).toBeLessThan(mobileRectangleOrder['rectangle-label-padding-controls'])
 
   const rectangleLayout = await page.evaluate(() => {
     const labelSection = document.querySelector('[data-testid="rectangle-label-mobile-section-label"]') as HTMLElement | null
@@ -925,12 +1006,14 @@ test('uses sectioned mobile label controls for rectangle and circle labels', asy
     'rectangle-label-position-controls',
     'rectangle-label-desktop-primary-controls',
     'rectangle-label-desktop-additional-controls',
-    'rectangle-label-logo-controls'
+    'rectangle-label-logo-controls',
+    'rectangle-label-padding-controls'
   ])
 
   expect(desktopRectangleOrder['rectangle-label-position-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-desktop-primary-controls'])
   expect(desktopRectangleOrder['rectangle-label-desktop-primary-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-desktop-additional-controls'])
   expect(desktopRectangleOrder['rectangle-label-desktop-additional-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-logo-controls'])
+  expect(desktopRectangleOrder['rectangle-label-logo-controls']).toBeLessThan(desktopRectangleOrder['rectangle-label-padding-controls'])
 })
 
 test('renders circle label text on curved paths', async ({ page }) => {
@@ -1551,6 +1634,31 @@ async function getRectangleLabelColorState(page: Page) {
       bottomGap: backgroundY - qrBottom
     }
   })
+}
+
+async function getRectangleLabelPaddingState(page: Page, labelText: string) {
+  return page.evaluate((expectedLabelText) => {
+    const svg = document.querySelector('svg[aria-label="Generated QR code"]') as SVGSVGElement | null
+    const qrSvg = svg?.querySelector('g[shape-rendering="crispEdges"] svg') as SVGSVGElement | null
+    const background = svg?.querySelector('[data-testid="qr-label-background"]') as SVGRectElement | null
+    const renderedTexts = Array.from(svg?.querySelectorAll('text') ?? [])
+      .filter(element => element.getAttribute('opacity') !== '0')
+    const label = renderedTexts.find(element => element.textContent?.trim() === expectedLabelText)
+
+    if (!svg || !qrSvg || !background || !label) {
+      throw new Error('Missing rectangle label padding elements.')
+    }
+
+    return {
+      backgroundHeight: Number(background.getAttribute('height')),
+      backgroundWidth: Number(background.getAttribute('width')),
+      labelFontSize: Number(label.getAttribute('font-size')),
+      qrX: Number(qrSvg.getAttribute('x')),
+      qrY: Number(qrSvg.getAttribute('y')),
+      svgHeight: svg.viewBox.baseVal.height,
+      svgWidth: svg.viewBox.baseVal.width
+    }
+  }, labelText)
 }
 
 async function getRectangleLabelLogoState(page: Page) {

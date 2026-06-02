@@ -38,6 +38,10 @@ describe('saved QR validation', () => {
         src: 'data:text/plain;base64,Zm9v'
       }
     }))).toThrow('Label logo data URL is invalid.')
+
+    expect(() => normalizeSavedQrPayload(createSavedQrPayload({
+      rectangleLabelHorizontalPaddingStep: 9
+    }))).toThrow('Horizontal label padding is invalid.')
   })
 
   test('validates preview SVG text and dimensions', () => {
@@ -79,6 +83,8 @@ function createSavedQrPayload(overrides: Record<string, unknown> = {}) {
     labelSizeStep: 0,
     labelTextColorName: null,
     labelTextColorStep: 500,
+    rectangleLabelHorizontalPaddingStep: 0,
+    rectangleLabelVerticalPaddingStep: 0,
     shape: 'rectangle',
     url: 'https://example.com',
     version: 1,

@@ -134,6 +134,8 @@ export function normalizeSavedQrPayload(value: unknown): SavedQrPayload {
     labelSizeStep: normalizeInteger(payload.labelSizeStep, 'Label size', -2, 8),
     labelTextColorName: normalizeNullableString(payload.labelTextColorName, 'Label text color', 40),
     labelTextColorStep: normalizeColorStep(payload.labelTextColorStep ?? 500, 'Label text color step'),
+    rectangleLabelHorizontalPaddingStep: normalizeInteger(payload.rectangleLabelHorizontalPaddingStep ?? 0, 'Horizontal label padding', 0, 8),
+    rectangleLabelVerticalPaddingStep: normalizeInteger(payload.rectangleLabelVerticalPaddingStep ?? 0, 'Vertical label padding', 0, 8),
     shape: normalizeEnum(payload.shape ?? 'rectangle', savedQrShapes, 'QR shape') as SavedQrPayload['shape'],
     url: normalizePayloadUrl(payload.url),
     version: 1

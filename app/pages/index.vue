@@ -237,6 +237,8 @@ const selectedQrShape = ref<QrShape>('rectangle')
 const labelSizeStep = ref(0)
 const additionalTextSizeStep = ref(0)
 const labelLogoSizeStep = ref(0)
+const rectangleLabelHorizontalPaddingStep = ref(0)
+const rectangleLabelVerticalPaddingStep = ref(0)
 const qrLabel = ref('')
 const qrAdditionalText = ref('')
 const labelLogoDataUrl = ref('')
@@ -300,6 +302,9 @@ const minTextSizeStep = -2
 const maxAdditionalTextSizeStep = 4
 const minLabelLogoSizeStep = -4
 const maxLabelLogoSizeStep = 0
+const minRectangleLabelPaddingStep = 0
+const maxRectangleLabelPaddingStep = 8
+const rectangleLabelPaddingUnit = 1
 const labelLogoSizeStepRatio = 0.9
 const versionOneQrSize = 21
 const versionOneCenterIconCircleDiameter = 7
@@ -922,6 +927,10 @@ const canIncreaseLabelSize = computed(() => labelText.value.length > 0 && labelT
 const canDecreaseLabelSize = computed(() => labelText.value.length > 0 && labelSizeStep.value > minTextSizeStep)
 const canIncreaseLabelLogoSize = computed(() => hasLabelLogo.value && labelLogoSizeStep.value < maxLabelLogoSizeStep)
 const canDecreaseLabelLogoSize = computed(() => hasLabelLogo.value && labelLogoSizeStep.value > minLabelLogoSizeStep)
+const canIncreaseRectangleLabelHorizontalPadding = computed(() => rectangleLabelHorizontalPaddingStep.value < maxRectangleLabelPaddingStep)
+const canDecreaseRectangleLabelHorizontalPadding = computed(() => rectangleLabelHorizontalPaddingStep.value > minRectangleLabelPaddingStep)
+const canIncreaseRectangleLabelVerticalPadding = computed(() => rectangleLabelVerticalPaddingStep.value < maxRectangleLabelPaddingStep)
+const canDecreaseRectangleLabelVerticalPadding = computed(() => rectangleLabelVerticalPaddingStep.value > minRectangleLabelPaddingStep)
 const canIncreaseAdditionalTextSize = computed(() => {
   if (additionalTextLines.value.length === 0 || additionalTextSizeStep.value >= maxAdditionalTextSizeStep) {
     return false
@@ -959,12 +968,14 @@ const labelLogoAspectRatio = computed(() => {
 
   return 1
 })
+const rectangleLabelHorizontalPadding = computed(() => rectangleLabelHorizontalPaddingStep.value * rectangleLabelPaddingUnit)
+const rectangleLabelVerticalPadding = computed(() => rectangleLabelVerticalPaddingStep.value * rectangleLabelPaddingUnit)
 const labelLogoHorizontalPadding = computed(() => {
-  if (hasRectangleLabelBackground.value) {
-    return labelBackgroundPadding.value
+  if (hasLabelTextGroup.value || rectangleLabelHorizontalPadding.value > 0 || hasRectangleLabelBackground.value) {
+    return labelHorizontalPadding.value
   }
 
-  return hasLabelTextGroup.value ? labelHorizontalPadding.value : 0
+  return 0
 })
 const labelLogoReservedTextHeight = computed(() => {
   if (!hasLabelTextGroup.value) {
@@ -973,8 +984,8 @@ const labelLogoReservedTextHeight = computed(() => {
 
   return labelTextGroupHeight.value + labelFontSize.value * labelLogoTextGapRatio
 })
-const labelLogoMaxWidth = computed(() => Math.max(1, qrOutputSize.value - labelLogoHorizontalPadding.value * 2))
-const labelLogoMaxHeight = computed(() => Math.max(1, qrOutputSize.value - labelBackgroundPadding.value * 2 - labelLogoReservedTextHeight.value))
+const labelLogoMaxWidth = computed(() => Math.max(1, labelAreaWidth.value - labelLogoHorizontalPadding.value * 2))
+const labelLogoMaxHeight = computed(() => Math.max(1, qrOutputSize.value - (labelIsSide.value ? labelVerticalPadding.value : labelBackgroundPadding.value) * 2 - labelLogoReservedTextHeight.value))
 const labelLogoSizeMultiplier = computed(() => getLabelLogoSizeMultiplier(labelLogoSizeStep.value))
 const labelLogoSize = computed(() => {
   if (!hasLabelLogo.value) {
@@ -1003,6 +1014,7 @@ const labelLogoSize = computed(() => {
 const labelLogoWidth = computed(() => labelLogoSize.value.width)
 const labelLogoHeight = computed(() => labelLogoSize.value.height)
 const labelLogoGap = computed(() => hasLabelLogo.value && hasLabelTextGroup.value ? labelFontSize.value * labelLogoTextGapRatio : 0)
+const labelContentBlockHeight = computed(() => labelLogoHeight.value + labelLogoGap.value + labelTextGroupHeight.value)
 const labelGap = computed(() => {
   if (!hasLabelText.value) {
     return 0
@@ -1015,25 +1027,28 @@ const labelGap = computed(() => {
   return selectedBorderStyle.value.contentGap
 })
 const labelBackgroundPadding = computed(() => hasRectangleLabelBackground.value ? labelGap.value : 0)
+const labelBaseVerticalPadding = computed(() => hasRectangleLabelBackground.value ? labelBackgroundPadding.value : stackedLabelGap.value)
+const labelVerticalPadding = computed(() => labelBaseVerticalPadding.value + rectangleLabelVerticalPadding.value)
 const labelBlockHeight = computed(() => {
   if (!hasLabelText.value) {
     return 0
   }
 
-  const verticalPadding = hasRectangleLabelBackground.value ? labelBackgroundPadding.value : stackedLabelGap.value
-
-  return verticalPadding * 2 + labelLogoHeight.value + labelLogoGap.value + labelTextGroupHeight.value
+  return labelVerticalPadding.value * 2 + labelContentBlockHeight.value
 })
 const topLabelHeight = computed(() => labelIsTop.value ? labelBlockHeight.value : 0)
 const bottomLabelHeight = computed(() => labelIsBottom.value ? labelBlockHeight.value : 0)
 const topLabelGap = computed(() => labelIsTop.value && (!usesStackedLabelSpacing.value || hasRectangleLabelBackground.value) ? labelGap.value : 0)
 const bottomLabelGap = computed(() => labelIsBottom.value && (!usesStackedLabelSpacing.value || hasRectangleLabelBackground.value) ? labelGap.value : 0)
+const stackedLabelWidth = computed(() => qrOutputSize.value)
 const sideLabelWidth = computed(() => labelIsSide.value ? qrOutputSize.value : 0)
 const sideLabelGap = computed(() => labelIsSide.value ? labelGap.value : 0)
 const sideLabelTextInset = computed(() => labelIsSide.value ? qrOutputSize.value * sideLabelTextInsetRatio : 0)
-const labelHorizontalPadding = computed(() => hasRectangleLabelBackground.value ? Math.max(sideLabelTextInset.value, labelBackgroundPadding.value) : sideLabelTextInset.value)
-const fittedLabelTextWidth = computed(() => Math.max(1, qrOutputSize.value - labelHorizontalPadding.value * 2))
-const sideContentHeight = computed(() => labelIsSide.value ? Math.max(qrOutputSize.value, labelBlockHeight.value) : qrOutputSize.value)
+const labelAreaWidth = computed(() => labelIsSide.value ? sideLabelWidth.value : stackedLabelWidth.value)
+const labelHorizontalPadding = computed(() => rectangleLabelHorizontalPadding.value + (hasRectangleLabelBackground.value ? Math.max(sideLabelTextInset.value, labelBackgroundPadding.value) : sideLabelTextInset.value))
+const fittedLabelTextWidth = computed(() => Math.max(1, labelAreaWidth.value - labelHorizontalPadding.value * 2))
+const sideBaseContentHeight = computed(() => Math.max(qrOutputSize.value, labelBaseVerticalPadding.value * 2 + labelContentBlockHeight.value))
+const sideContentHeight = computed(() => labelIsSide.value ? sideBaseContentHeight.value : qrOutputSize.value)
 const labelBottomTrim = computed(() => {
   if (!labelIsBottom.value || !hasBorder.value || labelHasDescender.value) {
     return 0
@@ -1041,7 +1056,18 @@ const labelBottomTrim = computed(() => {
 
   return (labelText.value ? labelFontSize.value : additionalTextFontSize.value) * 0.18
 })
-const qrOutputX = computed(() => borderContentInset.value + (labelIsLeft.value ? sideLabelWidth.value + sideLabelGap.value : 0))
+const outputContentWidth = computed(() => labelIsSide.value ? sideLabelWidth.value + sideLabelGap.value + qrOutputSize.value : stackedLabelWidth.value)
+const qrOutputX = computed(() => {
+  if (labelIsLeft.value) {
+    return borderContentInset.value + sideLabelWidth.value + sideLabelGap.value
+  }
+
+  if (labelIsSide.value) {
+    return borderContentInset.value
+  }
+
+  return borderContentInset.value + (outputContentWidth.value - qrOutputSize.value) / 2
+})
 const qrOutputY = computed(() => {
   if (labelIsSide.value) {
     return borderContentInset.value + (sideContentHeight.value - qrOutputSize.value) / 2
@@ -1054,7 +1080,7 @@ const centerIconCircleRadius = computed(() => centerIconCircleDiameter.value / 2
 const centerIconSize = computed(() => centerIconCircleDiameter.value * 0.68)
 const centerIconX = computed(() => qrOutputX.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
 const centerIconY = computed(() => qrOutputY.value + qrOutputSize.value / 2 - centerIconSize.value / 2)
-const outputSvgWidth = computed(() => borderContentInset.value * 2 + sideLabelWidth.value + sideLabelGap.value + qrOutputSize.value)
+const outputSvgWidth = computed(() => borderContentInset.value * 2 + outputContentWidth.value)
 const outputBottomInset = computed(() => hasBorder.value || hasCircleInset.value ? borderContentInset.value : bottomLabelGap.value)
 const outputSvgHeight = computed(() => {
   if (labelIsSide.value) {
@@ -1110,7 +1136,7 @@ const labelX = computed(() => {
     return qrOutputX.value + qrOutputSize.value + sideLabelGap.value + sideLabelWidth.value / 2
   }
 
-  return outputSvgWidth.value / 2
+  return borderContentInset.value + stackedLabelWidth.value / 2
 })
 const labelBlockY = computed(() => {
   if (labelIsTop.value) {
@@ -1144,12 +1170,12 @@ const labelBackgroundRect = computed<GradientBox>(() => {
 
   return {
     height: labelBlockHeight.value,
-    width: qrOutputSize.value,
+    width: stackedLabelWidth.value,
     x: qrOutputX.value,
     y: labelBlockY.value
   }
 })
-const labelStackStartY = computed(() => labelBlockY.value + (hasRectangleLabelBackground.value ? labelBackgroundPadding.value : stackedLabelGap.value))
+const labelStackStartY = computed(() => labelBlockY.value + labelVerticalPadding.value)
 const labelContentY = computed(() => {
   if (hasLabelLogo.value && selectedLabelLogoPosition.value === 'top') {
     return labelStackStartY.value + labelLogoHeight.value + labelLogoGap.value
@@ -1879,6 +1905,30 @@ function increaseLabelLogoSize() {
 function decreaseLabelLogoSize() {
   if (canDecreaseLabelLogoSize.value) {
     labelLogoSizeStep.value--
+  }
+}
+
+function increaseRectangleLabelHorizontalPadding() {
+  if (canIncreaseRectangleLabelHorizontalPadding.value) {
+    rectangleLabelHorizontalPaddingStep.value++
+  }
+}
+
+function decreaseRectangleLabelHorizontalPadding() {
+  if (canDecreaseRectangleLabelHorizontalPadding.value) {
+    rectangleLabelHorizontalPaddingStep.value--
+  }
+}
+
+function increaseRectangleLabelVerticalPadding() {
+  if (canIncreaseRectangleLabelVerticalPadding.value) {
+    rectangleLabelVerticalPaddingStep.value++
+  }
+}
+
+function decreaseRectangleLabelVerticalPadding() {
+  if (canDecreaseRectangleLabelVerticalPadding.value) {
+    rectangleLabelVerticalPaddingStep.value--
   }
 }
 
@@ -3225,6 +3275,8 @@ function createSavedQrPayload(): SavedQrPayload {
     labelSizeStep: labelSizeStep.value,
     labelTextColorName: selectedLabelTextColorName.value,
     labelTextColorStep: selectedLabelTextColorStep.value,
+    rectangleLabelHorizontalPaddingStep: rectangleLabelHorizontalPaddingStep.value,
+    rectangleLabelVerticalPaddingStep: rectangleLabelVerticalPaddingStep.value,
     shape: selectedQrShape.value,
     url: qrStore.url,
     version: 1,
@@ -3524,6 +3576,8 @@ function applySavedQrPayload(payload: SavedQrPayload) {
   selectedAdditionalTextFont.value = labelFonts.some(font => font.value === payload.additionalTextFont) ? payload.additionalTextFont : fallbackLabelFont.value
   labelSizeStep.value = clampTextSizeStep(payload.labelSizeStep)
   additionalTextSizeStep.value = clampAdditionalTextSizeStep(payload.additionalTextSizeStep)
+  rectangleLabelHorizontalPaddingStep.value = clampRectangleLabelPaddingStep(payload.rectangleLabelHorizontalPaddingStep)
+  rectangleLabelVerticalPaddingStep.value = clampRectangleLabelPaddingStep(payload.rectangleLabelVerticalPaddingStep)
   applyLabelLogoPayload(payload.labelLogo)
   selectedCenterIcon.value = centerIconOptions.some(icon => icon.value === payload.centerIcon) ? payload.centerIcon : 'none'
   const nextQrShape = isQrShape(payload.shape) ? payload.shape : 'rectangle'
@@ -3630,6 +3684,8 @@ function resetCurrentQrState() {
   labelSizeStep.value = 0
   additionalTextSizeStep.value = 0
   labelLogoSizeStep.value = 0
+  rectangleLabelHorizontalPaddingStep.value = 0
+  rectangleLabelVerticalPaddingStep.value = 0
   qrLabel.value = ''
   qrAdditionalText.value = ''
   removeLabelLogo()
@@ -3671,6 +3727,8 @@ function isDefaultCurrentQrDraftPayload(payload: CurrentQrDraftPayload) {
     && payload.additionalTextFont === fallbackLabelFont.value
     && payload.labelSizeStep === 0
     && payload.additionalTextSizeStep === 0
+    && (!payload.rectangleLabelHorizontalPaddingStep || payload.rectangleLabelHorizontalPaddingStep === 0)
+    && (!payload.rectangleLabelVerticalPaddingStep || payload.rectangleLabelVerticalPaddingStep === 0)
     && !payload.labelBackgroundColorName
     && (!payload.labelBackgroundColorStep || payload.labelBackgroundColorStep === 500)
     && !payload.labelLogo
@@ -3762,6 +3820,10 @@ function clampAdditionalTextSizeStep(value: unknown) {
 
 function clampLabelLogoSizeStep(value: unknown) {
   return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minLabelLogoSizeStep), maxLabelLogoSizeStep) : 0
+}
+
+function clampRectangleLabelPaddingStep(value: unknown) {
+  return typeof value === 'number' ? Math.min(Math.max(Math.round(value), minRectangleLabelPaddingStep), maxRectangleLabelPaddingStep) : 0
 }
 
 function normalizeColorStep(value: unknown, colorName: string | null = null) {
@@ -4068,6 +4130,8 @@ watch([
   labelSizeStep,
   additionalTextSizeStep,
   labelLogoSizeStep,
+  rectangleLabelHorizontalPaddingStep,
+  rectangleLabelVerticalPaddingStep,
   circleLabelTopSizeStep,
   circleLabelBottomSizeStep,
   circleLabelLeftSizeStep,
@@ -5385,6 +5449,74 @@ onUnmounted(() => {
               :title="labelLogoError"
               variant="subtle"
             />
+          </div>
+
+          <div
+            v-if="!isCircleShape"
+            :class="[mobileLabelSectionBoxClasses, 'space-y-3']"
+            data-testid="rectangle-label-padding-controls"
+          >
+            <h3 class="text-base font-bold text-highlighted min-[620px]:text-sm min-[620px]:font-medium">
+              Padding
+            </h3>
+
+            <div class="grid gap-3 min-[620px]:grid-cols-2">
+              <UFormField label="Vertical">
+                <UFieldGroup
+                  class="w-full"
+                  size="lg"
+                >
+                  <UButton
+                    aria-label="Decrease vertical label padding"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canDecreaseRectangleLabelVerticalPadding"
+                    icon="i-lucide-minus"
+                    size="lg"
+                    variant="subtle"
+                    @click="decreaseRectangleLabelVerticalPadding"
+                  />
+                  <UButton
+                    aria-label="Increase vertical label padding"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canIncreaseRectangleLabelVerticalPadding"
+                    icon="i-lucide-plus"
+                    size="lg"
+                    variant="subtle"
+                    @click="increaseRectangleLabelVerticalPadding"
+                  />
+                </UFieldGroup>
+              </UFormField>
+
+              <UFormField label="Horizontal">
+                <UFieldGroup
+                  class="w-full"
+                  size="lg"
+                >
+                  <UButton
+                    aria-label="Decrease horizontal label padding"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canDecreaseRectangleLabelHorizontalPadding"
+                    icon="i-lucide-minus"
+                    size="lg"
+                    variant="subtle"
+                    @click="decreaseRectangleLabelHorizontalPadding"
+                  />
+                  <UButton
+                    aria-label="Increase horizontal label padding"
+                    class="flex-1 justify-center disabled:bg-white disabled:text-slate-400 dark:disabled:bg-white"
+                    color="neutral"
+                    :disabled="!canIncreaseRectangleLabelHorizontalPadding"
+                    icon="i-lucide-plus"
+                    size="lg"
+                    variant="subtle"
+                    @click="increaseRectangleLabelHorizontalPadding"
+                  />
+                </UFieldGroup>
+              </UFormField>
+            </div>
           </div>
         </div>
 

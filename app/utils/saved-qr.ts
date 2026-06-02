@@ -32,6 +32,8 @@ export type SavedQrPayload = {
   additionalTextPlacement: 'above' | 'below'
   labelPosition: 'top' | 'left' | 'right' | 'bottom'
   labelFont: string
+  rectangleLabelHorizontalPaddingStep?: number
+  rectangleLabelVerticalPaddingStep?: number
   additionalTextFont: string
   labelSizeStep: number
   additionalTextSizeStep: number
