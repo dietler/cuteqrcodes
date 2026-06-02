@@ -1,7 +1,7 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
 
-@source inline("{bg,fill,stroke,text}-{slate,gray,zinc,neutral,stone,red,orange,amber,yellow,lime,green,emerald,teal,cyan,sky,blue,indigo,violet,purple,fuchsia,pink,rose}-{100,200,300,400,500,600,700,800,900}");
+@source inline("{bg,fill,stroke,text}-{slate,gray,zinc,neutral,stone,taupe,red,orange,amber,yellow,lime,olive,green,emerald,teal,cyan,mist,sky,blue,indigo,violet,purple,mauve,fuchsia,pink,rose}-{100,200,300,400,500,600,700,800,900}");
 
 @theme static {
   --font-sans: 'Public Sans', sans-serif;
@@ -31,4 +31,44 @@
   --color-green-800: #016538;
   --color-green-900: #0A5331;
   --color-green-950: #052E16;
+
+  --color-mauve-100: #F7EEF8;
+  --color-mauve-200: #EDD8F0;
+  --color-mauve-300: #DFC0E5;
+  --color-mauve-400: #C899D5;
+  --color-mauve-500: #AF72C2;
+  --color-mauve-600: #9455A5;
+  --color-mauve-700: #784486;
+  --color-mauve-800: #5F386B;
+  --color-mauve-900: #4A2E53;
+
+  --color-olive-100: #F1F5D8;
+  --color-olive-200: #E2EBAE;
+  --color-olive-300: #CBDD7B;
+  --color-olive-400: #AFC84B;
+  --color-olive-500: #8FAE2D;
+  --color-olive-600: #718C22;
+  --color-olive-700: #586D1E;
+  --color-olive-800: #46561C;
+  --color-olive-900: #38451A;
+
+  --color-mist-100: #EEF7F8;
+  --color-mist-200: #D8ECEF;
+  --color-mist-300: #BBDDE3;
+  --color-mist-400: #8FC5CF;
+  --color-mist-500: #68AAB8;
+  --color-mist-600: #4D8795;
+  --color-mist-700: #3F6D78;
+  --color-mist-800: #365A62;
+  --color-mist-900: #2F4A51;
+
+  --color-taupe-100: #F3F0EA;
+  --color-taupe-200: #E4DCD1;
+  --color-taupe-300: #D1C3B4;
+  --color-taupe-400: #B69F8D;
+  --color-taupe-500: #9B7E6D;
+  --color-taupe-600: #7D6255;
+  --color-taupe-700: #624C44;
+  --color-taupe-800: #4F3E38;
+  --color-taupe-900: #42342F;
 }

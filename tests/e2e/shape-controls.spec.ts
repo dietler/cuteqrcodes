@@ -129,6 +129,49 @@ test('colors the QR code step slider with the selected shade', async ({ page }) 
   await expectStepSliderColor(page, 'qr-color-step-slider', 'var(--color-emerald-700)')
 })
 
+test('offers custom Tailwind colors in the QR color selector', async ({ page }) => {
+  await page.goto('/')
+  await page.waitForFunction(() => {
+    const input = document.querySelector('input[type="url"]')
+
+    return !!input && '_value' in input
+  })
+  await page.locator('input[type="url"]').fill('https://example.com/custom-tailwind-colors')
+
+  await page.getByRole('button', { name: 'Colors' }).click()
+
+  const customColors = [
+    { label: 'Mauve', slug: 'mauve', value: '#AF72C2' },
+    { label: 'Olive', slug: 'olive', value: '#8FAE2D' },
+    { label: 'Mist', slug: 'mist', value: '#68AAB8' },
+    { label: 'Taupe', slug: 'taupe', value: '#9B7E6D' }
+  ]
+  const rootColorVariables = await page.evaluate((slugs) => {
+    const rootStyle = getComputedStyle(document.documentElement)
+
+    return slugs.map(slug => rootStyle.getPropertyValue(`--color-${slug}-500`).trim())
+  }, customColors.map(color => color.slug))
+
+  expect(rootColorVariables).toEqual(customColors.map(color => color.value))
+
+  for (const color of customColors) {
+    const colorButton = page
+      .getByTestId('qr-color-selector')
+      .getByRole('button', { name: `Use ${color.label} for the QR code` })
+
+    await expect(colorButton).toBeVisible()
+    await expect(colorButton.locator('span').first()).toHaveClass(new RegExp(`bg-${color.slug}-500`))
+  }
+
+  await page
+    .getByTestId('qr-color-selector')
+    .getByRole('button', { name: 'Use Mauve for the QR code' })
+    .click()
+
+  await expect(page.getByTestId('qr-color-step-control')).toContainText('Mauve 500')
+  await expectStepSliderColor(page, 'qr-color-step-slider', 'var(--color-mauve-500)')
+})
+
 test('draws circle borders with a buffered QR overlap', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => {
